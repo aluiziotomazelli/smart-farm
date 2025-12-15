@@ -5,7 +5,6 @@
 #include "esp_timer.h"
 
 static const char *TAG = "HCSR04_GPIO";
-static constexpr float SOUND_SPEED_CM_PER_US = 0.0343f;
 
 HCSR04Gpio::HCSR04Gpio(gpio_num_t                                trig,
                        gpio_num_t                                echo,
@@ -19,7 +18,11 @@ bool HCSR04Gpio::init()
 {
     ESP_LOGI(TAG, "Initializing HCSR04Gpio sensor (trig=%d, echo=%d)", trig_pin, echo_pin);
 
-    HCSR04::init();
+    if (!HCSR04::init())
+    {
+        ESP_LOGE(TAG, "Failed to initialize base HCSR04");
+        return false;
+    }
 
     gpio_reset_pin(echo_pin);
 

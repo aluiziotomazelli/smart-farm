@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 class UltrasonicSensor
 {
 public:
+    static constexpr float SOUND_SPEED_CM_PER_US = 0.034300f;
+
     enum class Filter
     {
         MEDIAN,
@@ -13,20 +16,20 @@ public:
 
     struct UltrasonicConfig
     {
-        size_t ping_count;
-        size_t ping_interval_ms;
-        size_t ping_duration_us;
-        size_t timeout_us;
-        Filter filter;
-        bool   blind_ping;
+        uint8_t  ping_count       = 7;
+        uint16_t ping_interval_ms = 70;
+        uint16_t ping_duration_us = 20;
+        uint32_t timeout_us       = 25000;
+        Filter   filter           = Filter::DOMINANT_CLUSTER;
+        bool     blind_ping       = true;
     };
 
     UltrasonicSensor(const UltrasonicConfig &cfg)
-        : cfg(cfg){};
+        : cfg(cfg) {};
     virtual ~UltrasonicSensor() = default;
 
     virtual bool init() = 0;
-    bool readDistanceCm(float &out_cm);
+    bool         readDistanceCm(float &out_cm);
 
 protected:
     virtual float readRawDistanceCm() = 0;
@@ -36,5 +39,5 @@ private:
     float reduce_dominant_cluster(float *v, size_t n);
 
 protected:
-    const UltrasonicConfig &cfg;
+    const UltrasonicConfig cfg;
 };

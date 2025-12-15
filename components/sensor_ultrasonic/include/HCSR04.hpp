@@ -14,6 +14,5 @@ public:
 protected:
     void send_ping();
 
-protected:
     gpio_num_t trig_pin;
 };

@@ -4,7 +4,6 @@
 #include "esp_rom_sys.h"
 
 static const char *TAG = "HCSR04_RMT";
-static constexpr float SOUND_SPEED_CM_PER_US = 0.0343f;
 
 HCSR04Rmt::HCSR04Rmt(gpio_num_t                                trig,
                      gpio_num_t                                echo,
@@ -19,7 +18,11 @@ bool HCSR04Rmt::init()
 {
     ESP_LOGI(TAG, "Initializing HCSR04Rmt (trig=%d, echo=%d)", trig_pin, echo_pin);
 
-    HCSR04::init();
+    if (!HCSR04::init())
+    {
+        ESP_LOGE(TAG, "Failed to initialize base HCSR04");
+        return false;
+    }
 
     rmt_rx_channel_config_t rx_cfg;
     memset(&rx_cfg, 0, sizeof(rx_cfg));
