@@ -1,13 +1,15 @@
 #include "WaterTankApp.hpp"
 #include "HCSR04Gpio.hpp"
 #include "HCSR04Rmt.hpp"
-#include "config.hpp"
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO // Must be call before esp_log.h
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 const char *TAG = "WaterTankApp";
+
+static constexpr float TANK_DISTANCE_EMPTY_CM = 150.0f;
+static constexpr float TANK_DISTANCE_FULL_CM  = 20.0f;
 
 static const UltrasonicSensor::UltrasonicConfig cfg = {
     .ping_count       = 7,

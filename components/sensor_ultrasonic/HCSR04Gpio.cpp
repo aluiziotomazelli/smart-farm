@@ -5,14 +5,12 @@
 #include "esp_timer.h"
 
 static const char *TAG = "HCSR04_GPIO";
-
-// UltrasonicConfig cfg;
+static constexpr float SOUND_SPEED_CM_PER_US = 0.0343f;
 
 HCSR04Gpio::HCSR04Gpio(gpio_num_t                                trig,
                        gpio_num_t                                echo,
                        const UltrasonicSensor::UltrasonicConfig &cfg)
-    : UltrasonicSensor{cfg}
-    , trig_pin(trig)
+    : HCSR04{trig, cfg}
     , echo_pin(echo)
 {
 }
@@ -21,29 +19,11 @@ bool HCSR04Gpio::init()
 {
     ESP_LOGI(TAG, "Initializing HCSR04Gpio sensor (trig=%d, echo=%d)", trig_pin, echo_pin);
 
-    gpio_reset_pin(trig_pin);
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << trig_pin,
-        .mode         = GPIO_MODE_OUTPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-
-    if (gpio_config(&io_conf) != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to configure TRIG pin");
-        return false;
-    }
-    else
-    {
-        ESP_LOGI(TAG, "TRIG pin configured");
-    }
+    HCSR04::init();
 
     gpio_reset_pin(echo_pin);
 
-    io_conf = {
+    gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << echo_pin,
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
@@ -61,15 +41,12 @@ bool HCSR04Gpio::init()
         ESP_LOGI(TAG, "ECHO pin configured");
     }
 
-    gpio_set_level(trig_pin, 0);
     return true;
 }
 
 float HCSR04Gpio::readRawDistanceCm()
 {
-    gpio_set_level(trig_pin, 1);
-    esp_rom_delay_us(cfg.ping_duration_us);
-    gpio_set_level(trig_pin, 0);
+    send_ping();
 
     int64_t start = esp_timer_get_time();
     while (gpio_get_level(echo_pin) == 0)
@@ -88,5 +65,5 @@ float HCSR04Gpio::readRawDistanceCm()
     }
 
     int64_t pulse = esp_timer_get_time() - echo_start;
-    return pulse * 0.0343f / 2.0f;
+    return pulse * SOUND_SPEED_CM_PER_US / 2.0f;
 }
