@@ -1,0 +1,20 @@
+# VSCode
+.vscode/
+
+# Compilação e binários
+/build/
+*.elf
+*.bin
+*.hex
+
+# Bibliotecas externas baixadas
+/libraries/
+
+# Arquivos temporários
+*.tmp
+*.log
+*.pyc
+.DS_Store
+
+# PlatformIO (se usar)
+.pio/
