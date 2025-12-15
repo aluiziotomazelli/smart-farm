@@ -8,8 +8,7 @@ static const char *TAG = "HCSR04_RMT";
 HCSR04Rmt::HCSR04Rmt(gpio_num_t                                trig,
                      gpio_num_t                                echo,
                      const UltrasonicSensor::UltrasonicConfig &cfg)
-    : UltrasonicSensor{cfg}
-    , trig_pin(trig)
+    : HCSR04{trig, cfg}
     , echo_pin(echo)
     , rx_channel(nullptr)
 {
@@ -19,26 +18,11 @@ bool HCSR04Rmt::init()
 {
     ESP_LOGI(TAG, "Initializing HCSR04Rmt (trig=%d, echo=%d)", trig_pin, echo_pin);
 
-    gpio_reset_pin(trig_pin);
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = 1ULL << trig_pin,
-        .mode         = GPIO_MODE_OUTPUT,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type    = GPIO_INTR_DISABLE,
-    };
-
-    if (gpio_config(&io_conf) != ESP_OK)
+    if (!HCSR04::init())
     {
-        ESP_LOGE(TAG, "Failed to configure TRIG pin");
+        ESP_LOGE(TAG, "Failed to initialize base HCSR04");
         return false;
     }
-    else
-    {
-        ESP_LOGI(TAG, "TRIG pin configured");
-    }
-    gpio_set_level(trig_pin, 0);
 
     rmt_rx_channel_config_t rx_cfg;
     memset(&rx_cfg, 0, sizeof(rx_cfg));
@@ -68,9 +52,7 @@ float HCSR04Rmt::readRawDistanceCm()
     rx_cfg.signal_range_max_ns = cfg.timeout_us * 1000u;
     rx_cfg.flags.en_partial_rx = false;
 
-    gpio_set_level(trig_pin, 1);
-    esp_rom_delay_us(cfg.ping_duration_us);
-    gpio_set_level(trig_pin, 0);
+    send_ping();
 
     if (rmt_receive(rx_channel, rx_symbols, sizeof(rx_symbols), &rx_cfg) != ESP_OK)
         return -1;
@@ -83,10 +65,10 @@ float HCSR04Rmt::readRawDistanceCm()
             break;
 
         if (s.level0 == 1 && s.duration0 > 0)
-            return s.duration0 * 0.0343f / 2.0f;
+            return s.duration0 * SOUND_SPEED_CM_PER_US / 2.0f;
 
         if (s.level1 == 1 && s.duration1 > 0)
-            return s.duration1 * 0.0343f / 2.0f;
+            return s.duration1 * SOUND_SPEED_CM_PER_US / 2.0f;
     }
 
     return -1;
