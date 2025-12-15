@@ -1,0 +1,43 @@
+project/
+  CMakeLists.txt
+  sdkconfig.defaults
+
+  apps/
+    water_tank/
+      CMakeLists.txt
+      main.cpp               // apenas cria objetos e inicia o sistema
+      WaterTankApp.cpp
+      WaterTankApp.hpp       // classe principal do app
+      config.hpp             // constantes e parâmetros do nó
+      README.md
+
+  components/
+    sensors/
+      CMakeLists.txt
+      water_level/
+        WaterLevelSensor.cpp
+        WaterLevelSensor.hpp     // interface abstrata
+        HCSR04Sensor.cpp
+        HCSR04Sensor.hpp         // implementação específica
+        PressureSensor.cpp
+        PressureSensor.hpp
+    comms/
+      CMakeLists.txt
+      MqttClient.cpp
+      MqttClient.hpp
+      EspNowClient.cpp
+      EspNowClient.hpp
+    storage/
+      CMakeLists.txt
+      NvsStore.cpp
+      NvsStore.hpp
+    system/
+      CMakeLists.txt
+      TaskUtils.cpp
+      TaskUtils.hpp
+      Logger.cpp
+      Logger.hpp
+
+  common/
+    proto/
+      Messages.hpp              // structs/payloads padronizados

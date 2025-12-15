@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "UltrasonicSensor.cpp"
+        "HCSR04Gpio.cpp"
+        "HCSR04Rmt.cpp"
+    INCLUDE_DIRS
+        "include"
+        "."
+    REQUIRES
+        driver
+        esp_timer
+)
