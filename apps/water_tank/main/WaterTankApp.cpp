@@ -20,11 +20,23 @@ static FloatSwitch floatswitch(fs_cfg);
 
 void WaterTankApp::init()
 {
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    ESP_LOGI(TAG, "Wakeup cause: %d", cause);
+    if (cause == ESP_SLEEP_WAKEUP_EXT0)
+        ESP_LOGI(TAG, "Wakeup cause: ESP_SLEEP_WAKEUP_EXT0");
+
     ESP_LOGI(TAG, "Initializing WaterTankApp");
 
     floatswitch.init();
 
     vTaskDelay(pdMS_TO_TICKS(100));
+
+    FloatSwitch::WakeupInfo wi;
+    if (floatswitch.get_wakeup_info(wi))
+    {
+        ESP_LOGI(TAG, "Config wakeup: pin=%d level=%d", wi.pin, wi.level);
+        esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
+    }
 }
 
 void WaterTankApp::run()
@@ -32,18 +44,18 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "First run");
     while (true)
     {
-        FloatSwitch::WakeupInfo wi;
-        if (floatswitch.get_wakeup_info(wi))
-        {
-            ESP_LOGI(TAG, "Config wakeup: pin=%d level=%d", wi.pin, wi.level);
-            esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
-        }
-
         // vTaskDelay(pdMS_TO_TICKS(2000));
         ESP_LOGI(TAG, "Going to deep sleep in 3 seconds...");
         vTaskDelay(pdMS_TO_TICKS(3000));
 
-        ESP_LOGI(TAG, "Going to deep sleep now...");
-        esp_deep_sleep_start();
+        if (floatswitch.read() == true)
+        {
+            ESP_LOGI(TAG, "Boia ativa, não dormir");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Boia inativa, dormindo...");
+            esp_deep_sleep_start();
+        }
     }
 }
