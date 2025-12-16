@@ -6,10 +6,10 @@
 class FloatSwitch
 {
 public:
-    enum class WakeupEdge
+    enum class WakeupLevel
     {
-        RISING,
-        FALLING
+        LOW,
+        HIGH,
     };
 
     enum class Pull
@@ -20,11 +20,11 @@ public:
     };
     struct Config
     {
-        gpio_num_t pin;
-        bool       normally_open = true; // NO=true, NC=false
-        Pull       pull          = Pull::UP;
-        uint32_t   debounce_ms   = 50;
-        WakeupEdge wakeup_edge   = WakeupEdge::FALLING;
+        gpio_num_t  pin;
+        bool        normally_open = true; // NO=true, NC=false
+        Pull        pull          = Pull::UP;
+        uint32_t    debounce_ms   = 50;
+        WakeupLevel wakeup_edge   = WakeupLevel::LOW;
     };
 
     struct WakeupInfo

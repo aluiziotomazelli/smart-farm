@@ -144,14 +144,10 @@ bool FloatSwitch::get_wakeup_info(WakeupInfo &info) const
 
     info.pin = config.pin;
 
-    if (config.wakeup_edge == WakeupEdge::RISING)
-    {
+    if (config.wakeup_edge == WakeupLevel::HIGH)
         info.level = 1;
-    }
     else
-    {
         info.level = 0;
-    }
 
     return true;
 }

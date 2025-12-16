@@ -4,49 +4,24 @@
 #include "HCSR04Rmt.hpp"
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO // Must be call before esp_log.h
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 const char *TAG = "WaterTankApp";
 
-static constexpr float TANK_DISTANCE_EMPTY_CM = 150.0f;
-static constexpr float TANK_DISTANCE_FULL_CM  = 20.0f;
-
 static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4, // exemplo
                                      .normally_open = true,
                                      .pull          = FloatSwitch::Pull::UP,
                                      .debounce_ms   = 50,
-                                     .wakeup_edge   = FloatSwitch::WakeupEdge::FALLING};
+                                     .wakeup_edge   = FloatSwitch::WakeupLevel::LOW};
 
 static FloatSwitch floatswitch(fs_cfg);
-
-static const UltrasonicSensor::UltrasonicConfig cfg = {
-    .ping_count       = 7,
-    .ping_interval_ms = 70,
-    .ping_duration_us = 20,
-    .timeout_us       = 25000,
-    .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
-    .blind_ping       = true};
-
-// HCSR04Gpio sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
-HCSR04Rmt sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
-
-static float distance_to_percent(float d_cm)
-{
-    if (d_cm <= TANK_DISTANCE_FULL_CM)
-        return 100.0f;
-    if (d_cm >= TANK_DISTANCE_EMPTY_CM)
-        return 0.0f;
-
-    return 100.0f * (TANK_DISTANCE_EMPTY_CM - d_cm) /
-           (TANK_DISTANCE_EMPTY_CM - TANK_DISTANCE_FULL_CM);
-}
 
 void WaterTankApp::init()
 {
     ESP_LOGI(TAG, "Initializing WaterTankApp");
 
-    sensor.init();
     floatswitch.init();
 
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -57,21 +32,18 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "First run");
     while (true)
     {
-        bool filling = floatswitch.read(); // true = água presente na boia
-
-        float distance;
-        if (!sensor.readDistanceCm(distance))
+        FloatSwitch::WakeupInfo wi;
+        if (floatswitch.get_wakeup_info(wi))
         {
-            ESP_LOGW(TAG, "ultrasonic sensor error");
-        }
-        else
-        {
-            float level = distance_to_percent(distance);
-            ESP_LOGI(TAG, "boia=%s distance=%.1f cm level=%.1f%%", filling ? "ON" : "OFF", distance,
-                     level);
-            // ESP_LOGI(TAG, "distance=%.1f cm level=%.1f%%", distance, level);
+            ESP_LOGI(TAG, "Config wakeup: pin=%d level=%d", wi.pin, wi.level);
+            esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        // vTaskDelay(pdMS_TO_TICKS(2000));
+        ESP_LOGI(TAG, "Going to deep sleep in 3 seconds...");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        ESP_LOGI(TAG, "Going to deep sleep now...");
+        esp_deep_sleep_start();
     }
 }
