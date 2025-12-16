@@ -1,4 +1,5 @@
 #include "WaterTankApp.hpp"
+#include "FloatSwitch.hpp"
 #include "HCSR04Gpio.hpp"
 #include "HCSR04Rmt.hpp"
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO // Must be call before esp_log.h
@@ -10,6 +11,14 @@ const char *TAG = "WaterTankApp";
 
 static constexpr float TANK_DISTANCE_EMPTY_CM = 150.0f;
 static constexpr float TANK_DISTANCE_FULL_CM  = 20.0f;
+
+static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4, // exemplo
+                                     .normally_open = true,
+                                     .pull          = FloatSwitch::Pull::UP,
+                                     .debounce_ms   = 50,
+                                     .wakeup_edge   = FloatSwitch::WakeupEdge::FALLING};
+
+static FloatSwitch floatswitch(fs_cfg);
 
 static const UltrasonicSensor::UltrasonicConfig cfg = {
     .ping_count       = 7,
@@ -36,7 +45,10 @@ static float distance_to_percent(float d_cm)
 void WaterTankApp::init()
 {
     ESP_LOGI(TAG, "Initializing WaterTankApp");
+
     sensor.init();
+    floatswitch.init();
+
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
@@ -45,15 +57,19 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "First run");
     while (true)
     {
+        bool filling = floatswitch.read(); // true = água presente na boia
+
         float distance;
         if (!sensor.readDistanceCm(distance))
         {
-            ESP_LOGW(TAG, "sensor error");
+            ESP_LOGW(TAG, "ultrasonic sensor error");
         }
         else
         {
             float level = distance_to_percent(distance);
-            ESP_LOGI(TAG, "distance=%.1f cm level=%.1f%%", distance, level);
+            ESP_LOGI(TAG, "boia=%s distance=%.1f cm level=%.1f%%", filling ? "ON" : "OFF", distance,
+                     level);
+            // ESP_LOGI(TAG, "distance=%.1f cm level=%.1f%%", distance, level);
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));

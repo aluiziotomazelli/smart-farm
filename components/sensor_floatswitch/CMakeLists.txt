@@ -3,7 +3,6 @@ idf_component_register(
         "FloatSwitch.cpp"
     INCLUDE_DIRS
         "include"
-        "."
     REQUIRES
         driver
         esp_timer

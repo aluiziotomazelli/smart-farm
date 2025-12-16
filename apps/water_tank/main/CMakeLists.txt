@@ -7,6 +7,7 @@ idf_component_register(
         "include"
     REQUIRES
         sensor_ultrasonic
+        sensor_floatswitch
         
         
 )

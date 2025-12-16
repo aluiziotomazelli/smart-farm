@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include "driver/gpio.h"
 
 class FloatSwitch
@@ -7,61 +8,61 @@ class FloatSwitch
 public:
     enum class WakeupEdge
     {
-        FALLING, // Wake on HIGH to LOW transition
-        RISING,  // Wake on LOW to HIGH transition
-        ANY      // Wake on any edge (requires EXT1)
+        RISING,
+        FALLING
     };
 
+    enum class Pull
+    {
+        UP,
+        DOWN,
+        NONE
+    };
     struct Config
     {
-        gpio_num_t       pin;
-        bool             normally_open = true; // true: NA, false: NF
-        gpio_pull_mode_t pull_mode     = GPIO_PULLUP_ONLY;
-        uint32_t         debounce_ms   = 50;              // Debounce time in milliseconds
-        WakeupEdge       wakeup_edge   = WakeupEdge::ANY; // Edge type for wakeup
+        gpio_num_t pin;
+        bool       normally_open = true; // NO=true, NC=false
+        Pull       pull          = Pull::UP;
+        uint32_t   debounce_ms   = 50;
+        WakeupEdge wakeup_edge   = WakeupEdge::FALLING;
     };
 
-    FloatSwitch(const Config &config);
+    struct WakeupInfo
+    {
+        gpio_num_t pin;
+        int        level; // 0 ou 1
+    };
+
+    explicit FloatSwitch(const Config &cfg);
     ~FloatSwitch();
 
-    // Initialize GPIO/RTC_GPIO pin
     bool init();
 
-    // Read current state (with debounce)
+    // Estado lógico: true = água presente
     bool read();
 
-    // Get raw pin state (without debounce)
-    bool read_raw();
+    // Estado elétrico do GPIO
+    bool read_raw() const;
 
-    // Check if water level is high based on NO/NC configuration
-    bool is_level_high();
+    // Wakeup como capability (não registra no sistema)
+    bool get_wakeup_info(WakeupInfo &info) const;
 
-    // Enable wakeup from deep sleep (configure RTC_GPIO)
-    bool enable_wakeup();
-
-    // Disable wakeup (release RTC_GPIO hold)
-    bool disable_wakeup();
-
-    // Check if pin is RTC capable
     bool is_rtc_capable() const { return rtc_capable; }
 
-    // Get pin number
-    gpio_num_t get_pin() const { return config.pin; }
-
-    // Get configuration
-    const Config &get_config() const { return config; }
-
 private:
-    Config   config;
-    bool     initialized      = false;
-    bool     rtc_capable      = false;
-    bool     last_state       = false;
-    uint64_t last_change_time = 0;
+    Config config;
 
-    // Debounce helper
-    bool debounce_check(bool current_state);
+    bool rtc_capable = false;
+    bool initialized = false;
 
-    // RTC GPIO configuration helpers
+    // debounce
+    bool     stable_state       = false;
+    bool     pending_state      = false;
+    uint64_t last_transition_ms = 0;
+
+    bool debounce_update(bool raw_state);
+
+    bool configure_gpio();
     bool configure_rtc_gpio();
     void release_rtc_gpio();
 };
