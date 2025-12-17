@@ -1,5 +1,5 @@
 #include "HCSR04Gpio.hpp"
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG // Must come before esp_log.h
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO // Must come before esp_log.h
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
