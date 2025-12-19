@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+static constexpr uint32_t ULTRASONIC_WARMUP_MS = 600;
+
 class UltrasonicSensor
 {
 public:

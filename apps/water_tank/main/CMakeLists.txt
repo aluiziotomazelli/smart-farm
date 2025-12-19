@@ -9,6 +9,7 @@ idf_component_register(
         sensor_ultrasonic
         sensor_floatswitch
         core
+        power_control
         
         
 )

@@ -1,5 +1,5 @@
 #include "UltrasonicSensor.hpp"
-#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
 #include <algorithm>
 #include <cmath>
@@ -64,6 +64,7 @@ bool UltrasonicSensor::readDistanceCm(float &out_cm)
     for (size_t i = 0; i < cfg.ping_count; i++)
     {
         float d = readRawDistanceCm();
+        ESP_LOGD(TAG, "raw_d:%.2f cm", d);
         if (d > 0)
             samples[valid++] = d;
 
@@ -75,12 +76,12 @@ bool UltrasonicSensor::readDistanceCm(float &out_cm)
         return false;
     else
     {
-#if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
-        for (size_t i = 0; i < valid; i++)
-        {
-            ESP_LOGD(TAG, "sample[%u]=%.2f cm", i, samples[i]);
-        }
-#endif
+        // #if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
+        //         for (size_t i = 0; i < valid; i++)
+        //         {
+        //             ESP_LOGD(TAG, "sample[%u]=%.2f cm", i, samples[i]);
+        //         }
+        // #endif
     }
 
     float median  = reduce_median(samples, valid);

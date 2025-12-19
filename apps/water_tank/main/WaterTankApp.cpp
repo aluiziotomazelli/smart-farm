@@ -17,11 +17,16 @@ const char *TAG = "WaterTankApp";
 RTC_DATA_ATTR uint16_t rtc_last_level_permille = 0;
 RTC_DATA_ATTR bool     rtc_has_level           = false;
 
+WaterTankApp::WaterTankApp()
+    : sensor_power_({.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
+{
+}
+
 static const UltrasonicSensor::UltrasonicConfig cfg = {
-    .ping_count       = 7,
+    .ping_count       = 9,
     .ping_interval_ms = 70,
     .ping_duration_us = 20,
-    .timeout_us       = 25000,
+    .timeout_us       = 35000,
     .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
     .blind_ping       = true};
 
@@ -123,6 +128,8 @@ void WaterTankApp::init()
 {
     ESP_LOGI(TAG, "Initializing WaterTankApp");
 
+    ESP_ERROR_CHECK(sensor_power_.init());
+
     NvsCore::init();
     NvsCore::load();
 
@@ -190,12 +197,15 @@ void WaterTankApp::run()
     {
         float distance = 0.0f;
 
+        sensor_power_.on();
+        vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
         if (!sensor.readDistanceCm(distance))
         {
             ESP_LOGW(TAG, "sensor error");
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }
+        sensor_power_.off();
 
         uint16_t  level      = distance_to_level_permille(distance);
         FillState fill_state = infer_fill_state(level);
