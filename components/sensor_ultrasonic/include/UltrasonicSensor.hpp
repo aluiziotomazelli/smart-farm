@@ -3,6 +3,22 @@
 #include <cstddef>
 #include <cstdint>
 
+static constexpr uint32_t ULTRASONIC_WARMUP_MS = 600;
+static constexpr float    US_VALID_PING_RATIO  = 0.7f;
+
+enum class UsQuality
+{
+    OK,
+    WEAK,
+    INVALID
+};
+
+enum class UsFailure
+{
+    NONE,    // não houve falha
+    TIMEOUT, // nenhum eco
+    HW_ERROR // erro elétrico / driver
+};
 class UltrasonicSensor
 {
 public:
@@ -29,10 +45,12 @@ public:
     virtual ~UltrasonicSensor() = default;
 
     virtual bool init() = 0;
-    bool         readDistanceCm(float &out_cm);
+    bool         readDistanceCm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
 protected:
-    virtual float readRawDistanceCm() = 0;
+    virtual bool readRawDistanceCm(float &out_cm, UsFailure &out_failure) = 0;
+
+    UsFailure last_failure = UsFailure::NONE;
 
 private:
     float reduce_median(float *v, size_t n);

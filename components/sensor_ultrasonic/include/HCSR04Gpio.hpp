@@ -11,7 +11,7 @@ public:
     bool init() override;
 
 protected:
-    float readRawDistanceCm() override;
+    bool readRawDistanceCm(float &out_cm, UsFailure &out_failure) override;
 
 private:
     gpio_num_t echo_pin;
