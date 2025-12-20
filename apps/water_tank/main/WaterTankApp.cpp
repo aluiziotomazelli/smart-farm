@@ -15,9 +15,9 @@ static const char *TAG = "WaterTankApp";
 
 // --- Persistence in RTC Memory ---
 // These variables survive Deep Sleep but are lost on Power-On Reset.
-// Used to calculate filling/draining trends between wakeups.
-RTC_DATA_ATTR uint16_t rtc_last_level_permille = 0;
-RTC_DATA_ATTR bool     rtc_has_level           = false;
+RTC_DATA_ATTR CoreStorage rtc_core_data;           // Caching for Core data to reduce NVS writes
+RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0; // Used for filling/draining trend
+RTC_DATA_ATTR bool        rtc_has_level           = false;
 
 WaterTankApp::WaterTankApp()
     : _sensor_power({.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
@@ -219,11 +219,12 @@ void WaterTankApp::init()
         break;
     }
 
-    // === Persist Initial State ===
-    // Commits the updated boot count and wake source to NVS
-    _storage.commit();
+    // === Cache Core Data to RTC ===
+    // To avoid writing to NVS twice per cycle, we cache the updated core data
+    // in RTC memory and commit it once at the end of the `run` cycle.
+    rtc_core_data = core;
 
-    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", core.boot_count, core.crash_count);
+    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count, rtc_core_data.crash_count);
 
     // Brief settling delay
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -293,7 +294,9 @@ void WaterTankApp::run()
         app.sample_uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
 
         // === 6. Persist Data to NVS ===
-        // _storage.commit();
+        // Restore core data from RTC memory before the final commit
+        core = rtc_core_data;
+        _storage.commit();
 
         // === 7. Summary Log ===
         ESP_LOGI(
