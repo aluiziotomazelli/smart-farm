@@ -6,6 +6,7 @@
 class WaterTankNvs : public NvsCore
 {
 public:
+    WaterTankNvs();
     WaterTankStats stats; // Memória em RAM para os dados do tanque
 
     // Métodos específicos de negócio (opcional, mas recomendado para encapsulamento)

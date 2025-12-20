@@ -1,8 +1,13 @@
 #include "WaterTankNvs.hpp"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include <cstring>
 
 static const char *TAG = "WaterTankNvs";
+
+WaterTankNvs::WaterTankNvs() : NvsCore("water_tank")
+{
+}
 
 /**
  * Updates the current tank status and accumulates sensor performance statistics.
@@ -59,8 +64,58 @@ void WaterTankNvs::updateStatus(uint16_t  permille,
  */
 esp_err_t WaterTankNvs::loadAppData()
 {
-    // Loads the blob stored under the key "tank_stats" into the stats struct
-    return loadStruct("tank_stats", stats);
+    esp_err_t err;
+
+    err = nvs_get_u16(_handle, "level_permille", &stats.level_permille);
+    if (err != ESP_OK) return err;
+
+    int8_t fill_state_i8;
+    err = nvs_get_i8(_handle, "fill_state", &fill_state_i8);
+    if (err != ESP_OK) return err;
+    stats.fill_state = static_cast<FillState>(fill_state_i8);
+
+    int8_t quality_i8;
+    err = nvs_get_i8(_handle, "quality", &quality_i8);
+    if (err != ESP_OK) return err;
+    stats.quality = static_cast<UsQuality>(quality_i8);
+
+    int8_t failure_i8;
+    err = nvs_get_i8(_handle, "failure", &failure_i8);
+    if (err != ESP_OK) return err;
+    stats.failure = static_cast<UsFailure>(failure_i8);
+
+    uint32_t distance_cm_u32;
+    err = nvs_get_u32(_handle, "last_dist_cm", &distance_cm_u32);
+    if (err != ESP_OK) return err;
+    memcpy(&stats.last_distance_cm, &distance_cm_u32, sizeof(stats.last_distance_cm));
+
+    err = nvs_get_u32(_handle, "sample_uptime", &stats.sample_uptime_s);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "measure_count", &stats.measure_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "ok_count", &stats.ok_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "weak_count", &stats.weak_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "invalid_count", &stats.invalid_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "timeout_count", &stats.timeout_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_get_u32(_handle, "hw_error_count", &stats.hw_error_count);
+    if (err != ESP_OK) return err;
+
+    uint8_t gpio_wakeup;
+    err = nvs_get_u8(_handle, "gpio_wakeup", &gpio_wakeup);
+    if (err != ESP_OK) return err;
+    stats.gpio_wakeup_enabled = (gpio_wakeup == 1);
+
+    return ESP_OK; // Return OK if all reads succeeded
 }
 
 /**
@@ -68,8 +123,54 @@ esp_err_t WaterTankNvs::loadAppData()
  */
 esp_err_t WaterTankNvs::saveAppData()
 {
-    // Saves the stats struct as a blob under the key "tank_stats"
-    return saveStruct("tank_stats", stats);
+    esp_err_t err;
+
+    // Métodos `nvs_set_*` não precisam de handle, a classe base gerencia.
+    // O handle é passado internamente pelo `_handle` da classe NvsCore.
+    // Agrupando as chamadas para melhor performance (menos commits)
+    err = nvs_set_u16(_handle, "level_permille", stats.level_permille);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_i8(_handle, "fill_state", static_cast<int8_t>(stats.fill_state));
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_i8(_handle, "quality", static_cast<int8_t>(stats.quality));
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_i8(_handle, "failure", static_cast<int8_t>(stats.failure));
+    if (err != ESP_OK) return err;
+
+    // Para float, precisamos converter para u32
+    uint32_t distance_cm_u32;
+    memcpy(&distance_cm_u32, &stats.last_distance_cm, sizeof(distance_cm_u32));
+    err = nvs_set_u32(_handle, "last_dist_cm", distance_cm_u32);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "sample_uptime", stats.sample_uptime_s);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "measure_count", stats.measure_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "ok_count", stats.ok_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "weak_count", stats.weak_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "invalid_count", stats.invalid_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "timeout_count", stats.timeout_count);
+    if (err != ESP_OK) return err;
+
+    err = nvs_set_u32(_handle, "hw_error_count", stats.hw_error_count);
+    if (err != ESP_OK) return err;
+
+    uint8_t gpio_wakeup = stats.gpio_wakeup_enabled ? 1 : 0;
+    err = nvs_set_u8(_handle, "gpio_wakeup", gpio_wakeup);
+
+    return err;
 }
 
 /**

@@ -156,6 +156,7 @@ void WaterTankApp::init()
     // nvs_flash_init();         // Re-initialize after deep erase
 
     ESP_LOGI(TAG, "Initializing WaterTankApp");
+    _storage.init_partition();
 
     // === Hardware Initialization ===
     ESP_ERROR_CHECK(_sensor_power.init());
@@ -163,8 +164,12 @@ void WaterTankApp::init()
     floatswitch.init();
 
     // === NVS Storage Initialization ===
-    _storage.init_partition();
-    _storage.load();
+    // This now handles first boot or corrupted data automatically
+    if (_storage.load() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "NVS load failed, performing factory reset");
+        _storage.factory_reset();
+    }
 
     // Direct access to core and app data references
     auto &core = _storage.getCoreData();

@@ -1,10 +1,10 @@
 #include "NvsCore.hpp"
 #include <cstring>
 
-static const char *TAG           = "NvsCore";
-static const char *NVS_NAMESPACE = "storage"; // Namespace único para tudo
+static const char *TAG = "NvsCore";
+// static const char *NVS_NAMESPACE = "storage"; // Namespace único para tudo (REMOVED)
 
-NvsCore::NvsCore()
+NvsCore::NvsCore(const char *ns) : _namespace(ns)
 {
     // Garante que core inicie zerado
     memset(&core_, 0, sizeof(CoreStorage));
@@ -26,7 +26,7 @@ esp_err_t NvsCore::open_nvs(nvs_open_mode_t mode)
 {
     if (_isOpen)
         return ESP_OK; // Já aberto
-    esp_err_t err = nvs_open(NVS_NAMESPACE, mode, &_handle);
+    esp_err_t err = nvs_open(_namespace, mode, &_handle);
     if (err == ESP_OK)
         _isOpen = true;
     return err;
@@ -46,19 +46,17 @@ esp_err_t NvsCore::load()
     esp_err_t err = open_nvs(NVS_READONLY);
     if (err != ESP_OK)
     {
-        // Se falhar ao abrir (ex: 1ª vez), aplica defaults em tudo
-        ESP_LOGW(TAG, "Failed to open NVS, applying defaults");
-        apply_core_defaults();
-        setAppDefaults();
-        return init_partition(); // Retorna OK se partição estiver init
+        ESP_LOGE(TAG, "Failed to open NVS for reading: %s", esp_err_to_name(err));
+        return err;
     }
 
     // 1. Carrega Core Data
     err = loadStruct("core_data", core_);
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "Core data missing/invalid, resetting core");
-        apply_core_defaults();
+        ESP_LOGW(TAG, "Core data not found or corrupt: %s", esp_err_to_name(err));
+        close_nvs();
+        return err;
     }
 
     // Validação de Schema do Core
@@ -73,12 +71,12 @@ esp_err_t NvsCore::load()
     err = loadAppData();
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "App data missing/invalid, resetting app");
-        setAppDefaults();
+        ESP_LOGW(TAG, "App data not found or corrupt: %s", esp_err_to_name(err));
+        // Não reseta aqui, apenas propaga o erro
     }
 
     close_nvs();
-    return ESP_OK;
+    return err; // Retorna o status final (pode ser erro do app)
 }
 
 esp_err_t NvsCore::commit()
@@ -118,7 +116,24 @@ void NvsCore::apply_core_defaults()
 
 void NvsCore::factory_reset()
 {
+    erase_namespace(); // Apaga tudo primeiro
     apply_core_defaults();
     setAppDefaults();
-    commit();
+    commit(); // Salva os valores padrão
+}
+
+esp_err_t NvsCore::erase_namespace()
+{
+    esp_err_t err = open_nvs(NVS_READWRITE);
+    if (err != ESP_OK)
+        return err;
+
+    err = nvs_erase_all(_handle);
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(_handle);
+    }
+
+    close_nvs();
+    return err;
 }

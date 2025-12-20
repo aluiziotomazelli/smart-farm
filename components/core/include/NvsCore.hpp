@@ -14,6 +14,7 @@ protected:
     // Handle do NVS (mantido aberto durante load/commit para eficiência)
     nvs_handle_t _handle = 0;
     bool         _isOpen = false;
+    const char  *_namespace;
 
     // Helpers para o filho usar
     template <typename T> esp_err_t saveStruct(const char *key, const T &data)
@@ -46,7 +47,7 @@ private:
     void      close_nvs();
 
 public:
-    NvsCore();
+    NvsCore(const char *ns);
     virtual ~NvsCore() = default;
 
     // Inicializa partição
@@ -61,6 +62,9 @@ public:
     // Acesso aos dados comuns
     CoreStorage &getCoreData() { return core_; }
 
-    // Factory reset completo
+    // Factory reset completo (apaga apenas o namespace)
     void factory_reset();
+
+    // Apaga tudo no namespace
+    esp_err_t erase_namespace();
 };
