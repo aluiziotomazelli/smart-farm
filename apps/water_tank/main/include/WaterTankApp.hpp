@@ -1,18 +1,22 @@
 #pragma once
 
 #include "PowerControl.hpp"
+#include "WaterTankNvs.hpp"
 #include "WaterTankTypes.hpp"
 
 class WaterTankApp
 {
 public:
     WaterTankApp();
+
     void init();
     void run();
 
 private:
     static FillState infer_fill_state(uint16_t current_level);
     static void      configure_sleep_policy(bool boia, uint64_t timer_us);
-    static uint64_t  decide_timer_us(FillState state);
-    PowerControl     sensor_power_;
+
+    static uint64_t decide_timer_us(FillState state);
+    PowerControl    _sensor_power;
+    WaterTankNvs    _storage;
 };

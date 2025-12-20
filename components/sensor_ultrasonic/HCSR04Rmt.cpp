@@ -43,19 +43,20 @@ bool HCSR04Rmt::init()
     return true;
 }
 
-float HCSR04Rmt::readRawDistanceCm()
+bool HCSR04Rmt::readRawDistanceCm(float &out_cm, UsFailure &out_failure)
 {
-    rmt_receive_config_t rx_cfg;
-    memset(&rx_cfg, 0, sizeof(rx_cfg));
-
-    rx_cfg.signal_range_min_ns = 1000;
-    rx_cfg.signal_range_max_ns = cfg.timeout_us * 1000u;
-    rx_cfg.flags.en_partial_rx = false;
+    rmt_receive_config_t rx_cfg = {};
+    rx_cfg.signal_range_min_ns  = 1000;
+    rx_cfg.signal_range_max_ns  = cfg.timeout_us * 1000u;
+    rx_cfg.flags.en_partial_rx  = false;
 
     send_ping();
 
     if (rmt_receive(rx_channel, rx_symbols, sizeof(rx_symbols), &rx_cfg) != ESP_OK)
-        return -1;
+    {
+        out_failure = UsFailure::HW_ERROR;
+        return false;
+    }
 
     for (size_t i = 0; i < 64; i++)
     {
@@ -65,11 +66,20 @@ float HCSR04Rmt::readRawDistanceCm()
             break;
 
         if (s.level0 == 1 && s.duration0 > 0)
-            return s.duration0 * SOUND_SPEED_CM_PER_US / 2.0f;
+        {
+            out_cm      = s.duration0 * SOUND_SPEED_CM_PER_US / 2.0f;
+            out_failure = UsFailure::NONE;
+            return true;
+        }
 
         if (s.level1 == 1 && s.duration1 > 0)
-            return s.duration1 * SOUND_SPEED_CM_PER_US / 2.0f;
+        {
+            out_cm      = s.duration1 * SOUND_SPEED_CM_PER_US / 2.0f;
+            out_failure = UsFailure::NONE;
+            return true;
+        }
     }
 
-    return -1;
+    out_failure = UsFailure::TIMEOUT;
+    return false;
 }

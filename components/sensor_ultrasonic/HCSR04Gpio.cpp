@@ -47,15 +47,25 @@ bool HCSR04Gpio::init()
     return true;
 }
 
-float HCSR04Gpio::readRawDistanceCm()
+bool HCSR04Gpio::readRawDistanceCm(float &out_cm, UsFailure &out_failure)
 {
     send_ping();
+
+    // Echo não deveria começar alto
+    if (gpio_get_level(echo_pin) == 1)
+    {
+        out_failure = UsFailure::HW_ERROR;
+        return false;
+    }
 
     int64_t start = esp_timer_get_time();
     while (gpio_get_level(echo_pin) == 0)
     {
         if (esp_timer_get_time() - start > cfg.timeout_us)
-            return -1;
+        {
+            out_failure = UsFailure::TIMEOUT;
+            return false;
+        }
         esp_rom_delay_us(1);
     }
 
@@ -63,10 +73,15 @@ float HCSR04Gpio::readRawDistanceCm()
     while (gpio_get_level(echo_pin) == 1)
     {
         if (esp_timer_get_time() - echo_start > cfg.timeout_us)
-            return -1;
+        {
+            out_failure = UsFailure::TIMEOUT;
+            return false;
+        }
         esp_rom_delay_us(1);
     }
 
     int64_t pulse = esp_timer_get_time() - echo_start;
-    return pulse * SOUND_SPEED_CM_PER_US / 2.0f;
+    out_cm        = pulse * SOUND_SPEED_CM_PER_US / 2.0f;
+    out_failure   = UsFailure::NONE;
+    return true;
 }

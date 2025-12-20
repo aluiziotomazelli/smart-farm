@@ -1,22 +1,16 @@
 #include "NvsCore.hpp"
+#include <cstring>
 
-#define LOG_LOCAL_LEVEL ESP_LOG_INFO
-#include "esp_log.h"
-#include "nvs.h"
-#include "nvs_flash.h"
-#include <string.h>
+static const char *TAG           = "NvsCore";
+static const char *NVS_NAMESPACE = "storage"; // Namespace único para tudo
 
-static const char *TAG = "NvsCore";
+NvsCore::NvsCore()
+{
+    // Garante que core inicie zerado
+    memset(&core_, 0, sizeof(CoreStorage));
+}
 
-static constexpr const char *NVS_NAMESPACE = "core";
-static constexpr const char *NVS_KEY       = "state";
-
-CoreStorage NvsCore::core_ = {};
-
-/* =========================
- *  Init
- * ========================= */
-esp_err_t NvsCore::init()
+esp_err_t NvsCore::init_partition()
 {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -25,135 +19,106 @@ esp_err_t NvsCore::init()
         nvs_flash_erase();
         err = nvs_flash_init();
     }
-
-    if (err != ESP_OK)
-        ESP_LOGE(TAG, "nvs_flash_init failed: %s", esp_err_to_name(err));
-
     return err;
 }
 
-/* =========================
- *  Load
- * ========================= */
+esp_err_t NvsCore::open_nvs(nvs_open_mode_t mode)
+{
+    if (_isOpen)
+        return ESP_OK; // Já aberto
+    esp_err_t err = nvs_open(NVS_NAMESPACE, mode, &_handle);
+    if (err == ESP_OK)
+        _isOpen = true;
+    return err;
+}
+
+void NvsCore::close_nvs()
+{
+    if (_isOpen)
+    {
+        nvs_close(_handle);
+        _isOpen = false;
+    }
+}
+
 esp_err_t NvsCore::load()
 {
-    nvs_handle_t handle;
-    esp_err_t    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    esp_err_t err = open_nvs(NVS_READONLY);
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "No NVS namespace, applying defaults");
-        apply_defaults();
-        commit();
-        return ESP_OK;
+        // Se falhar ao abrir (ex: 1ª vez), aplica defaults em tudo
+        ESP_LOGW(TAG, "Failed to open NVS, applying defaults");
+        apply_core_defaults();
+        setAppDefaults();
+        return init_partition(); // Retorna OK se partição estiver init
     }
 
-    size_t size = sizeof(CoreStorage);
-    err         = nvs_get_blob(handle, NVS_KEY, &core_, &size);
-    nvs_close(handle);
-
-    if (err != ESP_OK || size != sizeof(CoreStorage))
+    // 1. Carrega Core Data
+    err = loadStruct("core_data", core_);
+    if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "Invalid or missing core blob, resetting");
-        apply_defaults();
-        commit();
-        return ESP_OK;
+        ESP_LOGW(TAG, "Core data missing/invalid, resetting core");
+        apply_core_defaults();
     }
 
+    // Validação de Schema do Core
     if (core_.schema_version != CORE_SCHEMA_VERSION)
     {
-        ESP_LOGW(TAG, "Schema mismatch: %lu -> %lu", core_.schema_version, CORE_SCHEMA_VERSION);
-
-        err = migrate(core_.schema_version);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Migration failed, factory reset");
-            factory_reset();
-        }
-        else
-        {
-            commit();
-        }
+        ESP_LOGW(TAG, "Schema mismatch. Migrating...");
+        // logica de migração ou reset...
+        core_.schema_version = CORE_SCHEMA_VERSION;
     }
 
+    // 2. Chama o filho para carregar seus dados
+    err = loadAppData();
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "App data missing/invalid, resetting app");
+        setAppDefaults();
+    }
+
+    close_nvs();
     return ESP_OK;
 }
 
-/* =========================
- *  Commit
- * ========================= */
 esp_err_t NvsCore::commit()
 {
-    nvs_handle_t handle;
-    esp_err_t    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err = open_nvs(NVS_READWRITE);
     if (err != ESP_OK)
         return err;
 
-    err = nvs_set_blob(handle, NVS_KEY, &core_, sizeof(CoreStorage));
-    if (err == ESP_OK)
-        err = nvs_commit(handle);
+    // 1. Salva Core
+    err = saveStruct("core_data", core_);
+    if (err != ESP_OK)
+    {
+        close_nvs();
+        return err;
+    }
 
-    nvs_close(handle);
+    // 2. Chama filho para salvar
+    err = saveAppData();
+
+    // 3. Commit efetivo na flash
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(_handle);
+    }
+
+    close_nvs();
     return err;
 }
 
-/* =========================
- *  Access
- * ========================= */
-CoreStorage &NvsCore::data() { return core_; }
+void NvsCore::apply_core_defaults()
+{
+    memset(&core_, 0, sizeof(CoreStorage));
+    core_.schema_version = CORE_SCHEMA_VERSION;
+    core_.node_type      = NodeType::UNKNOWN; // Será sobrescrito pelo App
+    // ... resto dos defaults do core ...
+}
 
-/* =========================
- *  Factory reset
- * ========================= */
 void NvsCore::factory_reset()
 {
-    ESP_LOGW(TAG, "Factory reset core");
-    memset(&core_, 0, sizeof(CoreStorage));
-    apply_defaults();
+    apply_core_defaults();
+    setAppDefaults();
     commit();
-}
-
-/* =========================
- *  Defaults
- * ========================= */
-void NvsCore::apply_defaults()
-{
-    memset(&core_, 0, sizeof(CoreStorage));
-
-    core_.schema_version = CORE_SCHEMA_VERSION;
-
-    core_.identity.node_id     = 0;
-    core_.identity.type        = NodeType::UNKNOWN;
-    core_.identity.hw_revision = 0;
-
-    core_.fw_version = {0, 0, 0};
-
-    core_.ota.state        = OtaState::IDLE;
-    core_.ota.fail_count   = 0;
-    core_.ota.last_boot_ok = true;
-
-    core_.lifecycle.mode        = LifecycleMode::NORMAL;
-    core_.lifecycle.boot_count  = 0;
-    core_.lifecycle.crash_count = 0;
-
-    core_.time.has_valid_time   = false;
-    core_.time.unix_time        = 0;
-    core_.time.last_sync_uptime = 0;
-
-    core_.power.profile          = PowerProfile::ALWAYS_ON;
-    core_.power.sleep_interval_s = 0;
-
-    core_.wake.last_wake      = WakeSource::NONE;
-    core_.wake.next_wake_hint = WakeHint::NONE;
-}
-
-/* =========================
- *  Migration
- * ========================= */
-esp_err_t NvsCore::migrate(uint32_t from_version)
-{
-    switch (from_version)
-    {
-    default:
-        return ESP_ERR_NOT_SUPPORTED;
-    }
 }
