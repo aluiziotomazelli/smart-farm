@@ -39,7 +39,8 @@ struct CommMessage
     uint16_t             type = 0;
     std::vector<uint8_t> payload;
     uint32_t             flags = 0;
-    CommMAC              peer_addr{};
+    uint32_t             dest_node_id = 0; // 0 for broadcast
+    uint32_t             src_node_id = 0;
 };
 
 } // namespace comm

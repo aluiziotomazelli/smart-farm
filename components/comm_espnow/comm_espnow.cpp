@@ -141,6 +141,13 @@ bool CommEspNow::send(const CommMessage &msg)
         return false;
     }
 
+    auto it = m_node_id_to_mac.find(msg.dest_node_id);
+    if (it == m_node_id_to_mac.end()) {
+        m_last_error = CommError::SEND_FAILED;
+        return false;
+    }
+    const CommMAC& mac = it->second;
+
     const size_t msg_len = ESP_NOW_MSG_HDR_LEN + msg.payload.size();
     if (msg_len > RX_MAX_PAYLOAD) {
         m_last_error = CommError::SEND_FAILED;
@@ -153,7 +160,7 @@ bool CommEspNow::send(const CommMessage &msg)
     esp_msg->type = msg.type;
     std::memcpy(esp_msg->payload, msg.payload.data(), msg.payload.size());
 
-    esp_err_t err = esp_now_send(msg.peer_addr.data(), buffer.data(), buffer.size());
+    esp_err_t err = esp_now_send(mac.data(), buffer.data(), buffer.size());
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "esp_now_send failed: %s", esp_err_to_name(err));
@@ -180,17 +187,23 @@ bool CommEspNow::receive(CommMessage &msg)
     }
 
     msg.type    = item.type;
-    msg.peer_addr = item.peer_addr;
+    msg.src_node_id = item.src_node_id;
     msg.payload.assign(item.payload, item.payload + item.length);
     msg.flags   = 0;
 
     return true;
 }
 
-bool CommEspNow::add_peer(const CommMAC &addr)
+bool CommEspNow::add_peer(uint32_t node_id)
 {
+    auto it = m_node_id_to_mac.find(node_id);
+    if (it == m_node_id_to_mac.end()) {
+        return false;
+    }
+    const CommMAC& mac = it->second;
+
     esp_now_peer_info_t peer{};
-    std::memcpy(peer.peer_addr, addr.data(), addr.size());
+    std::memcpy(peer.peer_addr, mac.data(), mac.size());
     peer.encrypt = false; // TODO: Add support for encryption
 
     esp_err_t err = esp_now_add_peer(&peer);
@@ -201,9 +214,15 @@ bool CommEspNow::add_peer(const CommMAC &addr)
     return true;
 }
 
-bool CommEspNow::remove_peer(const CommMAC &addr)
+bool CommEspNow::remove_peer(uint32_t node_id)
 {
-    esp_err_t err = esp_now_del_peer(addr.data());
+    auto it = m_node_id_to_mac.find(node_id);
+    if (it == m_node_id_to_mac.end()) {
+        return false;
+    }
+    const CommMAC& mac = it->second;
+
+    esp_err_t err = esp_now_del_peer(mac.data());
     if (err != ESP_OK && err != ESP_ERR_ESPNOW_NOT_EXIST) {
         ESP_LOGW(TAG, "esp_now_del_peer failed: %s", esp_err_to_name(err));
         return false;
@@ -211,11 +230,23 @@ bool CommEspNow::remove_peer(const CommMAC &addr)
     return true;
 }
 
-bool CommEspNow::peer_exists(const CommMAC &addr) const
+bool CommEspNow::peer_exists(uint32_t node_id) const
 {
-    return esp_now_is_peer_exist(addr.data());
+    auto it = m_node_id_to_mac.find(node_id);
+    if (it == m_node_id_to_mac.end()) {
+        return false;
+    }
+    const CommMAC& mac = it->second;
+
+    return esp_now_is_peer_exist(mac.data());
 }
 
+bool CommEspNow::register_node(uint32_t node_id, const CommMAC &mac)
+{
+    m_node_id_to_mac[node_id] = mac;
+    m_mac_to_node_id[mac] = node_id;
+    return true;
+}
 
 CommError CommEspNow::last_error() const
 {
@@ -258,6 +289,13 @@ bool CommEspNow::enqueue_rx(const CommMAC &addr, const uint8_t *data, size_t len
 {
     if (!m_rx_queue) return false;
 
+    auto it = m_mac_to_node_id.find(addr);
+    if (it == m_mac_to_node_id.end()) {
+        m_stats.rx_drop++;
+        return false;
+    }
+    uint32_t src_node_id = it->second;
+
     if (len < ESP_NOW_MSG_HDR_LEN || len > RX_MAX_PAYLOAD + ESP_NOW_MSG_HDR_LEN) {
         m_stats.rx_drop++;
         return false;
@@ -268,7 +306,7 @@ bool CommEspNow::enqueue_rx(const CommMAC &addr, const uint8_t *data, size_t len
 
     RxItem item{};
     item.type   = esp_msg->type;
-    item.peer_addr = addr;
+    item.src_node_id = src_node_id;
     item.length = payload_len;
     std::memcpy(item.payload, esp_msg->payload, payload_len);
 

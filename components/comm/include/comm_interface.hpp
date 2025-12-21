@@ -23,9 +23,9 @@ public:
     virtual bool receive(CommMessage &msg)    = 0;
 
     // peer management
-    virtual bool add_peer(const CommMAC &addr) = 0;
-    virtual bool remove_peer(const CommMAC &addr) = 0;
-    virtual bool peer_exists(const CommMAC &addr) const = 0;
+    virtual bool add_peer(uint32_t node_id) = 0;
+    virtual bool remove_peer(uint32_t node_id) = 0;
+    virtual bool peer_exists(uint32_t node_id) const = 0;
 
     // diagnostics
     virtual CommError last_error() const = 0;

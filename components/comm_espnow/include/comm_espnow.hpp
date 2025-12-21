@@ -5,6 +5,7 @@
 #include "esp_now.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include <map>
 
 namespace comm {
 
@@ -27,14 +28,18 @@ public:
     bool has_message() const override;
     bool receive(CommMessage &msg) override;
 
-    bool add_peer(const CommMAC &addr) override;
-    bool remove_peer(const CommMAC &addr) override;
-    bool peer_exists(const CommMAC &addr) const override;
+    bool add_peer(uint32_t node_id) override;
+    bool remove_peer(uint32_t node_id) override;
+    bool peer_exists(uint32_t node_id) const override;
 
     CommError last_error() const override;
     CommStats stats() const override;
 
     void reset() override;
+
+    // CommEspNow specific methods
+    bool register_node(uint32_t node_id, const CommMAC& mac);
+
 
 private:
     // ESP-NOW callbacks
@@ -59,7 +64,7 @@ private:
 
     struct RxItem
     {
-        CommMAC              peer_addr;
+        uint32_t             src_node_id;
         uint16_t             type;
         size_t               length;
         uint8_t              payload[RX_MAX_PAYLOAD];
@@ -69,6 +74,9 @@ private:
     CommStatus    m_status;
     CommError     m_last_error;
     CommStats     m_stats;
+
+    std::map<uint32_t, CommMAC> m_node_id_to_mac;
+    std::map<CommMAC, uint32_t> m_mac_to_node_id;
 };
 
 } // namespace comm
