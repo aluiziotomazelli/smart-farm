@@ -12,13 +12,18 @@ static CommEspNow *s_instance = nullptr;
 
 CommEspNow::CommEspNow()
 {
+    if (s_instance) {
+        ESP_LOGE(TAG, "CommEspNow already instantiated. This is a singleton-like class.");
+    }
     m_status     = CommStatus::UNINITIALIZED;
     m_last_error = CommError::NONE;
+    s_instance   = this;
 }
 
 CommEspNow::~CommEspNow()
 {
     stop();
+    s_instance = nullptr;
 }
 
 bool CommEspNow::init()
@@ -91,6 +96,10 @@ void CommEspNow::stop()
     }
 
     esp_now_deinit();
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    esp_event_loop_delete_default();
+    esp_netif_deinit();
     m_status = CommStatus::UNINITIALIZED;
 }
 
