@@ -27,7 +27,7 @@ enum class CodecResult : uint8_t
 /**
  * Encode a protocol Frame into a raw byte buffer.
  *
- * @param frame        Logical frame (header + payload pointer)
+ * @param frame        Logical frame (header + payload vector)
  * @param out_buffer   Destination buffer
  * @param out_len      Size of destination buffer
  * @param written_len  Number of bytes written
@@ -47,11 +47,11 @@ CodecResult encode_frame(const Frame &frame,
 /**
  * Decode raw bytes into a protocol Frame.
  *
- * Payload pointer will reference memory inside input buffer.
+ * The payload is copied into the output frame's vector.
  *
  * @param buffer     Raw input buffer
  * @param buffer_len Length of input buffer
- * @param out_frame  Decoded frame (non-owning payload)
+ * @param out_frame  Decoded frame (owning its payload)
  *
  * @return CodecResult
  */

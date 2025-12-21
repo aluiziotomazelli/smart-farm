@@ -4,26 +4,26 @@
 
 namespace protocol {
 
-bool validate_frame(const WireHeader &header, size_t payload_len)
+bool validate_frame(const Frame &frame)
 {
-    if (header.version != PROTOCOL_VERSION_WIRE)
+    if (frame.header.version != PROTOCOL_VERSION_WIRE)
         return false;
 
-    if (payload_len > MAX_PAYLOAD_SIZE)
+    if (frame.payload.size() > MAX_PAYLOAD_SIZE)
         return false;
 
-    if (header.type == MessageType::INVALID)
+    if (frame.header.type == MessageType::INVALID)
         return false;
 
     return true;
 }
 
-size_t frame_size(size_t payload_len)
+size_t frame_size(const Frame &frame)
 {
-    if (payload_len > MAX_PAYLOAD_SIZE)
+    if (frame.payload.size() > MAX_PAYLOAD_SIZE)
         return 0;
 
-    return sizeof(WireHeader) + payload_len;
+    return sizeof(WireHeader) + frame.payload.size();
 }
 
 } // namespace protocol

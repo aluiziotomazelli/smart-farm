@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace comm {
 
@@ -33,10 +34,9 @@ struct CommStats
 
 struct CommMessage
 {
-    uint16_t    type    = 0;
-    const void *payload = nullptr;
-    size_t      length  = 0;
-    uint32_t    flags   = 0;
+    uint16_t               type    = 0;
+    std::vector<uint8_t> payload;
+    uint32_t               flags   = 0;
 };
 
 } // namespace comm

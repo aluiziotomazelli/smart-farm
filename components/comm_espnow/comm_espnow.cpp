@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "protocol_codec.hpp"
 
 static const char *TAG = "CommEspNow";
 
@@ -128,7 +129,7 @@ bool CommEspNow::send(const CommMessage &msg)
     }
 
     esp_err_t err = esp_now_send(nullptr, // broadcast
-                                 static_cast<const uint8_t *>(msg.payload), msg.length);
+                                 msg.payload.data(), msg.payload.size());
 
     if (err != ESP_OK) {
         m_last_error = CommError::SEND_FAILED;
@@ -155,10 +156,9 @@ bool CommEspNow::receive(CommMessage &msg)
         return false;
     }
 
-    msg.type    = item.type;
-    msg.payload = item.payload;
-    msg.length  = item.length;
-    msg.flags   = 0;
+    msg.type = item.type;
+    msg.payload.assign(item.payload, item.payload + item.length);
+    msg.flags = item.flags;
 
     m_stats.rx_ok++;
     return true;
@@ -192,15 +192,22 @@ bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len)
     if (!m_rx_queue)
         return false;
 
-    if (len > RX_MAX_PAYLOAD) {
+    protocol::Frame frame;
+    if (protocol::decode_frame(data, len, frame) != protocol::CodecResult::OK) {
+        m_stats.rx_drop++;
+        return false;
+    }
+
+    if (frame.payload.size() > RX_MAX_PAYLOAD) {
         m_stats.rx_drop++;
         return false;
     }
 
     RxItem item{};
-    item.type   = 0;
-    item.length = len;
-    memcpy(item.payload, data, len);
+    item.type   = static_cast<uint16_t>(frame.header.type);
+    item.flags  = frame.header.flags;
+    item.length = frame.payload.size();
+    memcpy(item.payload, frame.payload.data(), frame.payload.size());
 
     if (xQueueSend(m_rx_queue, &item, 0) != pdTRUE) {
         m_stats.rx_drop++;

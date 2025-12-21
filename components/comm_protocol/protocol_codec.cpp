@@ -20,10 +20,10 @@ CodecResult encode_frame(const Frame &frame,
     if (!is_header_valid(frame.header))
         return CodecResult::UNSUPPORTED_VERSION;
 
-    if (!is_payload_size_valid(frame.payload_len))
+    if (!is_payload_size_valid(frame.payload.size()))
         return CodecResult::INVALID_FRAME;
 
-    const size_t total_size = sizeof(WireHeader) + frame.payload_len;
+    const size_t total_size = sizeof(WireHeader) + frame.payload.size();
 
     if (out_len < total_size)
         return CodecResult::BUFFER_TOO_SMALL;
@@ -32,11 +32,10 @@ CodecResult encode_frame(const Frame &frame,
     std::memcpy(out_buffer, &frame.header, sizeof(WireHeader));
 
     // copy payload (if any)
-    if (frame.payload_len > 0) {
-        if (!frame.payload)
-            return CodecResult::INVALID_ARGUMENT;
-
-        std::memcpy(out_buffer + sizeof(WireHeader), frame.payload, frame.payload_len);
+    if (!frame.payload.empty()) {
+        std::memcpy(out_buffer + sizeof(WireHeader),
+                    frame.payload.data(),
+                    frame.payload.size());
     }
 
     written_len = total_size;
@@ -65,9 +64,9 @@ CodecResult decode_frame(const uint8_t *buffer, size_t buffer_len, Frame &out_fr
     if (!is_payload_size_valid(payload_len))
         return CodecResult::INVALID_FRAME;
 
-    out_frame.header      = *hdr;
-    out_frame.payload     = (payload_len > 0) ? buffer + sizeof(WireHeader) : nullptr;
-    out_frame.payload_len = payload_len;
+    out_frame.header = *hdr;
+    out_frame.payload.assign(buffer + sizeof(WireHeader),
+                             buffer + sizeof(WireHeader) + payload_len);
 
     return CodecResult::OK;
 }

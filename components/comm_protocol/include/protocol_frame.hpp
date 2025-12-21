@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "protocol_types.hpp"
 
@@ -39,10 +40,8 @@ struct WireHeader
  * ========================= */
 struct Frame
 {
-    WireHeader header;
-
-    const uint8_t *payload; // non-owning
-    size_t         payload_len;
+    WireHeader           header;
+    std::vector<uint8_t> payload;
 };
 
 /* =========================
@@ -58,7 +57,7 @@ inline bool is_payload_size_valid(size_t len)
     return len <= MAX_PAYLOAD_SIZE;
 }
 
-bool   validate_frame(const WireHeader &header, size_t payload_len);
-size_t frame_size(size_t payload_len);
+bool   validate_frame(const Frame &frame);
+size_t frame_size(const Frame &frame);
 
 } // namespace protocol

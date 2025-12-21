@@ -45,6 +45,7 @@ private:
     struct RxItem
     {
         uint16_t type;
+        uint32_t flags;
         size_t   length;
         uint8_t  payload[RX_MAX_PAYLOAD];
     };
