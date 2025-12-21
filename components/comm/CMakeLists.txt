@@ -1,0 +1,6 @@
+idf_component_register(
+    SRCS
+        comm_interface.cpp
+    INCLUDE_DIRS
+        include
+)

@@ -2,7 +2,7 @@
 
 #include "CoreTypes.hpp"
 #include "UltrasonicSensor.hpp"
-#include "WaterTankTypes.hpp"
+#include "water_tank_types.hpp"
 
 struct WaterTankStats
 {

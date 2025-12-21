@@ -2,8 +2,8 @@
 idf_component_register(
     SRCS
         "main.cpp"
-        "WaterTankApp.cpp"
-        "WaterTankNvs.cpp"
+        "water_tank_app.cpp"
+        "water_tank_nvs.cpp"
     INCLUDE_DIRS
         "."    
         "include"

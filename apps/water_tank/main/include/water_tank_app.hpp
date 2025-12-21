@@ -1,8 +1,8 @@
 #pragma once
 
 #include "PowerControl.hpp"
-#include "WaterTankNvs.hpp"
-#include "WaterTankTypes.hpp"
+#include "water_tank_nvs.hpp"
+#include "water_tank_types.hpp"
 
 class WaterTankApp
 {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "NvsCore.hpp"        // Sua classe base refatorada
-#include "WaterTankStats.hpp" // Onde está a struct WaterTankStats
+#include "NvsCore.hpp"          // Sua classe base refatorada
+#include "water_tank_stats.hpp" // Onde está a struct WaterTankStats
 
 class WaterTankNvs : public NvsCore
 {
