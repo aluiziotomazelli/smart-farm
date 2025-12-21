@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
+#include <vector>
+#include <array>
 
 namespace comm {
 
@@ -31,12 +32,14 @@ struct CommStats
     uint32_t rx_drop = 0;
 };
 
+using CommMAC = std::array<uint8_t, 6>;
+
 struct CommMessage
 {
-    uint16_t    type    = 0;
-    const void *payload = nullptr;
-    size_t      length  = 0;
-    uint32_t    flags   = 0;
+    uint16_t             type = 0;
+    std::vector<uint8_t> payload;
+    uint32_t             flags = 0;
+    CommMAC              peer_addr{};
 };
 
 } // namespace comm

@@ -22,6 +22,11 @@ public:
     virtual bool has_message() const          = 0;
     virtual bool receive(CommMessage &msg)    = 0;
 
+    // peer management
+    virtual bool add_peer(const CommMAC &addr) = 0;
+    virtual bool remove_peer(const CommMAC &addr) = 0;
+    virtual bool peer_exists(const CommMAC &addr) const = 0;
+
     // diagnostics
     virtual CommError last_error() const = 0;
     virtual CommStats stats() const      = 0;
