@@ -1,6 +1,7 @@
 #pragma once
 
 #include "comm_interface.hpp"
+#include "protocol_frame.hpp"
 
 #include "esp_now.h"
 #include "freertos/FreeRTOS.h"
@@ -22,9 +23,9 @@ public:
     bool       is_connected() const override;
     CommStatus status() const override;
 
-    bool send(const CommMessage &msg) override;
+    bool send(const protocol::Frame &frame);
     bool has_message() const override;
-    bool receive(CommMessage &msg) override;
+    bool receive(protocol::Frame &out);
 
     CommError last_error() const override;
     CommStats stats() const override;
@@ -44,9 +45,9 @@ private:
 
     struct RxItem
     {
-        uint16_t type;
-        size_t   length;
-        uint8_t  payload[RX_MAX_PAYLOAD];
+        protocol::WireHeader header;
+        uint16_t             payload_len;
+        uint8_t              payload[protocol::MAX_PAYLOAD_SIZE];
     };
 
     QueueHandle_t m_rx_queue = nullptr;

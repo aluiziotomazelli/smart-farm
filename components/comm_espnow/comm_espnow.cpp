@@ -1,8 +1,12 @@
 #include "comm_espnow.hpp"
+#include "protocol_codec.hpp"
 
 #include "esp_log.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+
+static constexpr uint8_t ESPNOW_BROADCAST_ADDR[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF,
+                                                                    0xFF, 0xFF, 0xFF};
 
 static const char *TAG = "CommEspNow";
 
@@ -119,24 +123,32 @@ CommStatus CommEspNow::status() const
     return m_status;
 }
 
-bool CommEspNow::send(const CommMessage &msg)
+bool CommEspNow::send(const protocol::Frame &frame)
 {
     if (m_status != CommStatus::RUNNING) {
         m_last_error = CommError::NOT_READY;
-        m_stats.tx_fail++;
         return false;
     }
 
-    esp_err_t err = esp_now_send(nullptr, // broadcast
-                                 static_cast<const uint8_t *>(msg.payload), msg.length);
+    uint8_t buffer[protocol::MAX_FRAME_SIZE];
+    size_t  written = 0;
+
+    auto res = protocol::encode_frame(frame, buffer, sizeof(buffer), written);
+
+    if (res != protocol::CodecResult::OK)
+        return false;
+
+    const uint8_t *peer = (frame.header.flags & protocol::FLAG_BROADCAST)
+                              ? ESPNOW_BROADCAST_ADDR
+                              : resolve_peer(frame.header.node_id); // stub por enquanto
+
+    esp_err_t err = esp_now_send(peer, buffer, written);
 
     if (err != ESP_OK) {
         m_last_error = CommError::SEND_FAILED;
-        m_stats.tx_fail++;
         return false;
     }
 
-    m_stats.tx_ok++;
     return true;
 }
 
@@ -145,33 +157,26 @@ bool CommEspNow::has_message() const
     return m_rx_queue && uxQueueMessagesWaiting(m_rx_queue) > 0;
 }
 
-bool CommEspNow::receive(CommMessage &msg)
+bool CommEspNow::receive(protocol::Frame &out)
 {
     if (!m_rx_queue)
         return false;
 
     RxItem item;
-    if (xQueueReceive(m_rx_queue, &item, 0) != pdTRUE) {
+
+    if (xQueueReceive(m_rx_queue, &item, 0) != pdTRUE)
         return false;
-    }
 
-    msg.type    = item.type;
-    msg.payload = item.payload;
-    msg.length  = item.length;
-    msg.flags   = 0;
+    out.header      = item.header;
+    out.payload     = item.payload;
+    out.payload_len = item.payload_len;
 
-    m_stats.rx_ok++;
     return true;
 }
 
 CommError CommEspNow::last_error() const
 {
     return m_last_error;
-}
-
-CommStats CommEspNow::stats() const
-{
-    return m_stats;
 }
 
 void CommEspNow::reset()
@@ -189,23 +194,21 @@ void CommEspNow::on_receive_cb(const esp_now_recv_info_t *, const uint8_t *data,
 
 bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len)
 {
-    if (!m_rx_queue)
-        return false;
-
-    if (len > RX_MAX_PAYLOAD) {
-        m_stats.rx_drop++;
+    if (!m_rx_queue || len > protocol::MAX_FRAME_SIZE) {
         return false;
     }
 
     RxItem item{};
-    item.type   = 0;
-    item.length = len;
-    memcpy(item.payload, data, len);
 
-    if (xQueueSend(m_rx_queue, &item, 0) != pdTRUE) {
-        m_stats.rx_drop++;
+    item.payload_len = len - sizeof(protocol::WireHeader);
+    if (item.payload_len > protocol::MAX_PAYLOAD_SIZE)
         return false;
+
+    memcpy(&item.header, data, sizeof(protocol::WireHeader));
+
+    if (item.payload_len > 0) {
+        memcpy(item.payload, data + sizeof(protocol::WireHeader), item.payload_len);
     }
 
-    return true;
+    return xQueueSend(m_rx_queue, &item, 0) == pdTRUE;
 }

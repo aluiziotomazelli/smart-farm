@@ -4,7 +4,8 @@ idf_component_register(
     INCLUDE_DIRS
         include
     REQUIRES
-        comm
         esp_wifi
+        comm
+        comm_protocol
         # esp_now
 )
