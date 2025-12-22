@@ -37,17 +37,16 @@ private:
                               const uint8_t             *data,
                               int                        len);
 
-    bool enqueue_rx(const uint8_t *data, size_t len);
+    bool enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac);
 
-private:
     static constexpr size_t RX_QUEUE_LEN   = 8;
     static constexpr size_t RX_MAX_PAYLOAD = 250;
-
     struct RxItem
     {
         protocol::WireHeader header;
         uint16_t             payload_len;
         uint8_t              payload[protocol::MAX_PAYLOAD_SIZE];
+        uint8_t              src_mac[6];
     };
 
     QueueHandle_t m_rx_queue = nullptr;

@@ -1,4 +1,5 @@
 #include "comm_espnow.hpp"
+#include "comm_peer_manager.h"
 #include "protocol_codec.hpp"
 
 #include "esp_log.h"
@@ -138,9 +139,18 @@ bool CommEspNow::send(const protocol::Frame &frame)
     if (res != protocol::CodecResult::OK)
         return false;
 
-    const uint8_t *peer = (frame.header.flags & protocol::FLAG_BROADCAST)
-                              ? ESPNOW_BROADCAST_ADDR
-                              : resolve_peer(frame.header.node_id); // stub por enquanto
+    uint8_t peer_mac[6];
+
+    const uint8_t *peer =
+        (frame.header.flags & protocol::FLAG_BROADCAST)
+            ? ESPNOW_BROADCAST_ADDR
+            : (comm_peer_manager_resolve_peer(frame.header.node_id, peer_mac) ? peer_mac
+                                                                              : nullptr);
+
+    if (!peer) {
+        m_last_error = CommError::SEND_FAILED;
+        return false;
+    }
 
     esp_err_t err = esp_now_send(peer, buffer, written);
 
@@ -171,6 +181,14 @@ bool CommEspNow::receive(protocol::Frame &out)
     out.payload     = item.payload;
     out.payload_len = item.payload_len;
 
+    comm_peer_manager_on_packet_rx(out.header.node_id, item.src_mac);
+
+    if (out.header.type == protocol::MessageType::DISCOVERY_REQUEST ||
+        out.header.type == protocol::MessageType::DISCOVERY_RESPONSE) {
+        // ambos indicam peer válido; response é apenas simétrico
+        comm_peer_manager_on_discovery_response(out.header.node_id, item.src_mac);
+    }
+
     return true;
 }
 
@@ -185,14 +203,16 @@ void CommEspNow::reset()
     init();
 }
 
-void CommEspNow::on_receive_cb(const esp_now_recv_info_t *, const uint8_t *data, int len)
+void CommEspNow::on_receive_cb(const esp_now_recv_info_t *info,
+                               const uint8_t             *data,
+                               int                        len)
 {
     if (!s_instance)
         return;
-    s_instance->enqueue_rx(data, len);
+    s_instance->enqueue_rx(data, len, info->src_addr);
 }
 
-bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len)
+bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac)
 {
     if (!m_rx_queue || len > protocol::MAX_FRAME_SIZE) {
         return false;
@@ -209,6 +229,7 @@ bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len)
     if (item.payload_len > 0) {
         memcpy(item.payload, data + sizeof(protocol::WireHeader), item.payload_len);
     }
+    memcpy(item.src_mac, src_mac, 6);
 
     return xQueueSend(m_rx_queue, &item, 0) == pdTRUE;
 }

@@ -7,5 +7,5 @@ idf_component_register(
         esp_wifi
         comm
         comm_protocol
-        # esp_now
+        comm_peer_manager
 )
