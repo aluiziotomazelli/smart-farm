@@ -1,5 +1,5 @@
-#include "UltrasonicSensor.hpp"
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+#include "ultrasonic_sensor.hpp"
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include <algorithm>
 #include <cmath>
@@ -26,16 +26,12 @@ float UltrasonicSensor::reduce_dominant_cluster(float *v, size_t n)
     float  cur     = v[0];
     size_t cur_cnt = 1;
 
-    for (size_t i = 1; i < n; i++)
-    {
-        if (fabsf(v[i] - cur) <= DELTA_CM)
-        {
+    for (size_t i = 1; i < n; i++) {
+        if (fabsf(v[i] - cur) <= DELTA_CM) {
             cur_cnt++;
         }
-        else
-        {
-            if (cur_cnt > best_cnt)
-            {
+        else {
+            if (cur_cnt > best_cnt) {
                 best     = cur;
                 best_cnt = cur_cnt;
             }
@@ -50,7 +46,9 @@ float UltrasonicSensor::reduce_dominant_cluster(float *v, size_t n)
     return best;
 }
 
-bool UltrasonicSensor::readDistanceCm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure)
+bool UltrasonicSensor::read_distance_cm(float     &out_cm,
+                                        UsQuality &out_quality,
+                                        UsFailure &out_failure)
 {
     out_quality = UsQuality::INVALID;
     out_failure = UsFailure::NONE;
@@ -58,29 +56,25 @@ bool UltrasonicSensor::readDistanceCm(float &out_cm, UsQuality &out_quality, UsF
     size_t timeout_cnt = 0;
     size_t hw_err_cnt  = 0;
 
-    if (cfg.blind_ping)
-    {
+    if (cfg.blind_ping) {
         float     d;
         UsFailure f;
-        readRawDistanceCm(d, f);
+        read_raw_distance_cm(d, f);
         vTaskDelay(pdMS_TO_TICKS(cfg.ping_interval_ms));
     }
 
     float  samples[cfg.ping_count];
     size_t valid = 0;
 
-    for (size_t i = 0; i < cfg.ping_count; i++)
-    {
+    for (size_t i = 0; i < cfg.ping_count; i++) {
         float     d;
         UsFailure f;
 
-        if (readRawDistanceCm(d, f))
-        {
+        if (read_raw_distance_cm(d, f)) {
             samples[valid++] = d;
             ESP_LOGD(TAG, "d=%.2f cm failure=%d", d, (int)f);
         }
-        else
-        {
+        else {
             if (f == UsFailure::TIMEOUT)
                 timeout_cnt++;
             else if (f == UsFailure::HW_ERROR)
@@ -94,8 +88,7 @@ bool UltrasonicSensor::readDistanceCm(float &out_cm, UsQuality &out_quality, UsF
 
     // --- pós-coleta ---
 
-    if (valid == 0)
-    {
+    if (valid == 0) {
         out_quality = UsQuality::INVALID;
         out_failure = (hw_err_cnt > 0) ? UsFailure::HW_ERROR : UsFailure::TIMEOUT;
         return false;
@@ -108,7 +101,8 @@ bool UltrasonicSensor::readDistanceCm(float &out_cm, UsQuality &out_quality, UsF
     float median  = reduce_median(samples, valid);
     float cluster = reduce_dominant_cluster(samples, valid);
 
-    ESP_LOGD(TAG, "valid=%u ratio=%.2f median=%.2f cluster=%.2f", valid, ratio, median, cluster);
+    ESP_LOGD(TAG, "valid=%u ratio=%.2f median=%.2f cluster=%.2f", valid, ratio, median,
+             cluster);
 
     out_cm = (cfg.filter == Filter::MEDIAN) ? median : cluster;
     return true;

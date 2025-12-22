@@ -45,17 +45,14 @@ public:
     virtual ~UltrasonicSensor() = default;
 
     virtual bool init() = 0;
-    bool         readDistanceCm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
+    bool read_distance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
 protected:
-    virtual bool readRawDistanceCm(float &out_cm, UsFailure &out_failure) = 0;
-
-    UsFailure last_failure = UsFailure::NONE;
+    virtual bool read_raw_distance_cm(float &out_cm, UsFailure &out_failure) = 0;
+    UsFailure    last_failure = UsFailure::NONE;
+    const UltrasonicConfig cfg;
 
 private:
     float reduce_median(float *v, size_t n);
     float reduce_dominant_cluster(float *v, size_t n);
-
-protected:
-    const UltrasonicConfig cfg;
 };

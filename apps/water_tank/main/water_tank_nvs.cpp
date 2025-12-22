@@ -1,5 +1,6 @@
 #include "water_tank_nvs.hpp"
 
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <cstring>
@@ -33,8 +34,7 @@ void WaterTankNvs::updateStatus(uint16_t  permille,
     stats.measure_count++;
 
     // Quality stats with explicit breaks to prevent fall-through
-    switch (quality)
-    {
+    switch (quality) {
     case UsQuality::OK:
         stats.ok_count++;
         break;
@@ -48,17 +48,15 @@ void WaterTankNvs::updateStatus(uint16_t  permille,
     }
 
     // Hardware failure tracking
-    if (failure == UsFailure::TIMEOUT)
-    {
+    if (failure == UsFailure::TIMEOUT) {
         stats.timeout_count++;
     }
-    else if (failure == UsFailure::HW_ERROR)
-    {
+    else if (failure == UsFailure::HW_ERROR) {
         stats.hw_error_count++;
     }
 
-    ESP_LOGD(TAG, "Stats updated: Total=%lu, OK=%lu, WEAK=%lu", stats.measure_count, stats.ok_count,
-             stats.weak_count);
+    ESP_LOGD(TAG, "Stats updated: Total=%lu, OK=%lu, WEAK=%lu", stats.measure_count,
+             stats.ok_count, stats.weak_count);
 }
 
 /**

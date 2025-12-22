@@ -6,4 +6,5 @@ idf_component_register(
     REQUIRES
         comm_protocol
         core
+        comm_espnow
 )

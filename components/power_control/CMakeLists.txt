@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS 
-        "PowerControl.cpp"
+        "power_control.cpp"
     INCLUDE_DIRS 
         "include"
     REQUIRES 

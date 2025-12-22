@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS
-        "FloatSwitch.cpp"
+        "float_switch.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES

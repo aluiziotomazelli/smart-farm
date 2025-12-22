@@ -1,9 +1,9 @@
 #include "water_tank_app.hpp"
-#include "FloatSwitch.hpp"
-#include "HCSR04Rmt.hpp"
+#include "float_switch.hpp"
 #include "nvs_core.hpp"
+#include "trig_echo_rmt.hpp"
 
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_sleep.h"
@@ -21,9 +21,9 @@ RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0; // Used for filling/drain
 RTC_DATA_ATTR bool        rtc_has_level           = false;
 
 WaterTankApp::WaterTankApp()
-    : _sensor_power(
-          {.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false}),
-      m_comm(comm::CommInterface::get_default_instance())
+    : sensor_power_(
+          {.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
+    , comm_(comm::CommInterface::get_default_instance())
 {
 }
 
@@ -38,7 +38,7 @@ static const UltrasonicSensor::UltrasonicConfig cfg = {
     .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
     .blind_ping       = true};
 
-static HCSR04Rmt sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
+static TrigerEchoRmt sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
 
 // Float Switch (Mechanical Overflow/Top Level) Configuration
 static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4,
@@ -152,22 +152,22 @@ void WaterTankApp::init()
     // nvs_flash_init();         // Re-initialize after deep erase
 
     ESP_LOGI(TAG, "Initializing WaterTankApp");
-    _storage.init_partition();
+    storage_.init_partition();
 
     // === Hardware Initialization ===
-    ESP_ERROR_CHECK(_sensor_power.init());
+    ESP_ERROR_CHECK(sensor_power_.init());
     sensor.init();
     floatswitch.init();
 
     // === NVS Storage Initialization ===
     // This now handles first boot or corrupted data automatically
-    if (_storage.load() != ESP_OK) {
+    if (storage_.load() != ESP_OK) {
         ESP_LOGW(TAG, "NVS load failed, performing factory reset");
-        _storage.factory_reset();
+        storage_.factory_reset();
     }
 
     // --- Node ID Generation (On First Boot) ---
-    auto &core = _storage.getCoreData();
+    auto &core = storage_.getCoreData();
     if (core.node_id == 0) {
         ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
         uint8_t mac[6];
@@ -178,9 +178,10 @@ void WaterTankApp::init()
         ESP_LOGI(TAG, "New Node ID: 0x%08X", core.node_id);
 
         // Salva imediatamente a nova identidade no NVS
-        if (_storage.commit() == ESP_OK) {
+        if (storage_.commit() == ESP_OK) {
             ESP_LOGI(TAG, "New Node ID saved to NVS.");
-        } else {
+        }
+        else {
             ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
             // A aplicação pode continuar, mas o ID não será persistido
         }
@@ -239,14 +240,15 @@ void WaterTankApp::init()
              rtc_core_data.crash_count);
 
     // === Communication Component Initialization ===
-    if (!m_comm.init()) {
+    if (!comm_.init()) {
         ESP_LOGE(TAG, "Failed to initialize communication component");
-    } else {
-        m_comm.attach_nvs(&_storage);
-        if (!m_comm.load()) {
+    }
+    else {
+        comm_.attach_nvs(&storage_);
+        if (!comm_.load()) {
             ESP_LOGW(TAG, "Could not load peers from NVS. List will start empty.");
         }
-        m_comm.start();
+        comm_.start();
     }
 
     // Brief settling delay
@@ -259,8 +261,8 @@ void WaterTankApp::run()
 
     while (true) {
         // Direct access to storage references
-        auto &core = _storage.getCoreData();
-        auto &app  = _storage.stats;
+        auto &core = storage_.getCoreData();
+        auto &app  = storage_.stats;
 
         float     distance = 0.0f;
         UsQuality quality  = UsQuality::INVALID;
@@ -268,10 +270,10 @@ void WaterTankApp::run()
         uint16_t  level    = 0;
 
         // === 1. Sensor Power On and Reading ===
-        _sensor_power.on();
+        sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
-        bool ok = sensor.readDistanceCm(distance, quality, failure);
-        _sensor_power.off();
+        bool ok = sensor.read_distance_cm(distance, quality, failure);
+        sensor_power_.off();
 
         if (ok) {
             level = distance_to_level_permille(distance);
@@ -289,7 +291,7 @@ void WaterTankApp::run()
         }
 
         // === 2. Update Application Statistics ===
-        _storage.updateStatus(level, distance, quality, failure);
+        storage_.updateStatus(level, distance, quality, failure);
         app.fill_state = infer_fill_state(level);
 
         // === 3. Sleep Interval Calculation ===

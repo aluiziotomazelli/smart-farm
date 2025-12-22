@@ -1,9 +1,9 @@
 idf_component_register(
     SRCS
-        "UltrasonicSensor.cpp"
-        "HCSR04.cpp"
-        "HCSR04Gpio.cpp"
-        "HCSR04Rmt.cpp"
+        "ultrasonic_sensor.cpp"
+        "trig_echo.cpp"
+        "trig_echo_gpio.cpp"
+        "trig_echo_rmt.cpp"
     INCLUDE_DIRS
         "include"
         "."

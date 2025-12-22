@@ -12,6 +12,7 @@ idf_component_register(
         sensor_floatswitch
         core
         power_control
+        comm
         
         
 )

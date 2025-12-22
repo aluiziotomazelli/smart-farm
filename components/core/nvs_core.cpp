@@ -1,8 +1,10 @@
 #include "nvs_core.hpp"
+
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#include "esp_log.h"
 #include <cstring>
 
 static const char *TAG = "NvsCore";
-// static const char *NVS_NAMESPACE = "storage"; // Namespace único para tudo (REMOVED)
 
 NvsCore::NvsCore(const char *ns)
     : _namespace(ns)

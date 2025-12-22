@@ -1,4 +1,4 @@
-#include "PowerControl.hpp"
+#include "power_control.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -17,17 +17,14 @@ esp_err_t PowerControl::init()
     io_conf.intr_type     = GPIO_INTR_DISABLE;
 
     esp_err_t err = gpio_config(&io_conf);
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         return err;
     }
 
-    if (config_.initial_on)
-    {
+    if (config_.initial_on) {
         return on();
     }
-    else
-    {
+    else {
         return off();
     }
 }
@@ -46,7 +43,10 @@ esp_err_t PowerControl::off()
     return ESP_OK;
 }
 
-bool PowerControl::is_on() const { return state_; }
+bool PowerControl::is_on() const
+{
+    return state_;
+}
 
 void PowerControl::apply_gpio(bool enable)
 {

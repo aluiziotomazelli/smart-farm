@@ -1,7 +1,7 @@
 #pragma once
 
-#include "UltrasonicSensor.hpp"
 #include "core_types.hpp"
+#include "ultrasonic_sensor.hpp"
 #include "water_tank_types.hpp"
 
 struct WaterTankStats
