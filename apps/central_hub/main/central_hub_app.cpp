@@ -23,6 +23,7 @@ void CentralHubApp::init()
         return;
     }
     comm.start();
+    comm.start_discovery(); // Enter passive discovery mode to be found
 }
 
 void CentralHubApp::run()

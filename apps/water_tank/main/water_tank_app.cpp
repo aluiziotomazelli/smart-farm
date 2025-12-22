@@ -332,9 +332,22 @@ void WaterTankApp::run()
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
-        // === 8. Communication Test ===
-        ESP_LOGI(TAG, "Attempting to send data to Central Hub...");
+        // === 8. Communication Test (Active Discovery) ===
+        ESP_LOGI(TAG, "Starting active discovery for Central Hub...");
+        comm_.start_discovery(CENTRAL_HUB_NODE_ID);
 
+        // Wait for 5 seconds to allow time for the peer to be discovered.
+        // During this time, the comm component is processing incoming packets in the background.
+        ESP_LOGI(TAG, "Waiting for discovery response...");
+        for (int i = 0; i < 50; ++i) {
+            comm::protocol::Frame received_frame{};
+            comm_.receive(received_frame); // Process any incoming frames
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        comm_.stop_discovery();
+        ESP_LOGI(TAG, "Discovery period finished. Attempting to send data...");
+
+        // Now, attempt to send the data frame.
         comm::protocol::Frame frame_to_send{};
         frame_to_send.header.node_id = CENTRAL_HUB_NODE_ID;
         frame_to_send.header.type    = comm::protocol::MessageType::DATA;
@@ -342,26 +355,9 @@ void WaterTankApp::run()
         memcpy(frame_to_send.payload, &app.level_permille, sizeof(app.level_permille));
 
         if (comm_.send(frame_to_send)) {
-            ESP_LOGI(TAG, "Data sent successfully on the first attempt!");
-        }
-        else {
-            ESP_LOGW(TAG, "Send failed, likely peer unknown. Waiting for discovery response...");
-
-            // Wait for 5 seconds, allowing the comm component to process discovery responses
-            for (int i = 0; i < 50; ++i) {
-                comm::protocol::Frame received_frame{};
-                comm_.receive(received_frame); // Process any incoming frames (e.g., discovery response)
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-
-            // Final attempt to send after the wait
-            ESP_LOGI(TAG, "Retrying send after discovery period...");
-            if (comm_.send(frame_to_send)) {
-                ESP_LOGI(TAG, "Data sent successfully after discovery!");
-            }
-            else {
-                ESP_LOGE(TAG, "Failed to send data after discovery period.");
-            }
+            ESP_LOGI(TAG, "Data sent successfully!");
+        } else {
+            ESP_LOGE(TAG, "Failed to send data after active discovery.");
         }
 
         // === 9. Deep Sleep or Loop Delay ===
