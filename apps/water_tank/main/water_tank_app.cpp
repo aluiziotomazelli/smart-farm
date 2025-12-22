@@ -5,6 +5,7 @@
 
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -165,8 +166,26 @@ void WaterTankApp::init()
         _storage.factory_reset();
     }
 
-    // Direct access to core and app data references
+    // --- Node ID Generation (On First Boot) ---
     auto &core = _storage.getCoreData();
+    if (core.node_id == 0) {
+        ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
+        uint8_t mac[6];
+        esp_efuse_mac_get_default(mac);
+        // Gera o ID a partir dos últimos 4 bytes do MAC para garantir unicidade
+        core.node_id = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
+
+        ESP_LOGI(TAG, "New Node ID: 0x%08X", core.node_id);
+
+        // Salva imediatamente a nova identidade no NVS
+        if (_storage.commit() == ESP_OK) {
+            ESP_LOGI(TAG, "New Node ID saved to NVS.");
+        } else {
+            ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
+            // A aplicação pode continuar, mas o ID não será persistido
+        }
+    }
+
     // auto &app  = _storage.stats;
 
     // === Boot and Wakeup Detection ===
