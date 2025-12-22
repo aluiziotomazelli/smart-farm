@@ -19,6 +19,11 @@ RTC_DATA_ATTR CoreStorage rtc_core_data; // Caching for Core data to reduce NVS 
 RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0; // Used for filling/draining trend
 RTC_DATA_ATTR bool        rtc_has_level           = false;
 
+void WaterTankApp::attach_comm(comm::CommInterface* comm_instance)
+{
+    m_comm = comm_instance;
+}
+
 WaterTankApp::WaterTankApp()
     : _sensor_power(
           {.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
@@ -217,6 +222,19 @@ void WaterTankApp::init()
 
     ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count,
              rtc_core_data.crash_count);
+
+    // === Communication Component Initialization ===
+    if (m_comm) {
+        if (!m_comm->init()) {
+            ESP_LOGE(TAG, "Failed to initialize communication component");
+        } else {
+            m_comm->attach_nvs(&_storage);
+            if (!m_comm->load()) {
+                ESP_LOGW(TAG, "Could not load peers from NVS. List will start empty.");
+            }
+            m_comm->start();
+        }
+    }
 
     // Brief settling delay
     vTaskDelay(pdMS_TO_TICKS(100));

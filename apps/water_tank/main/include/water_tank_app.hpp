@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PowerControl.hpp"
+#include "comm_interface.hpp"
 #include "water_tank_nvs.hpp"
 #include "water_tank_types.hpp"
 
@@ -11,6 +12,7 @@ public:
 
     void init();
     void run();
+    void attach_comm(comm::CommInterface* comm_instance);
 
 private:
     static FillState infer_fill_state(uint16_t current_level);
@@ -19,4 +21,5 @@ private:
     static uint64_t decide_timer_us(FillState state);
     PowerControl    _sensor_power;
     WaterTankNvs    _storage;
+    comm::CommInterface* m_comm = nullptr;
 };
