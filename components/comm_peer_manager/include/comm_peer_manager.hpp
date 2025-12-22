@@ -1,7 +1,8 @@
 // comm_peer_manager.hpp
 #pragma once
-#include <stdbool.h>
 #include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 class NvsCore; // forward declaration
 class CommPeerManager
@@ -15,7 +16,7 @@ public:
 
     // API pública
     void init();
-    bool resolve_peer(uint32_t node_id, uint8_t out_mac[6]) const;
+    bool resolve_peer(uint32_t node_id, uint8_t out_mac[6]);
     void on_discovery_announce(uint32_t node_id, const uint8_t mac[6]);
     void on_discovery_response(uint32_t node_id, const uint8_t mac[6]);
     void on_packet_rx(uint32_t node_id, const uint8_t mac[6]);
@@ -26,8 +27,8 @@ public:
     bool load(NvsCore *nvs); // load peers from NVS
     bool save(NvsCore *nvs); // save peers to NVS
 
-    CommPeerManager()  = default; // singleton: ctor privado
-    ~CommPeerManager() = default;
+    CommPeerManager(); // singleton: ctor publico para o cpp
+    ~CommPeerManager();
 
 private:
     CommPeerManager(const CommPeerManager &)            = delete;
@@ -39,15 +40,17 @@ private:
         uint32_t node_id;
         uint8_t  mac[6];
         int64_t  last_seen_us;
-        bool     valid;
+        uint8_t  valid; // 1 = true, 0 = false
     };
 
     static constexpr int MAX_PEERS = 16;
     Peer                 peers_[MAX_PEERS];
 
     NvsCore *_nvs;
+    SemaphoreHandle_t _mutex;
 
-    int  find_peer_index(uint32_t node_id) const;
-    int  find_free_or_oldest_slot() const;
-    void upsert_peer(uint32_t node_id, const uint8_t mac[6]);
+
+    int  find_peer_index_unsafe(uint32_t node_id) const;
+    int  find_free_or_oldest_slot_unsafe() const;
+    void upsert_peer_unsafe(uint32_t node_id, const uint8_t mac[6]);
 };

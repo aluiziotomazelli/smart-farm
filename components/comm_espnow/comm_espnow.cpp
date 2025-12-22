@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "freertos/task.h"
 
 static constexpr uint8_t ESPNOW_BROADCAST_ADDR[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF,
                                                                     0xFF, 0xFF, 0xFF};
@@ -12,14 +13,14 @@ static const char       *TAG                                     = "CommEspNow";
 
 using namespace comm;
 
-CommEspNow *CommEspNow::s_instance = nullptr;
+CommEspNow& CommEspNow::instance()
+{
+    static CommEspNow s_instance;
+    return s_instance;
+}
 
 CommEspNow::CommEspNow()
 {
-    if (s_instance) {
-        ESP_LOGE(TAG, "CommEspNow already instantiated. Singleton required.");
-    }
-    s_instance   = this;
     m_status     = CommStatus::UNINITIALIZED;
     m_last_error = CommError::NONE;
 }
@@ -27,7 +28,6 @@ CommEspNow::CommEspNow()
 CommEspNow::~CommEspNow()
 {
     stop();
-    s_instance = nullptr;
 }
 
 bool CommEspNow::init()
@@ -72,6 +72,9 @@ bool CommEspNow::init()
     return true;
 }
 
+#define PEER_MAINTENANCE_INTERVAL_S 60
+#define PEER_MAX_AGE_US (1000000LL * 60 * 10) // 10 minutes
+
 bool CommEspNow::start()
 {
     if (m_status != CommStatus::READY) {
@@ -79,11 +82,20 @@ bool CommEspNow::start()
         return false;
     }
     m_status = CommStatus::RUNNING;
+
+    if (!m_maintenance_task_handle) {
+        xTaskCreate(peer_maintenance_task, "peer_maint", 2048, this, 5, &m_maintenance_task_handle);
+    }
     return true;
 }
 
 void CommEspNow::stop()
 {
+    if (m_maintenance_task_handle) {
+        vTaskDelete(m_maintenance_task_handle);
+        m_maintenance_task_handle = nullptr;
+    }
+
     if (m_rx_queue) {
         vQueueDelete(m_rx_queue);
         m_rx_queue = nullptr;
@@ -239,12 +251,10 @@ bool CommEspNow::save()
 }
 
 void CommEspNow::on_receive_cb(const esp_now_recv_info_t *info,
-                               const uint8_t             *data,
-                               int                        len)
+                               const uint8_t *data,
+                               int len)
 {
-    if (!s_instance)
-        return;
-    s_instance->enqueue_rx(data, len, info->src_addr);
+    instance().enqueue_rx(data, len, info->src_addr);
 }
 
 bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac)
@@ -263,7 +273,11 @@ bool CommEspNow::enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_
     }
     memcpy(item.src_mac, src_mac, 6);
 
-    return xQueueSend(m_rx_queue, &item, 0) == pdTRUE;
+    if (xQueueSend(m_rx_queue, &item, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "RX queue full, dropping packet");
+        return false;
+    }
+    return true;
 }
 
 bool CommEspNow::send_discovery_response(uint32_t      target_node_id,
@@ -303,5 +317,14 @@ void CommEspNow::handle_discovery_response(const protocol::Frame &frame,
                                m_discovery_target == frame.header.node_id)) {
         // marcar peer como encontrado, opcional: callback para app
         m_discovery_active = false; // discovery concluído
+    }
+}
+
+void CommEspNow::peer_maintenance_task(void* arg)
+{
+    CommEspNow* self = static_cast<CommEspNow*>(arg);
+    while(1) {
+        vTaskDelay(pdMS_TO_TICKS(PEER_MAINTENANCE_INTERVAL_S * 1000));
+        self->m_peer_mgr.purge(PEER_MAX_AGE_US);
     }
 }

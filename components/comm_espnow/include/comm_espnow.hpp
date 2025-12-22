@@ -13,7 +13,7 @@ namespace comm {
 class CommEspNow final : public CommInterface
 {
 public:
-    CommEspNow();
+    static CommEspNow& instance();
     ~CommEspNow() override;
 
     // Lifecycle
@@ -38,12 +38,14 @@ public:
     bool save() override;
 
 private:
+    CommEspNow();
     static void on_receive_cb(const esp_now_recv_info_t *info,
                               const uint8_t             *data,
                               int                        len);
 
     bool enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac);
     bool send_discovery_response(uint32_t target_node_id, const uint8_t target_mac[6]);
+    static void peer_maintenance_task(void* arg);
 
 private:
     static constexpr size_t RX_QUEUE_LEN   = 8;
@@ -59,8 +61,7 @@ private:
     };
 
     QueueHandle_t m_rx_queue = nullptr;
-
-    static CommEspNow *s_instance; // singleton-like access for ESP-NOW callbacks
+    TaskHandle_t m_maintenance_task_handle = nullptr;
 
     void handle_discovery_request(const protocol::Frame &frame, const uint8_t src_mac[6]);
     void handle_discovery_response(const protocol::Frame &frame,
