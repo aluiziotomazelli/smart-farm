@@ -10,6 +10,7 @@ namespace comm {
 class CommInterface
 {
 public:
+    static CommInterface& get_default_instance();
     virtual ~CommInterface() = default;
 
     // Lifecycle
