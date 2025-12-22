@@ -1,4 +1,7 @@
 #include "water_tank_app.hpp"
+#include "comm_interface.hpp"
+#include "protocol_frame.hpp"
+#include <cstring>
 #include "float_switch.hpp"
 #include "nvs_core.hpp"
 #include "trig_echo_rmt.hpp"
@@ -13,6 +16,8 @@
 #include "freertos/task.h"
 
 static const char *TAG = "WaterTankApp";
+
+static constexpr uint32_t CENTRAL_HUB_NODE_ID = 0x00000001; // For testing
 
 // --- Persistence in RTC Memory ---
 // These variables survive Deep Sleep but are lost on Power-On Reset.
@@ -327,8 +332,41 @@ void WaterTankApp::run()
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
-        // === 8. Deep Sleep or Loop Delay ===
+        // === 8. Communication Test ===
+        ESP_LOGI(TAG, "Attempting to send data to Central Hub...");
+
+        comm::protocol::Frame frame_to_send{};
+        frame_to_send.header.node_id = CENTRAL_HUB_NODE_ID;
+        frame_to_send.header.type    = comm::protocol::MessageType::DATA;
+        frame_to_send.payload_len    = sizeof(app.level_permille);
+        memcpy(frame_to_send.payload, &app.level_permille, sizeof(app.level_permille));
+
+        if (comm_.send(frame_to_send)) {
+            ESP_LOGI(TAG, "Data sent successfully on the first attempt!");
+        }
+        else {
+            ESP_LOGW(TAG, "Send failed, likely peer unknown. Waiting for discovery response...");
+
+            // Wait for 5 seconds, allowing the comm component to process discovery responses
+            for (int i = 0; i < 50; ++i) {
+                comm::protocol::Frame received_frame{};
+                comm_.receive(received_frame); // Process any incoming frames (e.g., discovery response)
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+
+            // Final attempt to send after the wait
+            ESP_LOGI(TAG, "Retrying send after discovery period...");
+            if (comm_.send(frame_to_send)) {
+                ESP_LOGI(TAG, "Data sent successfully after discovery!");
+            }
+            else {
+                ESP_LOGE(TAG, "Failed to send data after discovery period.");
+            }
+        }
+
+        // === 9. Deep Sleep or Loop Delay ===
         // For production, replace delay with: esp_deep_sleep_start();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        ESP_LOGI(TAG, "Entering deep sleep or delay...");
+        vTaskDelay(pdMS_TO_TICKS(5000)); // Delay before next cycle
     }
 }
