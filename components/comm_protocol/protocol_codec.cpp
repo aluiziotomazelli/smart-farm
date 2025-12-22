@@ -7,10 +7,10 @@ namespace protocol {
 /* =========================================================
  * Encode
  * ========================================================= */
-CodecResult encode_frame(const Frame &frame,
-                         uint8_t     *out_buffer,
-                         size_t       out_len,
-                         size_t      &written_len)
+protocol::CodecResult protocol::encode_frame(const Frame &frame,
+                                             uint8_t     *out_buffer,
+                                             size_t       out_len,
+                                             size_t      &written_len)
 {
     written_len = 0;
 
@@ -33,9 +33,6 @@ CodecResult encode_frame(const Frame &frame,
 
     // copy payload (if any)
     if (frame.payload_len > 0) {
-        if (!frame.payload)
-            return CodecResult::INVALID_ARGUMENT;
-
         std::memcpy(out_buffer + sizeof(WireHeader), frame.payload, frame.payload_len);
     }
 
@@ -46,7 +43,9 @@ CodecResult encode_frame(const Frame &frame,
 /* =========================================================
  * Decode
  * ========================================================= */
-CodecResult decode_frame(const uint8_t *buffer, size_t buffer_len, Frame &out_frame)
+protocol::CodecResult protocol::decode_frame(const uint8_t *buffer,
+                                             size_t         buffer_len,
+                                             Frame         &out_frame)
 {
     if (!buffer)
         return CodecResult::INVALID_ARGUMENT;
@@ -54,7 +53,7 @@ CodecResult decode_frame(const uint8_t *buffer, size_t buffer_len, Frame &out_fr
     if (buffer_len < sizeof(WireHeader))
         return CodecResult::INVALID_FRAME;
 
-    // copy header bytes into struct
+    // copia bytes do header para struct
     const WireHeader *hdr = reinterpret_cast<const WireHeader *>(buffer);
 
     if (!is_header_valid(*hdr))
@@ -66,8 +65,11 @@ CodecResult decode_frame(const uint8_t *buffer, size_t buffer_len, Frame &out_fr
         return CodecResult::INVALID_FRAME;
 
     out_frame.header      = *hdr;
-    out_frame.payload     = (payload_len > 0) ? buffer + sizeof(WireHeader) : nullptr;
     out_frame.payload_len = payload_len;
+
+    if (payload_len > 0) {
+        memcpy(out_frame.payload, buffer + sizeof(WireHeader), payload_len);
+    }
 
     return CodecResult::OK;
 }

@@ -39,6 +39,8 @@ private:
 
     bool enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac);
 
+    bool send_discovery_response(uint32_t target_node_id, const uint8_t target_mac[6]);
+
     static constexpr size_t RX_QUEUE_LEN   = 8;
     static constexpr size_t RX_MAX_PAYLOAD = 250;
     struct RxItem

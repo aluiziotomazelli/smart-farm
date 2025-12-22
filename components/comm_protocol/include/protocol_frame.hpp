@@ -41,8 +41,8 @@ struct Frame
 {
     WireHeader header;
 
-    const uint8_t *payload; // non-owning
-    size_t         payload_len;
+    uint8_t payload[protocol::MAX_PAYLOAD_SIZE]; //*payload; // non-owning
+    size_t  payload_len;
 };
 
 /* =========================

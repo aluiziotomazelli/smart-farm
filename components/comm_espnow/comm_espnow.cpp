@@ -1,5 +1,5 @@
 #include "comm_espnow.hpp"
-#include "comm_peer_manager.h"
+#include "comm_peer_manager.hpp"
 #include "protocol_codec.hpp"
 
 #include "esp_log.h"
@@ -135,25 +135,45 @@ bool CommEspNow::send(const protocol::Frame &frame)
     size_t  written = 0;
 
     auto res = protocol::encode_frame(frame, buffer, sizeof(buffer), written);
-
     if (res != protocol::CodecResult::OK)
         return false;
 
-    uint8_t peer_mac[6];
+    uint8_t        peer_mac[6];
+    const uint8_t *peer = nullptr;
 
-    const uint8_t *peer =
-        (frame.header.flags & protocol::FLAG_BROADCAST)
-            ? ESPNOW_BROADCAST_ADDR
-            : (comm_peer_manager_resolve_peer(frame.header.node_id, peer_mac) ? peer_mac
-                                                                              : nullptr);
+    // tenta resolver peer
+    if (frame.header.flags & protocol::FLAG_BROADCAST) {
+        peer = ESPNOW_BROADCAST_ADDR;
+    }
+    else if (CommPeerManager::instance().resolve_peer(frame.header.node_id, peer_mac)) {
+        peer = peer_mac;
+    }
+    else {
+        // peer não encontrado -> discovery ativo
+        ESP_LOGI(TAG, "Peer %08X unknown, sending DISCOVERY_REQUEST",
+                 frame.header.node_id);
 
-    if (!peer) {
+        protocol::Frame disc_frame{};
+        disc_frame.header.type    = protocol::MessageType::DISCOVERY_REQUEST;
+        disc_frame.header.node_id = frame.header.node_id; // target node
+        disc_frame.payload_len    = 0;
+
+        uint8_t disc_buf[protocol::MAX_FRAME_SIZE];
+        size_t  disc_len = 0;
+        protocol::encode_frame(disc_frame, disc_buf, sizeof(disc_buf), disc_len);
+
+        esp_err_t err = esp_now_send(ESPNOW_BROADCAST_ADDR, disc_buf, disc_len);
+        if (err != ESP_OK) {
+            m_last_error = CommError::SEND_FAILED;
+            return false;
+        }
+
         m_last_error = CommError::SEND_FAILED;
         return false;
     }
 
+    // envio normal
     esp_err_t err = esp_now_send(peer, buffer, written);
-
     if (err != ESP_OK) {
         m_last_error = CommError::SEND_FAILED;
         return false;
@@ -167,6 +187,35 @@ bool CommEspNow::has_message() const
     return m_rx_queue && uxQueueMessagesWaiting(m_rx_queue) > 0;
 }
 
+bool CommEspNow::send_discovery_response(uint32_t      target_node_id,
+                                         const uint8_t target_mac[6])
+{
+    if (!target_mac)
+        return false;
+
+    protocol::Frame resp_frame{};
+    resp_frame.header.type    = protocol::MessageType::DISCOVERY_RESPONSE;
+    resp_frame.header.node_id = target_node_id; // destino
+    resp_frame.payload_len    = 0;              // sem payload
+
+    uint8_t buffer[protocol::MAX_FRAME_SIZE];
+    size_t  written = 0;
+
+    auto res = protocol::encode_frame(resp_frame, buffer, sizeof(buffer), written);
+    if (res != protocol::CodecResult::OK) {
+        m_last_error = CommError::INTERNAL_ERROR;
+        return false;
+    }
+
+    esp_err_t err = esp_now_send(target_mac, buffer, written);
+    if (err != ESP_OK) {
+        m_last_error = CommError::SEND_FAILED;
+        return false;
+    }
+
+    return true;
+}
+
 bool CommEspNow::receive(protocol::Frame &out)
 {
     if (!m_rx_queue)
@@ -177,16 +226,34 @@ bool CommEspNow::receive(protocol::Frame &out)
     if (xQueueReceive(m_rx_queue, &item, 0) != pdTRUE)
         return false;
 
+    // Copia dados para o frame de saída
     out.header      = item.header;
-    out.payload     = item.payload;
     out.payload_len = item.payload_len;
 
-    comm_peer_manager_on_packet_rx(out.header.node_id, item.src_mac);
+    memcpy(out.payload, item.payload, item.payload_len);
 
-    if (out.header.type == protocol::MessageType::DISCOVERY_REQUEST ||
-        out.header.type == protocol::MessageType::DISCOVERY_RESPONSE) {
-        // ambos indicam peer válido; response é apenas simétrico
-        comm_peer_manager_on_discovery_response(out.header.node_id, item.src_mac);
+    // Atualiza peer store com o MAC de origem
+    CommPeerManager::instance().on_packet_rx(out.header.node_id, item.src_mac);
+
+    switch (out.header.type) {
+    case protocol::MessageType::DISCOVERY_REQUEST:
+        // discovery passivo: peer existe, podemos atualizar
+        CommPeerManager::instance().on_discovery_response(out.header.node_id,
+                                                          item.src_mac);
+
+        // opcional: enviar DISCOVERY_RESPONSE de volta para quem pediu
+        send_discovery_response(out.header.node_id, item.src_mac);
+        break;
+
+    case protocol::MessageType::DISCOVERY_RESPONSE:
+        // peer respondeu ao nosso discovery ativo/passivo
+        CommPeerManager::instance().on_discovery_response(out.header.node_id,
+                                                          item.src_mac);
+        break;
+
+    default:
+        // outros tipos não alteram peer store
+        break;
     }
 
     return true;
