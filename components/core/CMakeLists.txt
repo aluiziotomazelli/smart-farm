@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS
-        "NvsCore.cpp"
+        "nvs_core.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES

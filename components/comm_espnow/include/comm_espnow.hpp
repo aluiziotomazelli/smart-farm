@@ -1,6 +1,7 @@
 #pragma once
 
 #include "comm_interface.hpp"
+#include "comm_peer_manager.hpp"
 #include "protocol_frame.hpp"
 
 #include "esp_now.h"
@@ -15,22 +16,26 @@ public:
     CommEspNow();
     ~CommEspNow() override;
 
-    bool init() override;
-    bool start() override;
-    void stop() override;
-
-    bool       is_ready() const override;
-    bool       is_connected() const override;
+    // Lifecycle
+    bool       init() override;
+    bool       start() override;
+    void       stop() override;
     CommStatus status() const override;
+    void       reset() override;
 
-    bool send(const protocol::Frame &frame);
+    // Core communication
+    bool send(const protocol::Frame &frame) override;
     bool has_message() const override;
-    bool receive(protocol::Frame &out);
+    bool receive(protocol::Frame &out) override;
 
-    CommError last_error() const override;
-    CommStats stats() const override;
+    // Peer management
+    bool resolve_peer(uint32_t node_id, uint8_t out_mac[6]) override;
+    void start_discovery(uint32_t target_node_id = 0xFFFFFFFF) override;
+    void stop_discovery() override;
 
-    void reset() override;
+    // Persistence
+    bool load() override;
+    bool save() override;
 
 private:
     static void on_receive_cb(const esp_now_recv_info_t *info,
@@ -38,11 +43,13 @@ private:
                               int                        len);
 
     bool enqueue_rx(const uint8_t *data, size_t len, const uint8_t *src_mac);
-
     bool send_discovery_response(uint32_t target_node_id, const uint8_t target_mac[6]);
 
+private:
     static constexpr size_t RX_QUEUE_LEN   = 8;
     static constexpr size_t RX_MAX_PAYLOAD = 250;
+    CommPeerManager         m_peer_mgr;
+
     struct RxItem
     {
         protocol::WireHeader header;
@@ -53,9 +60,14 @@ private:
 
     QueueHandle_t m_rx_queue = nullptr;
 
-    CommStatus m_status;
-    CommError  m_last_error;
-    CommStats  m_stats;
+    static CommEspNow *s_instance; // singleton-like access for ESP-NOW callbacks
+
+    void handle_discovery_request(const protocol::Frame &frame, const uint8_t src_mac[6]);
+    void handle_discovery_response(const protocol::Frame &frame,
+                                   const uint8_t          src_mac[6]);
+
+    uint32_t m_discovery_target = 0xFFFFFFFF; // 0xFFFFFFFF = broadcast
+    bool     m_discovery_active = false;
 };
 
 } // namespace comm

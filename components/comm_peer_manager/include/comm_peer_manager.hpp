@@ -1,49 +1,51 @@
+// comm_peer_manager.hpp
 #pragma once
-#include <cstdbool>
-#include <cstdint>
-#include <cstring>
+#include <stdbool.h>
+#include <stdint.h>
 
-#define COMM_MAX_PEERS 16
-
-struct comm_peer_t
-{
-    uint32_t node_id;
-    uint8_t  mac[6];
-    int64_t  last_seen_us;
-    bool     valid;
-};
-
-struct comm_peer_nvs_if_t
-{
-    bool (*load)(void *ctx, uint32_t *node_id, uint8_t mac[6], bool *has_next);
-    bool (*save)(void *ctx, uint32_t node_id, const uint8_t mac[6]);
-};
-
+class NvsCore; // forward declaration
 class CommPeerManager
 {
 public:
-    // Singleton access
-    static CommPeerManager &instance();
+    static CommPeerManager &instance()
+    {
+        static CommPeerManager inst;
+        return inst;
+    }
 
+    // API pública
     void init();
-    bool resolve_peer(uint32_t node_id, uint8_t out_mac[6]);
+    bool resolve_peer(uint32_t node_id, uint8_t out_mac[6]) const;
     void on_discovery_announce(uint32_t node_id, const uint8_t mac[6]);
     void on_discovery_response(uint32_t node_id, const uint8_t mac[6]);
     void on_packet_rx(uint32_t node_id, const uint8_t mac[6]);
     void purge(int64_t max_age_us);
+    void attach_nvs(NvsCore *nvs);
 
-    void set_nvs_backend(const comm_peer_nvs_if_t *backend, void *ctx);
+    // NVS integration
+    bool load(NvsCore *nvs); // load peers from NVS
+    bool save(NvsCore *nvs); // save peers to NVS
+
+    CommPeerManager()  = default; // singleton: ctor privado
+    ~CommPeerManager() = default;
 
 private:
-    CommPeerManager()                                   = default;
-    ~CommPeerManager()                                  = default;
     CommPeerManager(const CommPeerManager &)            = delete;
     CommPeerManager &operator=(const CommPeerManager &) = delete;
 
-    comm_peer_t s_peers[COMM_MAX_PEERS] = {};
+    // dados internos
+    struct Peer
+    {
+        uint32_t node_id;
+        uint8_t  mac[6];
+        int64_t  last_seen_us;
+        bool     valid;
+    };
 
-    const comm_peer_nvs_if_t *s_nvs_backend = nullptr;
-    void                     *s_nvs_ctx     = nullptr;
+    static constexpr int MAX_PEERS = 16;
+    Peer                 peers_[MAX_PEERS];
+
+    NvsCore *_nvs;
 
     int  find_peer_index(uint32_t node_id) const;
     int  find_free_or_oldest_slot() const;

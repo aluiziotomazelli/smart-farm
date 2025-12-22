@@ -7,10 +7,10 @@ namespace protocol {
 /* =========================================================
  * Encode
  * ========================================================= */
-protocol::CodecResult protocol::encode_frame(const Frame &frame,
-                                             uint8_t     *out_buffer,
-                                             size_t       out_len,
-                                             size_t      &written_len)
+CodecResult encode_frame(const Frame &frame,
+                         uint8_t     *out_buffer,
+                         size_t       out_len,
+                         size_t      &written_len)
 {
     written_len = 0;
 
@@ -43,9 +43,7 @@ protocol::CodecResult protocol::encode_frame(const Frame &frame,
 /* =========================================================
  * Decode
  * ========================================================= */
-protocol::CodecResult protocol::decode_frame(const uint8_t *buffer,
-                                             size_t         buffer_len,
-                                             Frame         &out_frame)
+CodecResult decode_frame(const uint8_t *buffer, size_t buffer_len, Frame &out_frame)
 {
     if (!buffer)
         return CodecResult::INVALID_ARGUMENT;

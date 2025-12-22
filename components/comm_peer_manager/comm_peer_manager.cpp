@@ -1,18 +1,73 @@
 #include "comm_peer_manager.hpp"
-#include "esp_timer.h"
-#include <climits>
+#include "nvs_core.hpp"
 
-CommPeerManager &CommPeerManager::instance()
+#include "esp_log.h"
+#include "esp_timer.h"
+#include <cstring>
+#include <limits>
+
+static const char    *TAG             = "CommPeerManager";
+static constexpr char NVS_KEY_PEERS[] = "peer_store";
+
+// ----------------------------
+// PeerStorage interno para NVS
+// ----------------------------
+
+// ----------------------------
+// Attach NVS handler
+// ----------------------------
+void CommPeerManager::attach_nvs(NvsCore *nvs)
 {
-    static CommPeerManager inst;
-    return inst;
+    _nvs = nvs;
 }
 
+// ----------------------------
+// Load peers from NVS
+// ----------------------------
+bool CommPeerManager::load(NvsCore *nvs)
+{
+    if (!nvs)
+        return false;
+
+    struct Storage
+    {
+        Peer nvs_peers[MAX_PEERS];
+    } storage;
+
+    if (nvs->loadStructPublic(NVS_KEY_PEERS, storage) != ESP_OK)
+        return false;
+
+    memcpy(peers_, storage.nvs_peers, sizeof(peers_));
+    return true;
+}
+
+// ----------------------------
+// Save peers to NVS
+// ----------------------------
+bool CommPeerManager::save(NvsCore *nvs)
+{
+    if (!nvs)
+        return false;
+
+    struct Storage
+    {
+        Peer nvs_peers[MAX_PEERS];
+    } storage;
+
+    memcpy(storage.nvs_peers, peers_, sizeof(peers_));
+
+    return nvs->saveStructPublic(NVS_KEY_PEERS, storage) == ESP_OK;
+}
+
+// ----------------------------
+// Peer lookup
+// ----------------------------
 int CommPeerManager::find_peer_index(uint32_t node_id) const
 {
-    for (int i = 0; i < COMM_MAX_PEERS; i++) {
-        if (s_peers[i].valid && s_peers[i].node_id == node_id)
+    for (int i = 0; i < MAX_PEERS; i++) {
+        if (peers_[i].valid && peers_[i].node_id == node_id) {
             return i;
+        }
     }
     return -1;
 }
@@ -20,54 +75,47 @@ int CommPeerManager::find_peer_index(uint32_t node_id) const
 int CommPeerManager::find_free_or_oldest_slot() const
 {
     int     oldest      = 0;
-    int64_t oldest_time = INT64_MAX;
-    for (int i = 0; i < COMM_MAX_PEERS; i++) {
-        if (!s_peers[i].valid)
+    int64_t oldest_time = std::numeric_limits<int64_t>::max();
+
+    for (int i = 0; i < MAX_PEERS; i++) {
+        if (!peers_[i].valid)
             return i;
-        if (s_peers[i].last_seen_us < oldest_time) {
-            oldest_time = s_peers[i].last_seen_us;
+        if (peers_[i].last_seen_us < oldest_time) {
+            oldest_time = peers_[i].last_seen_us;
             oldest      = i;
         }
     }
     return oldest;
 }
 
+// ----------------------------
+// Insert or update peer
+// ----------------------------
 void CommPeerManager::upsert_peer(uint32_t node_id, const uint8_t mac[6])
 {
-    int     idx     = find_peer_index(node_id);
-    int64_t now     = esp_timer_get_time();
-    bool    changed = false;
+    int     idx = find_peer_index(node_id);
+    int64_t now = esp_timer_get_time();
 
     if (idx < 0) {
-        idx     = find_free_or_oldest_slot();
-        changed = true;
-    }
-    else if (memcmp(s_peers[idx].mac, mac, 6) != 0) {
-        changed = true;
+        idx = find_free_or_oldest_slot();
     }
 
-    s_peers[idx].node_id = node_id;
-    memcpy(s_peers[idx].mac, mac, 6);
-    s_peers[idx].last_seen_us = now;
-    s_peers[idx].valid        = true;
-
-    if (s_nvs_backend && changed) {
-        s_nvs_backend->save(s_nvs_ctx, node_id, mac);
-    }
+    peers_[idx].node_id = node_id;
+    memcpy(peers_[idx].mac, mac, 6);
+    peers_[idx].last_seen_us = now;
+    peers_[idx].valid        = true;
 }
 
-void CommPeerManager::init()
-{
-    memset(s_peers, 0, sizeof(s_peers));
-}
-
-bool CommPeerManager::resolve_peer(uint32_t node_id, uint8_t out_mac[6])
+// ----------------------------
+// Public API
+// ----------------------------
+bool CommPeerManager::resolve_peer(uint32_t node_id, uint8_t out_mac[6]) const
 {
     int idx = find_peer_index(node_id);
     if (idx < 0)
         return false;
 
-    memcpy(out_mac, s_peers[idx].mac, 6);
+    memcpy(out_mac, peers_[idx].mac, 6);
     return true;
 }
 
@@ -89,27 +137,10 @@ void CommPeerManager::on_packet_rx(uint32_t node_id, const uint8_t mac[6])
 void CommPeerManager::purge(int64_t max_age_us)
 {
     int64_t now = esp_timer_get_time();
-    for (int i = 0; i < COMM_MAX_PEERS; i++) {
-        if (!s_peers[i].valid)
+    for (int i = 0; i < MAX_PEERS; i++) {
+        if (!peers_[i].valid)
             continue;
-        if ((now - s_peers[i].last_seen_us) > max_age_us)
-            s_peers[i].valid = false;
-    }
-}
-
-void CommPeerManager::set_nvs_backend(const comm_peer_nvs_if_t *backend, void *ctx)
-{
-    s_nvs_backend = backend;
-    s_nvs_ctx     = ctx;
-
-    if (!s_nvs_backend)
-        return;
-
-    uint32_t node_id;
-    uint8_t  mac[6];
-    bool     has_next = true;
-
-    while (s_nvs_backend->load(s_nvs_ctx, &node_id, mac, &has_next) && has_next) {
-        on_discovery_response(node_id, mac);
+        if ((now - peers_[i].last_seen_us) > max_age_us)
+            peers_[i].valid = false;
     }
 }

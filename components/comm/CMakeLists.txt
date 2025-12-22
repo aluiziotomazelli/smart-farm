@@ -3,4 +3,7 @@ idf_component_register(
         comm_interface.cpp
     INCLUDE_DIRS
         include
+    REQUIRES
+        comm_protocol
+        core
 )

@@ -1,5 +1,5 @@
 #pragma once
-#include "CoreTypes.hpp"
+#include "core_types.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -60,11 +60,25 @@ public:
     esp_err_t commit();
 
     // Acesso aos dados comuns
-    CoreStorage &getCoreData() { return core_; }
+    CoreStorage &getCoreData()
+    {
+        return core_;
+    }
 
     // Factory reset completo (apaga apenas o namespace)
     void factory_reset();
 
     // Apaga tudo no namespace
     esp_err_t erase_namespace();
+
+public:
+    template <typename T> esp_err_t loadStructPublic(const char *key, T &data)
+    {
+        return loadStruct(key, data); // chama o protected
+    }
+
+    template <typename T> esp_err_t saveStructPublic(const char *key, const T &data)
+    {
+        return saveStruct(key, data);
+    }
 };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "NvsCore.hpp"          // Sua classe base refatorada
+#include "nvs_core.hpp"         // Sua classe base refatorada
 #include "water_tank_stats.hpp" // Onde está a struct WaterTankStats
 
 class WaterTankNvs : public NvsCore
@@ -10,7 +10,10 @@ public:
     WaterTankStats stats; // Memória em RAM para os dados do tanque
 
     // Métodos específicos de negócio (opcional, mas recomendado para encapsulamento)
-    void updateStatus(uint16_t permille, float distance_cm, UsQuality quality, UsFailure failure);
+    void updateStatus(uint16_t  permille,
+                      float     distance_cm,
+                      UsQuality quality,
+                      UsFailure failure);
 
 protected:
     // --- Implementação dos Hooks Virtuais do NvsCore ---

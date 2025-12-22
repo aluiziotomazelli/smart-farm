@@ -1,7 +1,7 @@
 #pragma once
 
-#include "CoreTypes.hpp"
 #include "UltrasonicSensor.hpp"
+#include "core_types.hpp"
 #include "water_tank_types.hpp"
 
 struct WaterTankStats
@@ -23,5 +23,8 @@ struct WaterTankStats
     // Wake / sleep
     bool gpio_wakeup_enabled = false;
 
-    void reset() { *this = {}; }
+    void reset()
+    {
+        *this = {};
+    }
 };

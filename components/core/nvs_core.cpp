@@ -1,10 +1,11 @@
-#include "NvsCore.hpp"
+#include "nvs_core.hpp"
 #include <cstring>
 
 static const char *TAG = "NvsCore";
 // static const char *NVS_NAMESPACE = "storage"; // Namespace único para tudo (REMOVED)
 
-NvsCore::NvsCore(const char *ns) : _namespace(ns)
+NvsCore::NvsCore(const char *ns)
+    : _namespace(ns)
 {
     // Garante que core inicie zerado
     memset(&core_, 0, sizeof(CoreStorage));
@@ -13,8 +14,7 @@ NvsCore::NvsCore(const char *ns) : _namespace(ns)
 esp_err_t NvsCore::init_partition()
 {
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS partition invalid, erasing");
         nvs_flash_erase();
         err = nvs_flash_init();
@@ -34,8 +34,7 @@ esp_err_t NvsCore::open_nvs(nvs_open_mode_t mode)
 
 void NvsCore::close_nvs()
 {
-    if (_isOpen)
-    {
+    if (_isOpen) {
         nvs_close(_handle);
         _isOpen = false;
     }
@@ -44,24 +43,21 @@ void NvsCore::close_nvs()
 esp_err_t NvsCore::load()
 {
     esp_err_t err = open_nvs(NVS_READONLY);
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS for reading: %s", esp_err_to_name(err));
         return err;
     }
 
     // 1. Carrega Core Data
     err = loadStruct("core_data", core_);
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "Core data not found or corrupt: %s", esp_err_to_name(err));
         close_nvs();
         return err;
     }
 
     // Validação de Schema do Core
-    if (core_.schema_version != CORE_SCHEMA_VERSION)
-    {
+    if (core_.schema_version != CORE_SCHEMA_VERSION) {
         ESP_LOGW(TAG, "Schema mismatch. Migrating...");
         // logica de migração ou reset...
         core_.schema_version = CORE_SCHEMA_VERSION;
@@ -69,8 +65,7 @@ esp_err_t NvsCore::load()
 
     // 2. Chama o filho para carregar seus dados
     err = loadAppData();
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "App data not found or corrupt: %s", esp_err_to_name(err));
         // Não reseta aqui, apenas propaga o erro
     }
@@ -87,8 +82,7 @@ esp_err_t NvsCore::commit()
 
     // 1. Salva Core
     err = saveStruct("core_data", core_);
-    if (err != ESP_OK)
-    {
+    if (err != ESP_OK) {
         close_nvs();
         return err;
     }
@@ -97,8 +91,7 @@ esp_err_t NvsCore::commit()
     err = saveAppData();
 
     // 3. Commit efetivo na flash
-    if (err == ESP_OK)
-    {
+    if (err == ESP_OK) {
         err = nvs_commit(_handle);
     }
 
@@ -129,8 +122,7 @@ esp_err_t NvsCore::erase_namespace()
         return err;
 
     err = nvs_erase_all(_handle);
-    if (err == ESP_OK)
-    {
+    if (err == ESP_OK) {
         err = nvs_commit(_handle);
     }
 

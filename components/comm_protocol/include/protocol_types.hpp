@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "CoreTypes.hpp" // do componente core
+#include "core_types.hpp" // do componente core
 
 namespace protocol {
 
