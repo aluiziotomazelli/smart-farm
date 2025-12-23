@@ -53,13 +53,13 @@ enum class ErrorCode : uint8_t
  */
 struct MessageHeader
 {
-    uint8_t     version;   // Protocol version (starts at 0x01)
-    MessageType type;      // Message type
-    uint16_t    sequence;  // Sequence number (for ordering)
-    uint32_t    timestamp; // Millisecond timestamp
-    uint8_t     source_id; // Sender's internal ID
-    uint8_t     dest_id;   // Destination ID (0xFF = broadcast)
-    uint8_t     ttl;       // Time To Live (hops remaining)
+    uint8_t version;    // Protocol version (starts at 0x01)
+    MessageType type;   // Message type
+    uint16_t sequence;  // Sequence number (for ordering)
+    uint32_t timestamp; // Millisecond timestamp
+    uint8_t source_id;  // Sender's internal ID
+    uint8_t dest_id;    // Destination ID (0xFF = broadcast)
+    uint8_t ttl;        // Time To Live (hops remaining)
 };
 
 /**
@@ -67,10 +67,10 @@ struct MessageHeader
  */
 struct DataHeader : public MessageHeader
 {
-    uint16_t data_length;   // Length of payload data
-    uint8_t  data_type;     // Application-specific data type
-    uint8_t  fragmentation; // Fragmentation flags (bit 0: more fragments, bit 1: first
-                            // fragment)
+    uint16_t data_length;  // Length of payload data
+    uint8_t data_type;     // Application-specific data type
+    uint8_t fragmentation; // Fragmentation flags (bit 0: more fragments, bit 1: first
+                           // fragment)
 };
 
 /**
@@ -78,9 +78,9 @@ struct DataHeader : public MessageHeader
  */
 struct AckHeader : public MessageHeader
 {
-    uint16_t  acked_sequence; // Sequence number being acknowledged
-    uint8_t   rssi;           // RSSI of the received message
-    ErrorCode error_code;     // Error code (if any)
+    uint16_t acked_sequence; // Sequence number being acknowledged
+    uint8_t rssi;            // RSSI of the received message
+    ErrorCode error_code;    // Error code (if any)
 };
 
 /**
@@ -88,9 +88,9 @@ struct AckHeader : public MessageHeader
  */
 struct PairHeader : public MessageHeader
 {
-    char    device_name[16]; // Human-readable device name
-    uint8_t capabilities;    // Device capabilities bitmask
-    uint8_t auth_token[8];   // Authentication token (if required)
+    char device_name[16];  // Human-readable device name
+    uint8_t capabilities;  // Device capabilities bitmask
+    uint8_t auth_token[8]; // Authentication token (if required)
 };
 
 /**
@@ -99,8 +99,8 @@ struct PairHeader : public MessageHeader
 struct HeartbeatHeader : public MessageHeader
 {
     uint16_t battery_level; // Battery level (0-1000 = 0-100%)
-    uint8_t  status_flags;  // Device status flags
-    uint8_t  free_heap;     // Free heap memory in KB
+    uint8_t status_flags;   // Device status flags
+    uint8_t free_heap;      // Free heap memory in KB
 };
 
 #pragma pack(pop) // Restore default padding
@@ -115,9 +115,9 @@ struct HeartbeatHeader : public MessageHeader
 struct PeerInfo
 {
     // Identification
-    uint8_t                node_id;     // node ID
+    uint8_t node_id;                    // node ID
     std::array<uint8_t, 6> mac_address; // MAC address
-    std::string            alias;       // Human-readable name
+    std::string alias;                  // Human-readable name
 
     // Status tracking
     uint32_t first_seen; // First contact timestamp (ms)
@@ -131,8 +131,8 @@ struct PeerInfo
     uint32_t rx_errors;   // Received messages with errors
 
     // Connection quality
-    int8_t  last_rssi;    // Most recent RSSI measurement
-    int8_t  avg_rssi;     // Average RSSI (exponential moving average)
+    int8_t last_rssi;     // Most recent RSSI measurement
+    int8_t avg_rssi;      // Average RSSI (exponential moving average)
     uint8_t link_quality; // Link quality score (0-100%)
 
     // State flags
@@ -142,7 +142,7 @@ struct PeerInfo
     bool is_broadcast; // Broadcast peer (special case)
 
     // Configuration
-    uint8_t  preferred_channel;  // Preferred WiFi channel
+    uint8_t preferred_channel;   // Preferred WiFi channel
     uint32_t heartbeat_interval; // Expected heartbeat interval (ms)
     uint32_t last_heartbeat;     // Last heartbeat timestamp
 };
@@ -157,13 +157,13 @@ struct PeerInfo
 struct ESPNOWConfig
 {
     // Network parameters
-    uint8_t wifi_channel;      // WiFi channel (0 = auto-select)
-    bool    enable_long_range; // Enable long-range mode (ESP32 only)
+    uint8_t wifi_channel;   // WiFi channel (0 = auto-select)
+    bool enable_long_range; // Enable long-range mode (ESP32 only)
 
     // Protocol parameters
     uint16_t max_packet_size; // Maximum packet size (bytes)
-    uint8_t  max_peers;       // Maximum number of peers to track
-    uint8_t  max_retries;     // Maximum transmission retries
+    uint8_t max_peers;        // Maximum number of peers to track
+    uint8_t max_retries;      // Maximum transmission retries
 
     // Timeout parameters (milliseconds)
     uint32_t ack_timeout;        // ACK wait timeout
@@ -172,9 +172,9 @@ struct ESPNOWConfig
     uint32_t discovery_timeout;  // Peer discovery timeout
 
     // Security settings
-    bool                    enable_encryption; // Enable encryption (requires PMK/LMK)
-    std::array<uint8_t, 16> pmk;               // Primary Master Key
-    std::array<uint8_t, 16> lmk;               // Local Master Key
+    bool enable_encryption;      // Enable encryption (requires PMK/LMK)
+    std::array<uint8_t, 16> pmk; // Primary Master Key
+    std::array<uint8_t, 16> lmk; // Local Master Key
 
     // Feature flags
     bool auto_pairing;      // Enable automatic pairing
@@ -217,8 +217,8 @@ struct ESPNOWConfig
 using MessageCallback =
     std::function<void(const uint8_t *sender_id, // Sender's internal ID
                        const uint8_t *data,      // Message payload
-                       size_t         length,    // Payload length
-                       uint8_t        rssi       // Received signal strength
+                       size_t length,            // Payload length
+                       uint8_t rssi              // Received signal strength
                        )>;
 
 /**
@@ -226,8 +226,8 @@ using MessageCallback =
  */
 using DeliveryCallback =
     std::function<void(const uint8_t *recipient_id, // Recipient's internal ID
-                       bool           success,      // Delivery success/failure
-                       uint32_t       delivery_time // Time taken for delivery (ms)
+                       bool success,                // Delivery success/failure
+                       uint32_t delivery_time       // Time taken for delivery (ms)
                        )>;
 
 /**

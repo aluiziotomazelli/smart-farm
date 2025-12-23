@@ -3,6 +3,7 @@
 #include "esp_now.h"
 #include "esp_wifi.h"
 #include "message_types.hpp"
+#include "persistence.hpp"
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -16,6 +17,19 @@ class EspNowComm
 public:
     EspNowComm();
     ~EspNowComm();
+
+    // Constructor with persistence option
+    EspNowComm(bool enable_persistence = true);
+
+    // Persistence control
+    void enablePersistence(bool enable)
+    {
+        persistence_enabled_ = enable;
+    }
+
+    // Manual save methods
+    bool savePeersToNVS(); // Call when adding/removing peers
+    bool savePeersToRTC(); // Call before deep sleep
 
     // Callback types
     using OnReceiveCallback =
@@ -46,10 +60,10 @@ public:
      * @param require_ack Whether to wait for acknowledgment
      * @return true if queued for sending, false on error
      */
-    bool send(uint8_t        node_id,
+    bool send(uint8_t node_id,
               const uint8_t *data,
-              size_t         length,
-              bool           require_ack = true);
+              size_t length,
+              bool require_ack = true);
 
     /**
      * @brief Send broadcast message
@@ -67,10 +81,10 @@ public:
      * @param encrypt Enable encryption for this peer
      * @return true if successful, false otherwise
      */
-    bool addPeer(uint8_t        node_id,
+    bool addPeer(uint8_t node_id,
                  const uint8_t *mac,
-                 uint8_t        channel = 0,
-                 bool           encrypt = false);
+                 uint8_t channel = 0,
+                 bool encrypt    = false);
 
     /**
      * @brief Remove a peer from the peer list
@@ -140,45 +154,48 @@ public:
 
 private:
     // Internal methods
-    bool      initEspNow();
-    bool      deinitEspNow();
-    void      handleReceive(const uint8_t *mac, const uint8_t *data, int len);
-    void      handleSend(const uint8_t *mac, esp_now_send_status_t status);
+    bool initEspNow();
+    bool deinitEspNow();
+    void handleReceive(const uint8_t *mac, const uint8_t *data, int len);
+    void handleSend(const uint8_t *mac, esp_now_send_status_t status);
     PeerInfo *findPeerByMac(const uint8_t *mac);
     PeerInfo *findPeerById(uint8_t node_id);
-    bool      sendToMac(const uint8_t *mac,
-                        const uint8_t *data,
-                        size_t         length,
-                        bool           require_ack);
-    void      processTimeouts();
-    void      sendAck(const uint8_t *mac, uint16_t sequence);
+    bool sendToMac(const uint8_t *mac,
+                   const uint8_t *data,
+                   size_t length,
+                   bool require_ack);
+    void processTimeouts();
+    void sendAck(const uint8_t *mac, uint16_t sequence);
     bool validatePacket(const uint8_t *data, size_t length, const MessageHeader &header);
     void sendHeartbeat();
     void cleanupInactivePeers();
+    bool loadPeersIntelligently();
+    std::vector<PeerPersistence::PersistentPeer> getPersistentPeers() const;
 
     // Static callbacks for ESP-NOW
     static void espNowRecvCb(const esp_now_recv_info_t *recv_info,
-                             const uint8_t             *data,
-                             int                        len);
+                             const uint8_t *data,
+                             int len);
     static void espNowSendCb(const esp_now_send_info_t *tx_info,
-                             esp_now_send_status_t      status);
+                             esp_now_send_status_t status);
 
     // Member variables
-    ESPNOWConfig          config_;
-    uint8_t               node_id_;
+    ESPNOWConfig config_;
+    uint8_t node_id_;
     std::vector<PeerInfo> peers_;
-    bool                  initialized_;
+    bool initialized_;
+    bool persistence_enabled_;
 
     // Callbacks
-    OnReceiveCallback   on_receive_;
-    OnSendCallback      on_send_;
+    OnReceiveCallback on_receive_;
+    OnSendCallback on_send_;
     OnPeerEventCallback on_peer_event_;
 
     // Acknowledgment manager
     class AcknowledgmentManager *ack_manager_;
 
     // Discovery state
-    bool     discovery_active_;
+    bool discovery_active_;
     uint32_t discovery_end_time_;
 
     // Error tracking

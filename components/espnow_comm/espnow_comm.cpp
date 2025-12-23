@@ -13,14 +13,19 @@ static const char *TAG = "EspNowComm";
 // Inicializar instância estática
 EspNowComm *EspNowComm::instance_ = nullptr;
 
-EspNowComm::EspNowComm()
+EspNowComm::EspNowComm(bool enable_persistence)
     : node_id_(0)
     , initialized_(false)
+    , persistence_enabled_(enable_persistence)
     , ack_manager_(nullptr)
     , discovery_active_(false)
     , discovery_end_time_(0)
 {
     memset(last_error_, 0, sizeof(last_error_));
+
+    if (persistence_enabled_) {
+        PeerPersistence::initNVS();
+    }
 
     // Gerar node_id baseado no MAC (último byte)
     uint8_t mac[6];
@@ -57,6 +62,7 @@ bool EspNowComm::init(const ESPNOWConfig &config)
     ESP_ERROR_CHECK(esp_now_init());
 
     // Registrar callbacks
+
     ESP_ERROR_CHECK(esp_now_register_recv_cb(espNowRecvCb));
     ESP_ERROR_CHECK(esp_now_register_send_cb(espNowSendCb));
 
@@ -74,6 +80,10 @@ bool EspNowComm::init(const ESPNOWConfig &config)
 
     instance_    = this;
     initialized_ = true;
+    // Load peers intelligently if persistence enabled
+    if (persistence_enabled_) {
+        loadPeersIntelligently();
+    }
 
     ESP_LOGI(TAG, "ESP-NOW initialized. Node ID: %u", node_id_);
     return true;
@@ -112,10 +122,10 @@ uint8_t EspNowComm::get_id() const
     return node_id_;
 }
 
-bool EspNowComm::send(uint8_t        node_id,
+bool EspNowComm::send(uint8_t node_id,
                       const uint8_t *data,
-                      size_t         length,
-                      bool           require_ack)
+                      size_t length,
+                      bool require_ack)
 {
     if (!initialized_) {
         strncpy(last_error_, "Not initialized", sizeof(last_error_) - 1);
@@ -158,7 +168,7 @@ bool EspNowComm::send(uint8_t        node_id,
 
     // Montar pacote: header + crc + dados
     uint8_t packet[config_.max_packet_size];
-    size_t  packet_len = 0;
+    size_t packet_len = 0;
 
     memcpy(packet, &header, sizeof(header));
     packet_len += sizeof(header);
@@ -211,7 +221,7 @@ bool EspNowComm::broadcast(const uint8_t *data, size_t length)
 
     // Montar pacote
     uint8_t packet[config_.max_packet_size];
-    size_t  packet_len = sizeof(header) + 1 + length; // header + crc + data
+    size_t packet_len = sizeof(header) + 1 + length; // header + crc + data
 
     if (packet_len > config_.max_packet_size) {
         strncpy(last_error_, "Packet too large for broadcast", sizeof(last_error_) - 1);
@@ -233,10 +243,10 @@ bool EspNowComm::broadcast(const uint8_t *data, size_t length)
     return true;
 }
 
-bool EspNowComm::addPeer(uint8_t        node_id,
+bool EspNowComm::addPeer(uint8_t node_id,
                          const uint8_t *mac,
-                         uint8_t        channel,
-                         bool           encrypt)
+                         uint8_t channel,
+                         bool encrypt)
 {
     // Verificar se já existe
     for (auto &peer : peers_) {
@@ -308,6 +318,11 @@ bool EspNowComm::addPeer(uint8_t        node_id,
         on_peer_event_(node_id, mac, true);
     }
 
+    if (persistence_enabled_) {
+        savePeersToRTC();
+        savePeersToNVS();
+    }
+
     ESP_LOGI(TAG, "Peer added: node_id=%u, MAC=%02X:%02X:%02X:%02X:%02X:%02X", node_id,
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
@@ -324,6 +339,11 @@ bool EspNowComm::removePeer(uint8_t node_id)
             // Notificar callback
             if (on_peer_event_) {
                 on_peer_event_(node_id, it->mac_address.data(), false);
+            }
+
+            if (persistence_enabled_) {
+                savePeersToRTC();
+                savePeersToNVS();
             }
 
             ESP_LOGI(TAG, "Peer removed: node_id=%u", node_id);
@@ -397,7 +417,7 @@ void EspNowComm::process()
 
     // 3. Enviar heartbeats periódicos
     static uint32_t last_heartbeat = 0;
-    uint32_t        now            = esp_timer_get_time() / 1000;
+    uint32_t now                   = esp_timer_get_time() / 1000;
 
     if (config_.heartbeat_interval > 0 &&
         now - last_heartbeat > config_.heartbeat_interval) {
@@ -419,8 +439,8 @@ void EspNowComm::handleReceive(const uint8_t *mac, const uint8_t *data, int len)
         return;
     }
 
-    MessageHeader *header       = (MessageHeader *)data;
-    uint8_t        received_crc = data[sizeof(MessageHeader)];
+    MessageHeader *header = (MessageHeader *)data;
+    uint8_t received_crc  = data[sizeof(MessageHeader)];
 
     // Validar CRC básico
     uint8_t expected_crc = 0;
@@ -475,8 +495,8 @@ void EspNowComm::handleReceive(const uint8_t *mac, const uint8_t *data, int len)
 
             // Chamar callback da aplicação
             if (on_receive_) {
-                const uint8_t *payload     = data + sizeof(MessageHeader) + 1;
-                size_t         payload_len = len - sizeof(MessageHeader) - 1;
+                const uint8_t *payload = data + sizeof(MessageHeader) + 1;
+                size_t payload_len     = len - sizeof(MessageHeader) - 1;
                 on_receive_(mac, payload, payload_len);
             }
         }
@@ -526,7 +546,7 @@ void EspNowComm::handleSend(const uint8_t *mac, esp_now_send_status_t status)
 
 // Callbacks estáticos
 void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
-                              esp_now_send_status_t      status)
+                              esp_now_send_status_t status)
 {
     if (instance_) {
         // Extrai o MAC address da estrutura wifi_tx_info_t
@@ -535,8 +555,8 @@ void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
 }
 
 void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
-                              const uint8_t             *data,
-                              int                        len)
+                              const uint8_t *data,
+                              int len)
 {
     if (instance_ && recv_info) {
         instance_->handleReceive(recv_info->src_addr, data, len);
@@ -642,6 +662,97 @@ void EspNowComm::cleanupInactivePeers()
             ++it;
         }
     }
+}
+
+bool EspNowComm::loadPeersIntelligently()
+{
+    if (!persistence_enabled_)
+        return false;
+
+    // 1. Try RTC first (fast)
+    auto rtc_peers = PeerPersistence::loadFromRTC();
+
+    if (!rtc_peers.empty()) {
+        ESP_LOGI(TAG, "Using peers from RTC memory (%zu peers)", rtc_peers.size());
+    }
+    else {
+        // 2. Fallback to NVS (slower)
+        auto nvs_peers = PeerPersistence::loadFromNVS();
+
+        if (!nvs_peers.empty()) {
+            ESP_LOGI(TAG, "Using peers from NVS (%zu peers)", nvs_peers.size());
+
+            // Update RTC with NVS data for next time
+            PeerPersistence::saveToRTC(nvs_peers);
+            rtc_peers = nvs_peers;
+        }
+        else {
+            ESP_LOGI(TAG, "No persisted peers found");
+            return false;
+        }
+    }
+
+    // Add peers to ESP-NOW
+    for (const auto &peer : rtc_peers) {
+        // Use default channel (0) and no encryption for persisted peers
+        addPeer(peer.node_id, peer.mac, 0, false);
+    }
+
+    return true;
+}
+
+std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeers() const
+{
+    std::vector<PeerPersistence::PersistentPeer> peers;
+
+    for (const auto &peer : peers_) {
+        if (peer.is_confirmed) { // Only save confirmed peers
+            PeerPersistence::PersistentPeer p;
+            memcpy(p.mac, peer.mac_address.data(), 6);
+            p.node_id = peer.node_id;
+            peers.push_back(p);
+        }
+    }
+
+    return peers;
+}
+
+bool EspNowComm::savePeersToNVS()
+{
+    if (!persistence_enabled_ || !initialized_)
+        return false;
+
+    auto peers = getPersistentPeers();
+    if (peers.empty()) {
+        ESP_LOGD(TAG, "No peers to save to NVS");
+        return true;
+    }
+
+    bool success = PeerPersistence::saveToNVS(peers);
+    if (success) {
+        ESP_LOGI(TAG, "Saved %zu peers to NVS", peers.size());
+    }
+
+    return success;
+}
+
+bool EspNowComm::savePeersToRTC()
+{
+    if (!persistence_enabled_ || !initialized_)
+        return false;
+
+    auto peers = getPersistentPeers();
+    if (peers.empty()) {
+        ESP_LOGD(TAG, "No peers to save to RTC");
+        return true;
+    }
+
+    bool success = PeerPersistence::saveToRTC(peers);
+    if (success) {
+        ESP_LOGD(TAG, "Saved %zu peers to RTC", peers.size());
+    }
+
+    return success;
 }
 
 // Setters para callbacks
