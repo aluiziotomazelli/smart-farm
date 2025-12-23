@@ -2,7 +2,7 @@
 
 #include "power_control.hpp"
 #include "water_tank_nvs.hpp"
-#include "comm_espnow.hpp"
+#include "comm_interface.hpp"
 
 class WaterTankApp
 {
@@ -21,5 +21,5 @@ private:
 private:
     PowerControl   sensor_power_;
     WaterTankNvs   storage_;
-    comm::CommEspNow& comm_;
+    comm::CommInterface& comm_;
 };

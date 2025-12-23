@@ -21,7 +21,7 @@ RTC_DATA_ATTR bool        rtc_has_level           = false;
 
 WaterTankApp::WaterTankApp()
     : sensor_power_({.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
-    , comm_(comm::CommEspNow::instance())
+    , comm_(comm::CommInterface::get_default_instance())
 {
 }
 

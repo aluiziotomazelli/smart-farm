@@ -8,6 +8,8 @@ namespace comm {
 class CommInterface
 {
 public:
+    static CommInterface& get_default_instance();
+
     using RxCallback = std::function<void(uint32_t source_node_id, const uint8_t* payload, size_t len)>;
 
     virtual ~CommInterface() = default;
