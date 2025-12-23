@@ -1,9 +1,8 @@
 #pragma once
 
-#include "comm_interface.hpp"
 #include "power_control.hpp"
 #include "water_tank_nvs.hpp"
-#include "water_tank_types.hpp"
+#include "comm_espnow.hpp"
 
 class WaterTankApp
 {
@@ -14,11 +13,13 @@ public:
     void run();
 
 private:
-    static FillState infer_fill_state(uint16_t current_level);
-    static void      configure_sleep_policy(bool boia, uint64_t timer_us);
+    FillState infer_fill_state(uint16_t current_level);
+    uint64_t  decide_timer_us(FillState state);
+    void      configure_sleep_policy(bool float_switch_closed, uint64_t timer_us);
+    void      on_comm_receive(uint32_t source_node_id, const uint8_t* payload, size_t len);
 
-    static uint64_t      decide_timer_us(FillState state);
-    PowerControl         sensor_power_;
-    WaterTankNvs         storage_;
-    comm::CommInterface &comm_;
+private:
+    PowerControl   sensor_power_;
+    WaterTankNvs   storage_;
+    comm::CommEspNow& comm_;
 };

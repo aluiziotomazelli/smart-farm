@@ -15,21 +15,17 @@
 static const char *TAG = "WaterTankApp";
 
 // --- Persistence in RTC Memory ---
-// These variables survive Deep Sleep but are lost on Power-On Reset.
-RTC_DATA_ATTR CoreStorage rtc_core_data; // Caching for Core data to reduce NVS writes
-RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0; // Used for filling/draining trend
+RTC_DATA_ATTR CoreStorage rtc_core_data;
+RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0;
 RTC_DATA_ATTR bool        rtc_has_level           = false;
 
 WaterTankApp::WaterTankApp()
-    : sensor_power_(
-          {.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
-    , comm_(comm::CommInterface::get_default_instance())
+    : sensor_power_({.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
+    , comm_(comm::CommEspNow::instance())
 {
 }
 
 // --- Hardware Configurations ---
-
-// Ultrasonic Sensor (HC-SR04) Configuration
 static const UltrasonicSensor::UltrasonicConfig cfg = {
     .ping_count       = 9,
     .ping_interval_ms = 70,
@@ -40,21 +36,14 @@ static const UltrasonicSensor::UltrasonicConfig cfg = {
 
 static TrigerEchoRmt sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
 
-// Float Switch (Mechanical Overflow/Top Level) Configuration
 static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4,
                                      .normally_open = true,
                                      .pull          = FloatSwitch::Pull::UP,
                                      .debounce_ms   = 50,
                                      .wakeup_edge   = FloatSwitch::WakeupLevel::LOW};
-
 static FloatSwitch floatswitch(fs_cfg);
 
 // --- Business Logic ---
-
-/**
- * Determines if the tank level is rising, falling, or stable
- * by comparing current reading with the previous one stored in RTC RAM.
- */
 FillState WaterTankApp::infer_fill_state(uint16_t current_level)
 {
     if (!rtc_has_level) {
@@ -80,10 +69,6 @@ FillState WaterTankApp::infer_fill_state(uint16_t current_level)
     return FillState::STABLE;
 }
 
-/**
- * Selects the appropriate sleep interval based on the current fill state.
- * Faster intervals for Filling/Draining, longer for Stable.
- */
 uint64_t WaterTankApp::decide_timer_us(FillState state)
 {
     switch (state) {
@@ -99,22 +84,14 @@ uint64_t WaterTankApp::decide_timer_us(FillState state)
     }
 }
 
-/**
- * Configures the ESP32 Wakeup sources.
- * Always sets a Timer wakeup and optionally sets a GPIO wakeup for the float switch.
- */
 void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t timer_us)
 {
-    // Clear previous settings
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
-    // Enable Timer wakeup if interval is valid
     if (timer_us > 0) {
         esp_sleep_enable_timer_wakeup(timer_us);
     }
 
-    // Enable External Wakeup (Float Switch) ONLY if currently open.
-    // This allows the device to wake up immediately if the tank hits the top limit.
     if (!float_switch_closed) {
         FloatSwitch::WakeupInfo wi;
         if (floatswitch.get_wakeup_info(wi)) {
@@ -123,135 +100,90 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
     }
 }
 
-/**
- * Converts distance in cm to tank level in parts per thousand (permille 0-1000).
- * Uses LEVEL_MIN_CM (Empty) and LEVEL_MAX_CM (Full) as boundaries.
- */
 static uint16_t distance_to_level_permille(float d_cm)
 {
-    // Distance greater than empty threshold = 0%
-    if (d_cm >= LEVEL_MIN_CM)
-        return 0;
-
-    // Distance smaller than full threshold = 100%
-    if (d_cm <= LEVEL_MAX_CM)
-        return 1000;
-
-    // Linear interpolation
+    if (d_cm >= LEVEL_MIN_CM) return 0;
+    if (d_cm <= LEVEL_MAX_CM) return 1000;
     float span  = LEVEL_MIN_CM - LEVEL_MAX_CM;
     float level = (LEVEL_MIN_CM - d_cm) / span;
-
     return static_cast<uint16_t>(level * 1000.0f);
 }
 
+void WaterTankApp::on_comm_receive(uint32_t source_node_id, const uint8_t* payload, size_t len)
+{
+    ESP_LOGI(TAG, "Received message from node 0x%lX (%d bytes)", source_node_id, len);
+}
+
+
 void WaterTankApp::init()
 {
-    // === NVS Maintenance (Keep commented for production) ===
-    // _storage.factory_reset(); // Resets struct to defaults and saves
-    // nvs_flash_erase();        // Deep erase of the entire partition
-    // nvs_flash_init();         // Re-initialize after deep erase
-
     ESP_LOGI(TAG, "Initializing WaterTankApp");
     storage_.init_partition();
 
-    // === Hardware Initialization ===
     ESP_ERROR_CHECK(sensor_power_.init());
     sensor.init();
     floatswitch.init();
 
-    // === NVS Storage Initialization ===
-    // This now handles first boot or corrupted data automatically
     if (storage_.load() != ESP_OK) {
         ESP_LOGW(TAG, "NVS load failed, performing factory reset");
         storage_.factory_reset();
     }
 
-    // --- Node ID Generation (On First Boot) ---
     auto &core = storage_.getCoreData();
     if (core.node_id == 0) {
         ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
         uint8_t mac[6];
         esp_efuse_mac_get_default(mac);
-        // Gera o ID a partir dos últimos 4 bytes do MAC para garantir unicidade
         core.node_id = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
-
-        ESP_LOGI(TAG, "New Node ID: 0x%08X", core.node_id);
-
-        // Salva imediatamente a nova identidade no NVS
+        ESP_LOGI(TAG, "New Node ID: 0x%08lX", core.node_id);
         if (storage_.commit() == ESP_OK) {
             ESP_LOGI(TAG, "New Node ID saved to NVS.");
-        }
-        else {
+        } else {
             ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
-            // A aplicação pode continuar, mas o ID não será persistido
         }
     }
 
-    // auto &app  = _storage.stats;
-
-    // === Boot and Wakeup Detection ===
-    esp_reset_reason_t       reset_reason = esp_reset_reason();
-    esp_sleep_wakeup_cause_t wake_cause   = esp_sleep_get_wakeup_cause();
-
+    esp_reset_reason_t reset_reason = esp_reset_reason();
+    esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
     ESP_LOGI(TAG, "Reset reason: %d, Wakeup cause: %d", reset_reason, wake_cause);
 
-    bool woke_from_sleep =
-        (wake_cause == ESP_SLEEP_WAKEUP_EXT0) || (wake_cause == ESP_SLEEP_WAKEUP_EXT1) ||
-        (wake_cause == ESP_SLEEP_WAKEUP_TIMER) ||
-        (wake_cause == ESP_SLEEP_WAKEUP_TOUCHPAD) || (wake_cause == ESP_SLEEP_WAKEUP_ULP);
+    bool woke_from_sleep = (wake_cause != ESP_SLEEP_WAKEUP_UNDEFINED);
 
-    // === Lifecycle Management ===
-    // If it's not a sleep wakeup and boot_count > 0, it's likely a crash/hard reset
-    if (!woke_from_sleep) {
-        if (core.boot_count > 0)
-            core.crash_count++;
+    if (!woke_from_sleep && core.boot_count > 0) {
+        core.crash_count++;
     }
     core.boot_count++;
 
-    // === Identify Wakeup Source ===
     switch (wake_cause) {
     case ESP_SLEEP_WAKEUP_EXT0:
     case ESP_SLEEP_WAKEUP_EXT1:
         core.last_wake = WakeSource::GPIO;
         ESP_LOGI(TAG, "Woke from GPIO");
         break;
-
     case ESP_SLEEP_WAKEUP_TIMER:
         core.last_wake = WakeSource::TIMER;
         ESP_LOGI(TAG, "Woke from TIMER");
         break;
-
     case ESP_SLEEP_WAKEUP_UNDEFINED:
+    default:
         core.last_wake = WakeSource::POWER_ON;
         ESP_LOGI(TAG, "Power-on reset or undefined wake");
         break;
-
-    default:
-        core.last_wake = WakeSource::NONE;
-        break;
     }
 
-    // === Cache Core Data to RTC ===
-    // To avoid writing to NVS twice per cycle, we cache the updated core data
-    // in RTC memory and commit it once at the end of the `run` cycle.
     rtc_core_data = core;
+    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count, rtc_core_data.crash_count);
 
-    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count,
-             rtc_core_data.crash_count);
-
-    // === Communication Component Initialization ===
-    if (!comm_.init()) {
+    // === NEW Communication Component Initialization ===
+    if (!comm_.init(core.node_id)) {
         ESP_LOGE(TAG, "Failed to initialize communication component");
-    }
-    else {
-        comm_.attach_nvs(&storage_);
-        if (!comm_.load()) {
-            ESP_LOGW(TAG, "Could not load peers from NVS. List will start empty.");
-        }
-        comm_.start();
+    } else {
+        comm_.set_rx_callback([this](uint32_t source_node_id, const uint8_t* payload, size_t len) {
+            this->on_comm_receive(source_node_id, payload, len);
+        });
+        ESP_LOGI(TAG, "Communication component initialized");
     }
 
-    // Brief settling delay
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
@@ -260,16 +192,14 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "Starting Application Loop");
 
     while (true) {
-        // Direct access to storage references
         auto &core = storage_.getCoreData();
         auto &app  = storage_.stats;
 
-        float     distance = 0.0f;
-        UsQuality quality  = UsQuality::INVALID;
-        UsFailure failure  = UsFailure::NONE;
-        uint16_t  level    = 0;
+        float distance = 0.0f;
+        UsQuality quality = UsQuality::INVALID;
+        UsFailure failure = UsFailure::NONE;
+        uint16_t level = 0;
 
-        // === 1. Sensor Power On and Reading ===
         sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
         bool ok = sensor.read_distance_cm(distance, quality, failure);
@@ -277,58 +207,44 @@ void WaterTankApp::run()
 
         if (ok) {
             level = distance_to_level_permille(distance);
-
             if (quality == UsQuality::WEAK) {
-                ESP_LOGW(TAG, "Ultrasonic WEAK reading: %.2f cm (level: %u‰)", distance,
-                         level);
-            }
-            else {
+                ESP_LOGW(TAG, "Ultrasonic WEAK reading: %.2f cm (level: %u‰)", distance, level);
+            } else {
                 ESP_LOGI(TAG, "Distance: %.2f cm, Level: %u‰", distance, level);
             }
-        }
-        else {
+        } else {
             ESP_LOGW(TAG, "Ultrasonic INVALID reading (failure code: %d)", (int)failure);
         }
 
-        // === 2. Update Application Statistics ===
         storage_.updateStatus(level, distance, quality, failure);
         app.fill_state = infer_fill_state(level);
 
-        // === 3. Sleep Interval Calculation ===
         uint64_t timer_us = decide_timer_us(app.fill_state);
-
-        // Apply quality factors to the sleep timer
-        if (quality == UsQuality::WEAK)
-            timer_us = static_cast<uint64_t>(timer_us * WEAK_SLEEP_FACTOR);
-        else if (quality == UsQuality::INVALID)
-            timer_us = static_cast<uint64_t>(timer_us * INVALID_SLEEP_FACTOR);
-
-        // Update core sleep interval (common telemetry)
-        core.sleep_interval_s          = (uint32_t)(timer_us / 1000000ULL);
+        if (quality == UsQuality::WEAK) timer_us = static_cast<uint64_t>(timer_us * WEAK_SLEEP_FACTOR);
+        else if (quality == UsQuality::INVALID) timer_us = static_cast<uint64_t>(timer_us * INVALID_SLEEP_FACTOR);
+        core.sleep_interval_s = (uint32_t)(timer_us / 1000000ULL);
         rtc_core_data.sleep_interval_s = core.sleep_interval_s;
 
-        // === 4. Configure Sleep Policy (GPIO Wakeup) ===
         bool float_switch_closed = floatswitch.read();
         app.gpio_wakeup_enabled  = !float_switch_closed;
         configure_sleep_policy(float_switch_closed, timer_us);
 
-        // === 5. Update Sample Timestamp ===
         app.sample_uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
 
-        // === 6. Persist Data to NVS ===
-        // Restore core data from RTC memory before the final commit
+        // === Send Data using new Comm Interface ===
+        uint16_t payload = app.level_permille;
+        // Using 0xFFFFFFFF as broadcast node_id for testing
+        comm_.send(0xFFFFFFFF, reinterpret_cast<const uint8_t*>(&payload), sizeof(payload));
+
         core = rtc_core_data;
         // _storage.commit();
 
-        // === 7. Summary Log ===
         ESP_LOGI(TAG,
-                 "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: "
-                 "%lu, Crash: %lu",
+                 "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: %lu, Crash: %lu",
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
-        // === 8. Deep Sleep or Loop Delay ===
-        // For production, replace delay with: esp_deep_sleep_start();
         vTaskDelay(pdMS_TO_TICKS(2000));
+        // esp_deep_sleep_start();
     }
 }
