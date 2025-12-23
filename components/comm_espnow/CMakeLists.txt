@@ -6,6 +6,4 @@ idf_component_register(
     REQUIRES
         esp_wifi
         comm
-        comm_protocol
-        comm_peer_manager
 )

@@ -15,7 +15,7 @@ static uint64_t now_ms()
 FloatSwitch::FloatSwitch(const Config &cfg)
     : config(cfg)
 {
-    rtc_capable = rtc_gpio_is_valid_gpio(config.pin);
+    // rtc_capable = rtc_gpio_is_valid_gpio(config.pin);
 }
 
 FloatSwitch::~FloatSwitch()
@@ -63,34 +63,35 @@ bool FloatSwitch::configure_gpio()
 
 bool FloatSwitch::configure_rtc_gpio()
 {
-    if (config.pull == Pull::UP) {
-        rtc_gpio_pullup_en(config.pin);
-        rtc_gpio_pulldown_dis(config.pin);
-    }
-    else if (config.pull == Pull::DOWN) {
-        rtc_gpio_pullup_dis(config.pin);
-        rtc_gpio_pulldown_en(config.pin);
-    }
-    else {
-        rtc_gpio_pullup_dis(config.pin);
-        rtc_gpio_pulldown_dis(config.pin);
-    }
+    // if (config.pull == Pull::UP) {
+    //     rtc_gpio_pullup_en(config.pin);
+    //     rtc_gpio_pulldown_dis(config.pin);
+    // }
+    // else if (config.pull == Pull::DOWN) {
+    //     rtc_gpio_pullup_dis(config.pin);
+    //     rtc_gpio_pulldown_en(config.pin);
+    // }
+    // else {
+    //     rtc_gpio_pullup_dis(config.pin);
+    //     rtc_gpio_pulldown_dis(config.pin);
+    // }
 
-    rtc_gpio_hold_dis(config.pin);
+    // rtc_gpio_hold_dis(config.pin);
     return true;
 }
 
 void FloatSwitch::release_rtc_gpio()
 {
     if (rtc_capable && initialized) {
-        rtc_gpio_hold_dis(config.pin);
-        rtc_gpio_deinit(config.pin);
+        // rtc_gpio_hold_dis(config.pin);
+        // rtc_gpio_deinit(config.pin);
     }
 }
 
 bool FloatSwitch::read_raw() const
 {
-    return rtc_capable ? rtc_gpio_get_level(config.pin) : gpio_get_level(config.pin);
+    // return rtc_capable ? rtc_gpio_get_level(config.pin) : gpio_get_level(config.pin);
+    return gpio_get_level(config.pin);
 }
 
 bool FloatSwitch::debounce_update(bool raw)

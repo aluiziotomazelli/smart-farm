@@ -20,7 +20,8 @@ RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0;
 RTC_DATA_ATTR bool        rtc_has_level           = false;
 
 WaterTankApp::WaterTankApp()
-    : sensor_power_({.enable_gpio = GPIO_NUM_25, .active_high = true, .initial_on = false})
+    : sensor_power_(
+          {.enable_gpio = GPIO_NUM_10, .active_high = true, .initial_on = false})
     , comm_(comm::CommInterface::get_default_instance())
 {
 }
@@ -41,7 +42,7 @@ static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4,
                                      .pull          = FloatSwitch::Pull::UP,
                                      .debounce_ms   = 50,
                                      .wakeup_edge   = FloatSwitch::WakeupLevel::LOW};
-static FloatSwitch floatswitch(fs_cfg);
+static FloatSwitch         floatswitch(fs_cfg);
 
 // --- Business Logic ---
 FillState WaterTankApp::infer_fill_state(uint16_t current_level)
@@ -95,25 +96,42 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
     if (!float_switch_closed) {
         FloatSwitch::WakeupInfo wi;
         if (floatswitch.get_wakeup_info(wi)) {
-            esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
+            // esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
         }
     }
 }
 
 static uint16_t distance_to_level_permille(float d_cm)
 {
-    if (d_cm >= LEVEL_MIN_CM) return 0;
-    if (d_cm <= LEVEL_MAX_CM) return 1000;
+    if (d_cm >= LEVEL_MIN_CM)
+        return 0;
+    if (d_cm <= LEVEL_MAX_CM)
+        return 1000;
     float span  = LEVEL_MIN_CM - LEVEL_MAX_CM;
     float level = (LEVEL_MIN_CM - d_cm) / span;
     return static_cast<uint16_t>(level * 1000.0f);
 }
 
-void WaterTankApp::on_comm_receive(uint32_t source_node_id, const uint8_t* payload, size_t len)
+void WaterTankApp::on_comm_receive(uint32_t       source_node_id,
+                                   const uint8_t *payload,
+                                   size_t         len)
 {
-    ESP_LOGI(TAG, "Received message from node 0x%lX (%d bytes)", source_node_id, len);
-}
+    // Crie uma variável local para receber os dados
+    uint16_t received_level;
 
+    // Verifique se o tamanho é exatamente o que esperamos
+    if (len == sizeof(received_level)) {
+        // Copie os bytes do payload para a nossa variável
+        memcpy(&received_level, payload, sizeof(received_level));
+
+        ESP_LOGI(TAG, "Received message from node 0x%lX. Extracted level: %u‰",
+                 source_node_id, received_level);
+    }
+    else {
+        ESP_LOGW(TAG, "Received payload from node 0x%lX with unexpected size: %d bytes",
+                 source_node_id, len);
+    }
+}
 
 void WaterTankApp::init()
 {
@@ -138,13 +156,14 @@ void WaterTankApp::init()
         ESP_LOGI(TAG, "New Node ID: 0x%08lX", core.node_id);
         if (storage_.commit() == ESP_OK) {
             ESP_LOGI(TAG, "New Node ID saved to NVS.");
-        } else {
+        }
+        else {
             ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
         }
     }
 
-    esp_reset_reason_t reset_reason = esp_reset_reason();
-    esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
+    esp_reset_reason_t       reset_reason = esp_reset_reason();
+    esp_sleep_wakeup_cause_t wake_cause   = esp_sleep_get_wakeup_cause();
     ESP_LOGI(TAG, "Reset reason: %d, Wakeup cause: %d", reset_reason, wake_cause);
 
     bool woke_from_sleep = (wake_cause != ESP_SLEEP_WAKEUP_UNDEFINED);
@@ -172,15 +191,18 @@ void WaterTankApp::init()
     }
 
     rtc_core_data = core;
-    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count, rtc_core_data.crash_count);
+    ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count,
+             rtc_core_data.crash_count);
 
     // === NEW Communication Component Initialization ===
     if (!comm_.init(core.node_id)) {
         ESP_LOGE(TAG, "Failed to initialize communication component");
-    } else {
-        comm_.set_rx_callback([this](uint32_t source_node_id, const uint8_t* payload, size_t len) {
-            this->on_comm_receive(source_node_id, payload, len);
-        });
+    }
+    else {
+        comm_.set_rx_callback(
+            [this](uint32_t source_node_id, const uint8_t *payload, size_t len) {
+                this->on_comm_receive(source_node_id, payload, len);
+            });
         ESP_LOGI(TAG, "Communication component initialized");
     }
 
@@ -195,10 +217,10 @@ void WaterTankApp::run()
         auto &core = storage_.getCoreData();
         auto &app  = storage_.stats;
 
-        float distance = 0.0f;
-        UsQuality quality = UsQuality::INVALID;
-        UsFailure failure = UsFailure::NONE;
-        uint16_t level = 0;
+        float     distance = 0.0f;
+        UsQuality quality  = UsQuality::INVALID;
+        UsFailure failure  = UsFailure::NONE;
+        uint16_t  level    = 0;
 
         sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
@@ -208,11 +230,14 @@ void WaterTankApp::run()
         if (ok) {
             level = distance_to_level_permille(distance);
             if (quality == UsQuality::WEAK) {
-                ESP_LOGW(TAG, "Ultrasonic WEAK reading: %.2f cm (level: %u‰)", distance, level);
-            } else {
+                ESP_LOGW(TAG, "Ultrasonic WEAK reading: %.2f cm (level: %u‰)", distance,
+                         level);
+            }
+            else {
                 ESP_LOGI(TAG, "Distance: %.2f cm, Level: %u‰", distance, level);
             }
-        } else {
+        }
+        else {
             ESP_LOGW(TAG, "Ultrasonic INVALID reading (failure code: %d)", (int)failure);
         }
 
@@ -220,9 +245,11 @@ void WaterTankApp::run()
         app.fill_state = infer_fill_state(level);
 
         uint64_t timer_us = decide_timer_us(app.fill_state);
-        if (quality == UsQuality::WEAK) timer_us = static_cast<uint64_t>(timer_us * WEAK_SLEEP_FACTOR);
-        else if (quality == UsQuality::INVALID) timer_us = static_cast<uint64_t>(timer_us * INVALID_SLEEP_FACTOR);
-        core.sleep_interval_s = (uint32_t)(timer_us / 1000000ULL);
+        if (quality == UsQuality::WEAK)
+            timer_us = static_cast<uint64_t>(timer_us * WEAK_SLEEP_FACTOR);
+        else if (quality == UsQuality::INVALID)
+            timer_us = static_cast<uint64_t>(timer_us * INVALID_SLEEP_FACTOR);
+        core.sleep_interval_s          = (uint32_t)(timer_us / 1000000ULL);
         rtc_core_data.sleep_interval_s = core.sleep_interval_s;
 
         bool float_switch_closed = floatswitch.read();
@@ -234,13 +261,15 @@ void WaterTankApp::run()
         // === Send Data using new Comm Interface ===
         uint16_t payload = app.level_permille;
         // Using 0xFFFFFFFF as broadcast node_id for testing
-        comm_.send(0xFFFFFFFF, reinterpret_cast<const uint8_t*>(&payload), sizeof(payload));
+        comm_.send(0xFFFFFFFF, reinterpret_cast<const uint8_t *>(&payload),
+                   sizeof(payload));
 
         core = rtc_core_data;
         // _storage.commit();
 
         ESP_LOGI(TAG,
-                 "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: %lu, Crash: %lu",
+                 "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: "
+                 "%lu, Crash: %lu",
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
