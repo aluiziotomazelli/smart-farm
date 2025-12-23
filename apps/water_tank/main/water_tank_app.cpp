@@ -17,8 +17,6 @@
 
 static const char *TAG = "WaterTankApp";
 
-static constexpr uint32_t CENTRAL_HUB_NODE_ID = 0x00000001; // For testing
-
 // --- Persistence in RTC Memory ---
 // These variables survive Deep Sleep but are lost on Power-On Reset.
 RTC_DATA_ATTR CoreStorage rtc_core_data; // Caching for Core data to reduce NVS writes
@@ -332,32 +330,51 @@ void WaterTankApp::run()
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
-        // === 8. Communication Test (Active Discovery) ===
-        ESP_LOGI(TAG, "Starting active discovery for Central Hub...");
-        comm_.start_discovery(CENTRAL_HUB_NODE_ID);
+        // === 8. Dynamic Discovery and Communication ===
+        uint32_t target_node_id = 0;
 
-        // Wait for 5 seconds to allow time for the peer to be discovered.
-        // During this time, the comm component is processing incoming packets in the background.
-        ESP_LOGI(TAG, "Waiting for discovery response...");
+        // Note: In a real multi-node system, we would need a way to identify the correct peer.
+        // For this test, we assume the first discovered peer is the one we want.
+
+        ESP_LOGI(TAG, "Starting general discovery to find a hub...");
+        comm_.start_discovery(); // General broadcast discovery
+
+        // Wait for 5 seconds for a discovery response
         for (int i = 0; i < 50; ++i) {
-            comm::protocol::Frame received_frame{};
-            comm_.receive(received_frame); // Process any incoming frames
+            comm::protocol::Frame frame{};
+            if (comm_.receive(frame)) {
+                if (frame.header.type == comm::protocol::MessageType::DISCOVERY_RESPONSE) {
+                    ESP_LOGI(TAG, "Hub discovered with Node ID: 0x%08X", frame.header.node_id);
+                    target_node_id = frame.header.node_id;
+
+                    ESP_LOGI(TAG, "Saving peer list to NVS...");
+                    if (comm_.save()) {
+                        ESP_LOGI(TAG, "Peer list saved successfully.");
+                    } else {
+                        ESP_LOGE(TAG, "Failed to save peer list.");
+                    }
+                    break; // Exit the loop once a peer is found
+                }
+            }
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         comm_.stop_discovery();
-        ESP_LOGI(TAG, "Discovery period finished. Attempting to send data...");
 
-        // Now, attempt to send the data frame.
-        comm::protocol::Frame frame_to_send{};
-        frame_to_send.header.node_id = CENTRAL_HUB_NODE_ID;
-        frame_to_send.header.type    = comm::protocol::MessageType::DATA;
-        frame_to_send.payload_len    = sizeof(app.level_permille);
-        memcpy(frame_to_send.payload, &app.level_permille, sizeof(app.level_permille));
+        if (target_node_id != 0) {
+            ESP_LOGI(TAG, "Sending data to discovered hub (0x%08X)...", target_node_id);
+            comm::protocol::Frame frame_to_send{};
+            frame_to_send.header.node_id = target_node_id;
+            frame_to_send.header.type    = comm::protocol::MessageType::DATA;
+            frame_to_send.payload_len    = sizeof(app.level_permille);
+            memcpy(frame_to_send.payload, &app.level_permille, sizeof(app.level_permille));
 
-        if (comm_.send(frame_to_send)) {
-            ESP_LOGI(TAG, "Data sent successfully!");
+            if (comm_.send(frame_to_send)) {
+                ESP_LOGI(TAG, "Data sent successfully!");
+            } else {
+                ESP_LOGE(TAG, "Failed to send data to the discovered hub.");
+            }
         } else {
-            ESP_LOGE(TAG, "Failed to send data after active discovery.");
+            ESP_LOGW(TAG, "No hub discovered in the allotted time.");
         }
 
         // === 9. Deep Sleep or Loop Delay ===
