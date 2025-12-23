@@ -1,183 +1,154 @@
 #pragma once
 
 #include "esp_now.h"
-#include "esp_wifi.h"
 #include "message_types.hpp"
 #include "persistence.hpp"
+#include "acknowledgment_manager.hpp" // Included because it's now a member object
+#include <freertos/semphr.h>        // Included for the mutex handle
 #include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
 
 /**
- * @brief Enhanced ESP-NOW communication class for ESP32 (ESP-IDF)
+ * @class EspNowComm
+ * @brief Manages ESP-NOW communication with a custom, reliable protocol.
+ *
+ * This class provides a comprehensive solution for ESP-NOW communication,
+ * featuring a rich protocol with acknowledgments, retries, peer management,
+ * persistence, and more. It is designed to be thread-safe.
  */
 class EspNowComm
 {
 public:
-    EspNowComm();
-    ~EspNowComm();
-
-    // Constructor with persistence option
+    /**
+     * @brief Constructs the EspNowComm instance.
+     * @param enable_persistence If true, peer data will be saved to and loaded from NVS/RTC.
+     */
     EspNowComm(bool enable_persistence = true);
 
-    // Persistence control
-    void enablePersistence(bool enable)
-    {
-        persistence_enabled_ = enable;
-    }
+    /**
+     * @brief Destructor. Cleans up resources.
+     */
+    ~EspNowComm();
 
-    // Manual save methods
-    bool savePeersToNVS(); // Call when adding/removing peers
-    bool savePeersToRTC(); // Call before deep sleep
-
-    // Callback types
-    using OnReceiveCallback =
-        std::function<void(const uint8_t *mac, const uint8_t *data, int len)>;
-    using OnSendCallback =
-        std::function<void(const uint8_t *mac, esp_now_send_status_t status)>;
-    using OnPeerEventCallback =
-        std::function<void(uint8_t node_id, const uint8_t *mac, bool added)>;
+    // Disable copy constructor and assignment operator
+    EspNowComm(const EspNowComm &)            = delete;
+    EspNowComm &operator=(const EspNowComm &) = delete;
 
     /**
-     * @brief Initialize ESP-NOW communication
-     * @param config Configuration parameters
-     * @return true if successful, false otherwise
+     * @brief Initializes the ESP-NOW communication stack.
+     * @param config The configuration parameters for the component.
+     * @return true if initialization is successful, false otherwise.
      */
     bool init(const ESPNOWConfig &config);
 
     /**
-     * @brief Get the node_id of this device
-     * @return This device's node_id
+     * @brief Deinitializes the ESP-NOW communication stack.
+     */
+    void deinit();
+
+    /**
+     * @brief Gets the node ID of this device.
+     * @return This device's node ID.
      */
     uint8_t get_id() const;
 
     /**
-     * @brief Send data to a specific node
-     * @param node_id Destination node_id
-     * @param data Pointer to data buffer
-     * @param length Data length in bytes
-     * @param require_ack Whether to wait for acknowledgment
-     * @return true if queued for sending, false on error
+     * @brief Sends data to a specific peer.
+     * @param node_id The destination node ID.
+     * @param data A pointer to the data buffer.
+     * @param length The length of the data in bytes.
+     * @param require_ack If true, the component will expect an acknowledgment.
+     * @return true if the message was successfully queued for sending, false on error.
      */
-    bool send(uint8_t node_id,
-              const uint8_t *data,
-              size_t length,
-              bool require_ack = true);
+    bool send(uint8_t node_id, const uint8_t *data, size_t length, bool require_ack = true);
 
     /**
-     * @brief Send broadcast message
-     * @param data Pointer to data buffer
-     * @param length Data length in bytes
-     * @return true if queued for sending, false on error
+     * @brief Sends a broadcast message to all peers.
+     * @param data A pointer to the data buffer.
+     * @param length The length of the data in bytes.
+     * @return true if the message was successfully queued for sending, false on error.
      */
     bool broadcast(const uint8_t *data, size_t length);
 
     /**
-     * @brief Add a peer to the peer list
-     * @param node_id Peer's node_id
-     * @param mac Peer's MAC address (6 bytes)
-     * @param channel WiFi channel (0 for current)
-     * @param encrypt Enable encryption for this peer
-     * @return true if successful, false otherwise
+     * @brief Adds a peer to the peer list for communication.
+     * @param node_id The peer's unique node ID.
+     * @param mac The peer's MAC address (6 bytes).
+     * @param channel The WiFi channel of the peer (0 for current channel).
+     * @param encrypt If true, enables encryption for this peer.
+     * @return true if the peer was added successfully, false otherwise.
      */
-    bool addPeer(uint8_t node_id,
-                 const uint8_t *mac,
-                 uint8_t channel = 0,
-                 bool encrypt    = false);
+    bool addPeer(uint8_t node_id, const uint8_t *mac, uint8_t channel = 0, bool encrypt = false);
 
     /**
-     * @brief Remove a peer from the peer list
-     * @param node_id Peer's node_id
-     * @return true if removed, false if not found
+     * @brief Removes a peer from the peer list.
+     * @param node_id The node ID of the peer to remove.
+     * @return true if the peer was removed, false if it was not found.
      */
     bool removePeer(uint8_t node_id);
 
     /**
-     * @brief Get peer information
-     * @param node_id Peer's node_id
-     * @return PeerInfo structure if found, nullptr otherwise
+     * @brief Retrieves information about a specific peer.
+     * @param node_id The node ID of the peer.
+     * @return A constant pointer to the PeerInfo struct if found, otherwise nullptr.
      */
     const PeerInfo *getPeerInfo(uint8_t node_id) const;
 
     /**
-     * @brief Start peer discovery
-     * @param timeout_ms Discovery timeout in milliseconds
-     * @return true if started, false if already running
+     * @brief Starts the peer discovery process.
+     * @param timeout_ms The duration for the discovery in milliseconds.
+     * @return true if discovery was started, false if already running or disabled.
      */
     bool startDiscovery(uint32_t timeout_ms = 10000);
 
     /**
-     * @brief Stop peer discovery
+     * @brief Stops the peer discovery process.
      */
     void stopDiscovery();
 
     /**
-     * @brief Process pending tasks (call in main loop)
+     * @brief Main processing function. Must be called periodically in the application's main loop.
      */
     void process();
 
-    /**
-     * @brief Set receive callback
-     * @param callback Function to call when data is received
-     */
+    // Callback types
+    using OnReceiveCallback = std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
+    using OnSendCallback    = std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
+    using OnPeerEventCallback = std::function<void(const PeerInfo& peer, bool added)>;
+
+
     void setReceiveCallback(OnReceiveCallback callback);
-
-    /**
-     * @brief Set send callback
-     * @param callback Function to call when send completes
-     */
     void setSendCallback(OnSendCallback callback);
-
-    /**
-     * @brief Set peer event callback
-     * @param callback Function to call when peers are added/removed
-     */
     void setPeerEventCallback(OnPeerEventCallback callback);
 
-    /**
-     * @brief Get current peer count
-     * @return Number of peers in list
-     */
     size_t getPeerCount() const;
-
-    /**
-     * @brief Get error string for last operation
-     * @return Error description
-     */
     const char *getLastError() const;
 
-    /**
-     * @brief Deinitialize ESP-NOW
-     */
-    void deinit();
+    // Manual persistence control
+    bool savePeersToNVS();
+    bool savePeersToRTC();
 
 private:
-    // Internal methods
-    bool initEspNow();
-    bool deinitEspNow();
-    void handleReceive(const uint8_t *mac, const uint8_t *data, int len);
-    void handleSend(const uint8_t *mac, esp_now_send_status_t status);
+    // Internal handler methods
+    void handleReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
+    void handleSend(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
+
+    // Peer management helpers
     PeerInfo *findPeerByMac(const uint8_t *mac);
     PeerInfo *findPeerById(uint8_t node_id);
-    bool sendToMac(const uint8_t *mac,
-                   const uint8_t *data,
-                   size_t length,
-                   bool require_ack);
-    void processTimeouts();
+
+    // Internal protocol logic
     void sendAck(const uint8_t *mac, uint16_t sequence);
-    bool validatePacket(const uint8_t *data, size_t length, const MessageHeader &header);
     void sendHeartbeat();
     void cleanupInactivePeers();
     bool loadPeersIntelligently();
     std::vector<PeerPersistence::PersistentPeer> getPersistentPeers() const;
 
-    // Static callbacks for ESP-NOW
-    static void espNowRecvCb(const esp_now_recv_info_t *recv_info,
-                             const uint8_t *data,
-                             int len);
-    static void espNowSendCb(const esp_now_send_info_t *tx_info,
-                             esp_now_send_status_t status);
+    // Static callbacks passed to the ESP-IDF ESP-NOW API
+    static void espNowRecvCb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
+    static void espNowSendCb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
 
     // Member variables
     ESPNOWConfig config_;
@@ -191,8 +162,7 @@ private:
     OnSendCallback on_send_;
     OnPeerEventCallback on_peer_event_;
 
-    // Acknowledgment manager
-    class AcknowledgmentManager *ack_manager_;
+    AcknowledgmentManager ack_manager_; // Object member, not a pointer
 
     // Discovery state
     bool discovery_active_;
@@ -201,6 +171,9 @@ private:
     // Error tracking
     char last_error_[64];
 
-    // Singleton instance for static callbacks
+    // Thread safety
+    SemaphoreHandle_t mutex_; // Mutex for protecting shared data (peers_, ack_manager_)
+
+    // Singleton-like instance pointer for static callbacks
     static EspNowComm *instance_;
 };

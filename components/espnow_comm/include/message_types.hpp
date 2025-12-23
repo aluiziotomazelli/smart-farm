@@ -11,17 +11,18 @@
 // ====================================================
 
 /**
- * @brief Message types for the enhanced ESP-NOW protocol
+ * @enum MessageType
+ * @brief Defines the different types of messages used in the ESP-NOW protocol.
  */
 enum class MessageType : uint8_t
 {
-    DATA          = 0x01, // Application data
-    ACK           = 0x02, // Acknowledgment
-    PAIR_REQUEST  = 0x03, // Pairing request
-    PAIR_RESPONSE = 0x04, // Pairing response
-    HEARTBEAT     = 0x05, // Keep-alive heartbeat
-    ERROR         = 0x06, // Error notification
-    COMMAND       = 0x07  // Control command
+    DATA          = 0x01, ///< Contains application-specific payload.
+    ACK           = 0x02, ///< Acknowledges the receipt of a message.
+    PAIR_REQUEST  = 0x03, ///< Initiates a pairing sequence with another device.
+    PAIR_RESPONSE = 0x04, ///< Responds to a pairing request.
+    HEARTBEAT     = 0x05, ///< A keep-alive signal to maintain peer status.
+    ERROR         = 0x06, ///< Notifies about a protocol or communication error.
+    COMMAND       = 0x07  ///< A control command for the remote device.
 };
 
 // ====================================================
@@ -29,122 +30,128 @@ enum class MessageType : uint8_t
 // ====================================================
 
 /**
- * @brief Error codes for communication failures
+ * @enum ErrorCode
+ * @brief Defines error codes for communication failures, sent within ACK messages.
  */
 enum class ErrorCode : uint8_t
 {
-    NONE              = 0,
-    INVALID_CRC       = 1, // CRC check failed
-    INVALID_SEQUENCE  = 2, // Sequence number mismatch
-    PEER_NOT_FOUND    = 3, // Peer not in peer list
-    BUFFER_FULL       = 4, // Receive buffer full
-    TIMEOUT           = 5, // Operation timeout
-    ENCRYPTION_FAILED = 6  // Encryption/decryption error
+    NONE              = 0, ///< No error.
+    INVALID_CRC       = 1, ///< The received message failed its CRC check.
+    INVALID_SEQUENCE  = 2, ///< The sequence number was unexpected.
+    PEER_NOT_FOUND    = 3, ///< The destination peer is not registered.
+    BUFFER_FULL       = 4, ///< The receive buffer is full.
+    TIMEOUT           = 5, ///< The operation timed out.
+    ENCRYPTION_FAILED = 6  ///< Encryption or decryption failed.
 };
 
 // ====================================================
 // MESSAGE HEADERS (PACKED STRUCTURES)
 // ====================================================
 
-#pragma pack(push, 1) // Disable structure padding
+#pragma pack(push, 1) // Disable structure padding to ensure consistent memory layout.
 
 /**
- * @brief Base header for all messages
+ * @struct MessageHeader
+ * @brief The base header included in all messages.
  */
 struct MessageHeader
 {
-    uint8_t version;    // Protocol version (starts at 0x01)
-    MessageType type;   // Message type
-    uint16_t sequence;  // Sequence number (for ordering)
-    uint32_t timestamp; // Millisecond timestamp
-    uint8_t source_id;  // Sender's internal ID
-    uint8_t dest_id;    // Destination ID (0xFF = broadcast)
-    uint8_t ttl;        // Time To Live (hops remaining)
+    uint8_t version;    ///< Protocol version (e.g., 0x01).
+    MessageType type;   ///< The type of the message.
+    uint16_t sequence;  ///< Sequence number for message ordering and ACKs.
+    uint32_t timestamp; ///< Timestamp in milliseconds.
+    uint8_t source_id;  ///< The node_id of the sender.
+    uint8_t dest_id;    ///< The node_id of the recipient (0xFF for broadcast).
+    uint8_t ttl;        ///< Time To Live, for mesh network routing (not yet implemented).
 };
 
 /**
- * @brief Extended header for data messages
+ * @struct DataHeader
+ * @brief Extended header for standard data messages.
  */
 struct DataHeader : public MessageHeader
 {
-    uint16_t data_length;  // Length of payload data
-    uint8_t data_type;     // Application-specific data type
-    uint8_t fragmentation; // Fragmentation flags (bit 0: more fragments, bit 1: first
-                           // fragment)
+    uint16_t data_length;  ///< The length of the payload data.
+    uint8_t data_type;     ///< Application-specific data type identifier.
+    uint8_t fragmentation; ///< Flags for message fragmentation (not yet implemented).
 };
 
 /**
- * @brief Header for acknowledgment messages
+ * @struct AckHeader
+ * @brief Header for acknowledgment messages.
  */
 struct AckHeader : public MessageHeader
 {
-    uint16_t acked_sequence; // Sequence number being acknowledged
-    uint8_t rssi;            // RSSI of the received message
-    ErrorCode error_code;    // Error code (if any)
+    uint16_t acked_sequence; ///< The sequence number of the message being acknowledged.
+    uint8_t rssi;            ///< The RSSI (Received Signal Strength Indicator) of the received message.
+    ErrorCode error_code;    ///< An error code, if any.
 };
 
 /**
- * @brief Header for pairing messages
+ * @struct PairHeader
+ * @brief Header for pairing request/response messages.
  */
 struct PairHeader : public MessageHeader
 {
-    char device_name[16];  // Human-readable device name
-    uint8_t capabilities;  // Device capabilities bitmask
-    uint8_t auth_token[8]; // Authentication token (if required)
+    char device_name[16];  ///< A human-readable name for the device.
+    uint8_t capabilities;  ///< A bitmask of the device's capabilities.
+    uint8_t auth_token[8]; ///< An authentication token, if required.
 };
 
 /**
- * @brief Header for heartbeat messages
+ * @struct HeartbeatHeader
+ * @brief Header for heartbeat messages.
  */
 struct HeartbeatHeader : public MessageHeader
 {
-    uint16_t battery_level; // Battery level (0-1000 = 0-100%)
-    uint8_t status_flags;   // Device status flags
-    uint8_t free_heap;      // Free heap memory in KB
+    uint16_t battery_level; ///< Battery level (e.g., 0-1000 for 0-100.0%).
+    uint8_t status_flags;   ///< A bitmask for various device status flags.
+    uint8_t free_heap;      ///< Free heap memory in kilobytes.
 };
 
-#pragma pack(pop) // Restore default padding
+#pragma pack(pop) // Restore default padding.
 
 // ====================================================
 // PEER INFORMATION STRUCTURE
 // ====================================================
 
 /**
- * @brief Complete peer information structure
+ * @struct PeerInfo
+ * @brief Holds all relevant information and statistics about a peer.
  */
 struct PeerInfo
 {
     // Identification
-    uint8_t node_id;                    // node ID
-    std::array<uint8_t, 6> mac_address; // MAC address
-    std::string alias;                  // Human-readable name
+    uint8_t node_id;                    ///< The peer's unique node ID.
+    std::array<uint8_t, 6> mac_address; ///< The peer's MAC address.
+    std::string alias;                  ///< A human-readable alias for the peer.
 
     // Status tracking
-    uint32_t first_seen; // First contact timestamp (ms)
-    uint32_t last_seen;  // Last contact timestamp (ms)
-    uint32_t last_rtt;   // Last measured Round-Trip Time (ms)
+    uint32_t first_seen; ///< Timestamp (ms) when the peer was first seen.
+    uint32_t last_seen;  ///< Timestamp (ms) of the last received message.
+    uint32_t last_rtt;   ///< The last measured Round-Trip Time (ms).
 
     // Statistics
-    uint32_t tx_count;    // Total messages sent to this peer
-    uint32_t rx_count;    // Total messages received from this peer
-    uint32_t tx_failures; // Failed transmission attempts
-    uint32_t rx_errors;   // Received messages with errors
+    uint32_t tx_count;    ///< Total messages sent to this peer.
+    uint32_t rx_count;    ///< Total messages received from this peer.
+    uint32_t tx_failures; ///< Number of failed transmission attempts.
+    uint32_t rx_errors;   ///< Number of received messages with errors.
 
     // Connection quality
-    int8_t last_rssi;     // Most recent RSSI measurement
-    int8_t avg_rssi;      // Average RSSI (exponential moving average)
-    uint8_t link_quality; // Link quality score (0-100%)
+    int8_t last_rssi;     ///< The most recent RSSI measurement.
+    int8_t avg_rssi;      ///< An exponential moving average of the RSSI.
+    uint8_t link_quality; ///< A link quality score (0-100%).
 
     // State flags
-    bool is_confirmed; // Pairing confirmed
-    bool is_encrypted; // Encryption enabled for this peer
-    bool is_active;    // Peer is currently active
-    bool is_broadcast; // Broadcast peer (special case)
+    bool is_confirmed; ///< True if the peer has been confirmed through pairing.
+    bool is_encrypted; ///< True if communication with this peer is encrypted.
+    bool is_active;    ///< True if the peer is considered currently active.
+    bool is_broadcast; ///< A special flag for the broadcast address.
 
     // Configuration
-    uint8_t preferred_channel;   // Preferred WiFi channel
-    uint32_t heartbeat_interval; // Expected heartbeat interval (ms)
-    uint32_t last_heartbeat;     // Last heartbeat timestamp
+    uint8_t preferred_channel;   ///< The preferred WiFi channel for this peer.
+    uint32_t heartbeat_interval; ///< The expected heartbeat interval in ms.
+    uint32_t last_heartbeat;     ///< Timestamp (ms) of the last received heartbeat.
 };
 
 // ====================================================
@@ -152,38 +159,41 @@ struct PeerInfo
 // ====================================================
 
 /**
- * @brief Configuration parameters for the enhanced ESP-NOW class
+ * @struct ESPNOWConfig
+ * @brief Configuration parameters for the EspNowComm class.
  */
 struct ESPNOWConfig
 {
     // Network parameters
-    uint8_t wifi_channel;   // WiFi channel (0 = auto-select)
-    bool enable_long_range; // Enable long-range mode (ESP32 only)
+    uint8_t wifi_channel;   ///< WiFi channel to operate on (1-13). 0 for current.
+    bool enable_long_range; ///< Enable ESP-IDF's long-range mode.
 
     // Protocol parameters
-    uint16_t max_packet_size; // Maximum packet size (bytes)
-    uint8_t max_peers;        // Maximum number of peers to track
-    uint8_t max_retries;      // Maximum transmission retries
+    uint16_t max_packet_size; ///< Maximum packet size in bytes.
+    uint8_t max_peers;        ///< Maximum number of peers to track.
+    uint8_t max_retries;      ///< Maximum transmission retries for ACK'd messages.
 
     // Timeout parameters (milliseconds)
-    uint32_t ack_timeout;        // ACK wait timeout
-    uint32_t heartbeat_interval; // Heartbeat transmission interval
-    uint32_t peer_timeout;       // Peer inactivity timeout
-    uint32_t discovery_timeout;  // Peer discovery timeout
+    uint32_t ack_timeout;        ///< Time to wait for an ACK.
+    uint32_t heartbeat_interval; ///< Interval to send heartbeats.
+    uint32_t peer_timeout;       ///< Time of inactivity before a peer is considered inactive.
+    uint32_t discovery_timeout;  ///< Duration for the discovery process.
 
     // Security settings
-    bool enable_encryption;      // Enable encryption (requires PMK/LMK)
-    std::array<uint8_t, 16> pmk; // Primary Master Key
-    std::array<uint8_t, 16> lmk; // Local Master Key
+    bool enable_encryption;      ///< Enable ESP-NOW's built-in encryption.
+    std::array<uint8_t, 16> pmk; ///< Primary Master Key for encryption.
+    std::array<uint8_t, 16> lmk; ///< Local Master Key for encryption.
 
     // Feature flags
-    bool auto_pairing;      // Enable automatic pairing
-    bool allow_broadcast;   // Allow broadcast messages
-    bool enable_discovery;  // Enable peer discovery
-    bool store_peers;       // Store peers to persistent storage
-    bool enable_statistics; // Enable connection statistics
+    bool auto_pairing;      ///< Automatically pair with unknown devices.
+    bool allow_broadcast;   ///< Allow sending broadcast messages.
+    bool enable_discovery;  ///< Enable the peer discovery feature.
+    bool store_peers;       ///< Persist the peer list to NVS/RTC.
+    bool enable_statistics; ///< Enable tracking of detailed connection statistics.
 
-    // Default constructor with sensible defaults
+    /**
+     * @brief Default constructor with sensible defaults.
+     */
     ESPNOWConfig()
         : wifi_channel(0)
         , enable_long_range(false)
@@ -201,7 +211,6 @@ struct ESPNOWConfig
         , store_peers(true)
         , enable_statistics(true)
     {
-        // Initialize encryption keys to zero
         pmk.fill(0);
         lmk.fill(0);
     }
@@ -212,28 +221,34 @@ struct ESPNOWConfig
 // ====================================================
 
 /**
- * @brief Callback for received messages
+ * @brief Callback for received application data.
+ * @param sender_id The node_id of the sender.
+ * @param data Pointer to the payload data.
+ * @param length The length of the payload data.
+ * @param rssi The Received Signal Strength Indicator.
  */
 using MessageCallback =
-    std::function<void(const uint8_t *sender_id, // Sender's internal ID
-                       const uint8_t *data,      // Message payload
-                       size_t length,            // Payload length
-                       uint8_t rssi              // Received signal strength
-                       )>;
+    std::function<void(uint8_t sender_id,
+                       const uint8_t *data,
+                       size_t length,
+                       int8_t rssi)>;
 
 /**
- * @brief Callback for message delivery status
+ * @brief Callback for message delivery status.
+ * @param recipient_id The node_id of the recipient.
+ * @param success True if the message was delivered successfully (acknowledged).
+ * @param delivery_time Time taken for delivery and acknowledgment in ms.
  */
 using DeliveryCallback =
-    std::function<void(const uint8_t *recipient_id, // Recipient's internal ID
-                       bool success,                // Delivery success/failure
-                       uint32_t delivery_time       // Time taken for delivery (ms)
-                       )>;
+    std::function<void(uint8_t recipient_id,
+                       bool success,
+                       uint32_t delivery_time)>;
 
 /**
- * @brief Callback for peer events (add, remove, update)
+ * @brief Callback for peer events (e.g., added, removed, updated).
+ * @param peer The information structure of the peer.
+ * @param event_type A string describing the event (e.g., "added", "removed").
  */
 using PeerEventCallback =
-    std::function<void(const PeerInfo &peer,  // Peer information
-                       const char *event_type // Event type: "added", "removed", "updated"
-                       )>;
+    std::function<void(const PeerInfo &peer,
+                       const char *event_type)>;

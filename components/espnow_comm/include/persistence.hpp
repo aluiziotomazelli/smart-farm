@@ -1,8 +1,5 @@
 #pragma once
 
-// #include "esp_system.h"
-// #include "nvs.h"
-// #include "nvs_flash.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -14,71 +11,86 @@
 #endif
 
 /**
- * @brief Simple persistent peer storage (MAC + node_id only)
+ * @class PeerPersistence
+ * @brief Handles the saving and loading of peer data to/from NVS and RTC memory.
+ *
+ * This is a static utility class that provides a simple persistence layer for
+ * storing essential peer information (MAC address and node_id). It uses RTC
+ * memory for fast recovery after deep sleep and NVS (flash) for long-term
+ * storage across power cycles.
  */
 class PeerPersistence
 {
 public:
-    // Estrutura minimalista: 6 bytes MAC + 1 byte node_id
+    /**
+     * @struct PersistentPeer
+     * @brief A minimalist structure for storing peer information.
+     */
     struct PersistentPeer
     {
-        uint8_t mac[6];
-        uint8_t node_id;
+        uint8_t mac[6];     ///< The MAC address of the peer.
+        uint8_t node_id;    ///< The internal node ID of the peer.
     } __attribute__((packed));
 
-    static_assert(sizeof(PersistentPeer) == 7, "PersistentPeer deve ter 7 bytes");
+    // Ensure the struct is exactly 7 bytes as expected.
+    static_assert(sizeof(PersistentPeer) == 7, "PersistentPeer must be 7 bytes");
 
     /**
-     * @brief Initialize NVS once at startup
+     * @brief Initializes the NVS flash storage.
+     * @note This should be called once at application startup.
+     * @return true on success.
      */
     static bool initNVS();
 
     /**
-     * @brief Load peers from RTC memory (fast, try this first)
-     * @return Vector of peers, empty if no valid data
+     * @brief Loads peers from RTC memory.
+     * @return A vector of peers. The vector is empty if RTC data is invalid or not found.
      */
     static std::vector<PersistentPeer> loadFromRTC();
 
     /**
-     * @brief Load peers from NVS (slower, fallback)
-     * @return Vector of peers, empty if no data
+     * @brief Loads peers from NVS (flash memory).
+     * @return A vector of peers. The vector is empty if no data is found.
      */
     static std::vector<PersistentPeer> loadFromNVS();
 
     /**
-     * @brief Save peers to RTC memory (fast, before deep sleep)
-     * @param peers Vector of peers to save
-     * @return true if successful
+     * @brief Saves a list of peers to RTC memory.
+     * @param peers A vector of peers to save.
+     * @return true if the save operation was successful.
      */
     static bool saveToRTC(const std::vector<PersistentPeer> &peers);
 
     /**
-     * @brief Save peers to NVS (slower, for long-term storage)
-     * @param peers Vector of peers to save
-     * @return true if successful
+     * @brief Saves a list of peers to NVS (flash memory).
+     * @param peers A vector of peers to save.
+     * @return true if the save operation was successful.
      */
     static bool saveToNVS(const std::vector<PersistentPeer> &peers);
 
     /**
-     * @brief Clear all persisted data
+     * @brief Clears all persisted peer data from both NVS and RTC memory.
      */
     static void clearAll();
 
 private:
-    // RTC memory storage structure
+    /**
+     * @struct RTCStorage
+     * @brief Defines the data layout in RTC memory.
+     */
     struct RTCStorage
     {
-        uint8_t        count;
-        uint8_t        reserved[3]; // Align to 4 bytes
-        PersistentPeer peers[20];   // Max 20 peers
-        uint32_t       crc32;
+        uint8_t        count;                 ///< Number of peers currently stored.
+        uint8_t        reserved[3];           ///< Padding to align the structure to 4 bytes.
+        PersistentPeer peers[20];             ///< Array to store the peer data.
+        uint32_t       crc32;                 ///< 32-bit CRC to validate the integrity of the data.
     };
 
     static constexpr const char *NVS_NAMESPACE = "espnow_peers";
     static constexpr const char *NVS_KEY       = "peers";
     static constexpr size_t      MAX_PEERS     = 20;
 
-    // RTC memory allocation
+    // The actual storage block in RTC memory.
     RTC_FAST_MEM_ATTR static RTCStorage rtc_storage;
 
     // Helper methods
