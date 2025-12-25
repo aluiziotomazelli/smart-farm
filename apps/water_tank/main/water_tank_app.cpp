@@ -176,7 +176,7 @@ void WaterTankApp::init()
 
     // === Inicializar comunicação ESP-NOW ===
     ESPNOWConfig config;
-    config.wifi_channel       = 1; // Ou 0 para automático
+    config.wifi_channel       = 0; // Ou 0 para automático
     config.max_peers          = 10;
     config.ack_timeout        = 100; // ms
     config.heartbeat_interval = 0;   // Desabilitado para economia
