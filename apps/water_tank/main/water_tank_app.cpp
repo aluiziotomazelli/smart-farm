@@ -199,6 +199,8 @@ void WaterTankApp::init()
         comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
             this->on_espnow_send(node_id, status);
         });
+
+        comm_.startDiscovery(30000);
     }
 
     esp_reset_reason_t reset_reason     = esp_reset_reason();

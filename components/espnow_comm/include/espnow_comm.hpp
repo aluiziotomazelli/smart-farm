@@ -155,6 +155,8 @@ private:
 
     // Internal protocol logic
     void sendAck(const uint8_t *mac, uint16_t sequence);
+    void sendPairRequest();
+    void sendPairResponse(const uint8_t *mac, const PairHeader &request_header);
     void sendHeartbeat();
     void cleanupInactivePeers();
     bool loadPeersIntelligently();

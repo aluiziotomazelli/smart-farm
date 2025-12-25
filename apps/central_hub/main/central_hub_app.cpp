@@ -59,6 +59,8 @@ void CentralHubApp::init()
         return;
     }
 
+    comm_.startDiscovery(30000);
+
     ESP_LOGI(TAG, "ESP-NOW initialized. Our node ID: %u", comm_.get_id());
 
     comm_.setReceiveCallback(
