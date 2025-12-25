@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
+# Available applications: water_tank, central_hub
 set(APP water_tank CACHE STRING "Application to build")
 
 set(EXTRA_COMPONENT_DIRS

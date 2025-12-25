@@ -125,13 +125,9 @@ void WaterTankApp::on_espnow_receive(uint8_t node_id,
                                      int8_t rssi)
 {
     ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
-
-    // Se esperamos um uint16_t (nível)
-    if (len == sizeof(uint16_t)) {
-        uint16_t received_level;
-        memcpy(&received_level, data, sizeof(received_level));
-        ESP_LOGI(TAG, "Received water level: %u‰ from node %u", received_level, node_id);
-    }
+    // This device is a sensor, so it primarily sends data.
+    // For now, we just log any incoming data. In the future, this could be used for
+    // configuration or commands.
 }
 
 void WaterTankApp::on_espnow_send(uint8_t node_id, esp_now_send_status_t status)
