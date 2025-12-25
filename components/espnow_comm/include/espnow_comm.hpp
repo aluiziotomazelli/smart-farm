@@ -1,14 +1,17 @@
 #pragma once
 
-#include "esp_now.h"
+#include "acknowledgment_manager.hpp" // Included because it's now a member object
 #include "message_types.hpp"
 #include "persistence.hpp"
-#include "acknowledgment_manager.hpp" // Included because it's now a member object
-#include <freertos/semphr.h>        // Included for the mutex handle
+
 #include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
+
+#include "esp_now.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h" // Included for the mutex handle
 
 /**
  * @class EspNowComm
@@ -23,7 +26,8 @@ class EspNowComm
 public:
     /**
      * @brief Constructs the EspNowComm instance.
-     * @param enable_persistence If true, peer data will be saved to and loaded from NVS/RTC.
+     * @param enable_persistence If true, peer data will be saved to and loaded from
+     * NVS/RTC.
      */
     EspNowComm(bool enable_persistence = true);
 
@@ -62,7 +66,10 @@ public:
      * @param require_ack If true, the component will expect an acknowledgment.
      * @return true if the message was successfully queued for sending, false on error.
      */
-    bool send(uint8_t node_id, const uint8_t *data, size_t length, bool require_ack = true);
+    bool send(uint8_t node_id,
+              const uint8_t *data,
+              size_t length,
+              bool require_ack = true);
 
     /**
      * @brief Sends a broadcast message to all peers.
@@ -80,7 +87,10 @@ public:
      * @param encrypt If true, enables encryption for this peer.
      * @return true if the peer was added successfully, false otherwise.
      */
-    bool addPeer(uint8_t node_id, const uint8_t *mac, uint8_t channel = 0, bool encrypt = false);
+    bool addPeer(uint8_t node_id,
+                 const uint8_t *mac,
+                 uint8_t channel = 0,
+                 bool encrypt    = false);
 
     /**
      * @brief Removes a peer from the peer list.
@@ -109,15 +119,17 @@ public:
     void stopDiscovery();
 
     /**
-     * @brief Main processing function. Must be called periodically in the application's main loop.
+     * @brief Main processing function. Must be called periodically in the application's
+     * main loop.
      */
     void process();
 
     // Callback types
-    using OnReceiveCallback = std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
-    using OnSendCallback    = std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
-    using OnPeerEventCallback = std::function<void(const PeerInfo& peer, bool added)>;
-
+    using OnReceiveCallback =
+        std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
+    using OnSendCallback =
+        std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
+    using OnPeerEventCallback = std::function<void(const PeerInfo &peer, bool added)>;
 
     void setReceiveCallback(OnReceiveCallback callback);
     void setSendCallback(OnSendCallback callback);
@@ -132,7 +144,9 @@ public:
 
 private:
     // Internal handler methods
-    void handleReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
+    void handleReceive(const esp_now_recv_info_t *recv_info,
+                       const uint8_t *data,
+                       int len);
     void handleSend(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
 
     // Peer management helpers
@@ -147,8 +161,11 @@ private:
     std::vector<PeerPersistence::PersistentPeer> getPersistentPeers() const;
 
     // Static callbacks passed to the ESP-IDF ESP-NOW API
-    static void espNowRecvCb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
-    static void espNowSendCb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
+    static void espNowRecvCb(const esp_now_recv_info_t *recv_info,
+                             const uint8_t *data,
+                             int len);
+    static void espNowSendCb(const esp_now_send_info_t *tx_info,
+                             esp_now_send_status_t status);
 
     // Member variables
     ESPNOWConfig config_;

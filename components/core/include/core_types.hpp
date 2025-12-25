@@ -49,9 +49,9 @@ struct CoreStorage
     uint32_t schema_version;
 
     // Identity (inline, sem struct separada)
-    uint32_t node_id;
+    uint8_t node_id;
     NodeType node_type;
-    uint8_t  hw_revision;
+    uint8_t hw_revision;
 
     // Firmware
     uint8_t fw_major;
@@ -63,13 +63,13 @@ struct CoreStorage
     uint32_t crash_count;
 
     // Time
-    bool     has_valid_time;
+    bool has_valid_time;
     uint64_t unix_time;
     uint32_t last_sync_uptime;
 
     // Power
     PowerProfile power_profile;
-    uint32_t     sleep_interval_s;
+    uint32_t sleep_interval_s;
 
     // Wake
     WakeSource last_wake;

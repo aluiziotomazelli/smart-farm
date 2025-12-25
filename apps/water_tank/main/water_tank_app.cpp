@@ -1,7 +1,7 @@
 #include "water_tank_app.hpp"
 #include "float_switch.hpp"
 #include "nvs_core.hpp"
-#include "trig_echo_rmt.hpp"
+#include "ultrasonic_sensor.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -12,37 +12,43 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#define POWER_GPIO GPIO_NUM_20
+#define TRIGER_GPIO GPIO_NUM_21
+#define ECHO_GPIO GPIO_NUM_7
+#define FLOAT_SWITCH_GPIO GPIO_NUM_1
+#define BATT_LEVEL_GPIO GPIO_NUM_0
+
 static const char *TAG = "WaterTankApp";
+
+static constexpr uint32_t ULTRASONIC_WARMUP_MS = 600;
 
 // --- Persistence in RTC Memory ---
 RTC_DATA_ATTR CoreStorage rtc_core_data;
-RTC_DATA_ATTR uint16_t    rtc_last_level_permille = 0;
-RTC_DATA_ATTR bool        rtc_has_level           = false;
+RTC_DATA_ATTR uint16_t rtc_last_level_permille = 0;
+RTC_DATA_ATTR bool rtc_has_level               = false;
 
 WaterTankApp::WaterTankApp()
-    : sensor_power_(
-          {.enable_gpio = GPIO_NUM_10, .active_high = true, .initial_on = false})
-    , comm_(comm::CommInterface::get_default_instance())
+    : sensor_power_({.gpio = POWER_GPIO, .active_high = true, .initial_on = false})
 {
 }
 
 // --- Hardware Configurations ---
-static const UltrasonicSensor::UltrasonicConfig cfg = {
+static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
     .ping_count       = 9,
     .ping_interval_ms = 70,
     .ping_duration_us = 20,
-    .timeout_us       = 35000,
+    .timeout_us       = 25000,
     .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
-    .blind_ping       = true};
+    .blind_ping       = false};
 
-static TrigerEchoRmt sensor(GPIO_NUM_21, GPIO_NUM_19, cfg);
+static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, cfg);
 
-static FloatSwitch::Config fs_cfg = {.pin           = GPIO_NUM_4,
+static FloatSwitch::Config fs_cfg = {.gpio          = FLOAT_SWITCH_GPIO,
                                      .normally_open = true,
                                      .pull          = FloatSwitch::Pull::UP,
                                      .debounce_ms   = 50,
-                                     .wakeup_edge   = FloatSwitch::WakeupLevel::LOW};
-static FloatSwitch         floatswitch(fs_cfg);
+                                     .wakeup_level  = FloatSwitch::WakeupLevel::LOW};
+static FloatSwitch floatswitch(fs_cfg);
 
 // --- Business Logic ---
 FillState WaterTankApp::infer_fill_state(uint16_t current_level)
@@ -96,7 +102,8 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
     if (!float_switch_closed) {
         FloatSwitch::WakeupInfo wi;
         if (floatswitch.get_wakeup_info(wi)) {
-            // esp_sleep_enable_ext0_wakeup(wi.pin, wi.level);
+            esp_deep_sleep_enable_gpio_wakeup(wi.gpio_mask,
+                                              (esp_deepsleep_gpio_wake_up_mode_t)wi.mode);
         }
     }
 }
@@ -112,24 +119,30 @@ static uint16_t distance_to_level_permille(float d_cm)
     return static_cast<uint16_t>(level * 1000.0f);
 }
 
-void WaterTankApp::on_comm_receive(uint32_t       source_node_id,
-                                   const uint8_t *payload,
-                                   size_t         len)
+void WaterTankApp::on_espnow_receive(uint8_t node_id,
+                                     const uint8_t *data,
+                                     int len,
+                                     int8_t rssi)
 {
-    // Crie uma variável local para receber os dados
-    uint16_t received_level;
+    ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
 
-    // Verifique se o tamanho é exatamente o que esperamos
-    if (len == sizeof(received_level)) {
-        // Copie os bytes do payload para a nossa variável
-        memcpy(&received_level, payload, sizeof(received_level));
+    // Se esperamos um uint16_t (nível)
+    if (len == sizeof(uint16_t)) {
+        uint16_t received_level;
+        memcpy(&received_level, data, sizeof(received_level));
+        ESP_LOGI(TAG, "Received water level: %u‰ from node %u", received_level, node_id);
+    }
+}
 
-        ESP_LOGI(TAG, "Received message from node 0x%lX. Extracted level: %u‰",
-                 source_node_id, received_level);
+void WaterTankApp::on_espnow_send(uint8_t node_id, esp_now_send_status_t status)
+{
+    const char *status_str = (status == ESP_NOW_SEND_SUCCESS) ? "SUCCESS" : "FAIL";
+
+    if (node_id == 0xFF) {
+        ESP_LOGD(TAG, "Broadcast send: %s", status_str);
     }
     else {
-        ESP_LOGW(TAG, "Received payload from node 0x%lX with unexpected size: %d bytes",
-                 source_node_id, len);
+        ESP_LOGD(TAG, "Send to node %u: %s", node_id, status_str);
     }
 }
 
@@ -152,8 +165,7 @@ void WaterTankApp::init()
         ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
         uint8_t mac[6];
         esp_efuse_mac_get_default(mac);
-        core.node_id = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
-        ESP_LOGI(TAG, "New Node ID: 0x%08lX", core.node_id);
+        core.node_id = mac[3] ^ mac[4] ^ mac[5];
         if (storage_.commit() == ESP_OK) {
             ESP_LOGI(TAG, "New Node ID saved to NVS.");
         }
@@ -162,8 +174,39 @@ void WaterTankApp::init()
         }
     }
 
-    esp_reset_reason_t       reset_reason = esp_reset_reason();
-    esp_sleep_wakeup_cause_t wake_cause   = esp_sleep_get_wakeup_cause();
+    // === Inicializar comunicação ESP-NOW ===
+    ESPNOWConfig config;
+    config.wifi_channel       = 1; // Ou 0 para automático
+    config.max_peers          = 10;
+    config.ack_timeout        = 100; // ms
+    config.heartbeat_interval = 0;   // Desabilitado para economia
+    config.auto_pairing       = true;
+    config.allow_broadcast    = true;
+    config.max_packet_size    = 250;
+
+    // Adicione log para verificar a configuração
+    ESP_LOGI(TAG, "ESP-NOW Config: allow_broadcast=%d, max_packet_size=%u",
+             config.allow_broadcast, config.max_packet_size);
+
+    if (!comm_.init(config)) {
+        ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
+    }
+    else {
+        ESP_LOGI(TAG, "ESP-NOW initialized. Our node ID: %u", comm_.get_id());
+
+        // Configurar callbacks (usando lambdas ou std::bind)
+        comm_.setReceiveCallback(
+            [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
+                this->on_espnow_receive(node_id, data, len, rssi);
+            });
+
+        comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
+            this->on_espnow_send(node_id, status);
+        });
+    }
+
+    esp_reset_reason_t reset_reason     = esp_reset_reason();
+    esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
     ESP_LOGI(TAG, "Reset reason: %d, Wakeup cause: %d", reset_reason, wake_cause);
 
     bool woke_from_sleep = (wake_cause != ESP_SLEEP_WAKEUP_UNDEFINED);
@@ -194,18 +237,6 @@ void WaterTankApp::init()
     ESP_LOGI(TAG, "Boot #%lu (crashes: %lu)", rtc_core_data.boot_count,
              rtc_core_data.crash_count);
 
-    // === NEW Communication Component Initialization ===
-    if (!comm_.init(core.node_id)) {
-        ESP_LOGE(TAG, "Failed to initialize communication component");
-    }
-    else {
-        comm_.set_rx_callback(
-            [this](uint32_t source_node_id, const uint8_t *payload, size_t len) {
-                this->on_comm_receive(source_node_id, payload, len);
-            });
-        ESP_LOGI(TAG, "Communication component initialized");
-    }
-
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
@@ -217,10 +248,10 @@ void WaterTankApp::run()
         auto &core = storage_.getCoreData();
         auto &app  = storage_.stats;
 
-        float     distance = 0.0f;
-        UsQuality quality  = UsQuality::INVALID;
-        UsFailure failure  = UsFailure::NONE;
-        uint16_t  level    = 0;
+        float distance    = 0.0f;
+        UsQuality quality = UsQuality::INVALID;
+        UsFailure failure = UsFailure::NONE;
+        uint16_t level    = 0;
 
         sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
@@ -258,14 +289,25 @@ void WaterTankApp::run()
 
         app.sample_uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
 
-        // === Send Data using new Comm Interface ===
-        uint16_t payload = app.level_permille;
-        // Using 0xFFFFFFFF as broadcast node_id for testing
-        comm_.send(0xFFFFFFFF, reinterpret_cast<const uint8_t *>(&payload),
-                   sizeof(payload));
-
         core = rtc_core_data;
         // _storage.commit();
+
+        // === Enviar dados via ESP-NOW ===
+        uint16_t payload = app.level_permille; // Ou use a variável 'level'
+
+        // Opção 1: Enviar broadcast (node_id = 0xFF)
+        if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&payload),
+                             sizeof(payload))) {
+            ESP_LOGE(TAG, "Failed to send broadcast");
+        }
+
+        // Opção 2: Enviar para um peer específico (se conhecido)
+        // uint8_t target_node = 2;  // Exemplo
+        // comm_.send(target_node, reinterpret_cast<const uint8_t*>(&payload),
+        // sizeof(payload));
+
+        // Processar tarefas internas (timeouts, etc)
+        comm_.process();
 
         ESP_LOGI(TAG,
                  "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: "

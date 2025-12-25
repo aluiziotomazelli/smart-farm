@@ -9,7 +9,10 @@
 static const char *TAG = "PeerPersistence";
 
 // Initialize the static RTC storage structure.
-PeerPersistence::RTCStorage PeerPersistence::rtc_storage = {0};
+PeerPersistence::RTCStorage PeerPersistence::rtc_storage = {.count    = 0,
+                                                            .reserved = {0, 0, 0},
+                                                            .peers    = {},
+                                                            .crc32    = 0};
 
 bool PeerPersistence::initNVS()
 {
@@ -46,7 +49,7 @@ std::vector<PeerPersistence::PersistentPeer> PeerPersistence::loadFromNVS()
     std::vector<PersistentPeer> peers;
 
     nvs_handle_t handle;
-    esp_err_t    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "NVS namespace not found.");
         return peers;
@@ -77,16 +80,17 @@ std::vector<PeerPersistence::PersistentPeer> PeerPersistence::loadFromNVS()
         return peers;
     }
 
-    uint8_t count         = blob[0];
-    size_t  expected_size = 1 + (count * sizeof(PersistentPeer));
+    uint8_t count        = blob[0];
+    size_t expected_size = 1 + (count * sizeof(PersistentPeer));
 
     if (blob_size != expected_size) {
-        ESP_LOGE(TAG, "NVS data size mismatch. Expected %zu, got %zu.", expected_size, blob_size);
+        ESP_LOGE(TAG, "NVS data size mismatch. Expected %zu, got %zu.", expected_size,
+                 blob_size);
         return peers;
     }
 
     // Extract peers from the blob.
-    const uint8_t* p_data = blob.data() + 1;
+    const uint8_t *p_data = blob.data() + 1;
     for (uint8_t i = 0; i < count; i++) {
         PersistentPeer peer;
         memcpy(&peer, p_data + (i * sizeof(PersistentPeer)), sizeof(PersistentPeer));
@@ -100,7 +104,8 @@ std::vector<PeerPersistence::PersistentPeer> PeerPersistence::loadFromNVS()
 bool PeerPersistence::saveToRTC(const std::vector<PersistentPeer> &peers)
 {
     if (peers.size() > MAX_PEERS) {
-        ESP_LOGE(TAG, "Cannot save to RTC: too many peers (%zu > %zu).", peers.size(), MAX_PEERS);
+        ESP_LOGE(TAG, "Cannot save to RTC: too many peers (%zu > %zu).", peers.size(),
+                 MAX_PEERS);
         return false;
     }
 
@@ -122,23 +127,24 @@ bool PeerPersistence::saveToRTC(const std::vector<PersistentPeer> &peers)
 bool PeerPersistence::saveToNVS(const std::vector<PersistentPeer> &peers)
 {
     if (peers.size() > MAX_PEERS) {
-        ESP_LOGE(TAG, "Cannot save to NVS: too many peers (%zu > %zu).", peers.size(), MAX_PEERS);
+        ESP_LOGE(TAG, "Cannot save to NVS: too many peers (%zu > %zu).", peers.size(),
+                 MAX_PEERS);
         return false;
     }
 
     nvs_handle_t handle;
-    esp_err_t    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS for writing, error: %s", esp_err_to_name(err));
         return false;
     }
 
     // Create a blob with the format: [count][peer1][peer2]...
-    size_t               blob_size = 1 + (peers.size() * sizeof(PersistentPeer));
+    size_t blob_size = 1 + (peers.size() * sizeof(PersistentPeer));
     std::vector<uint8_t> blob(blob_size);
 
-    blob[0] = static_cast<uint8_t>(peers.size());
-    uint8_t* p_data = blob.data() + 1;
+    blob[0]         = static_cast<uint8_t>(peers.size());
+    uint8_t *p_data = blob.data() + 1;
     for (size_t i = 0; i < peers.size(); i++) {
         memcpy(p_data + (i * sizeof(PersistentPeer)), &peers[i], sizeof(PersistentPeer));
     }
@@ -183,8 +189,8 @@ void PeerPersistence::clearAll()
 uint32_t PeerPersistence::calculateCRC32(const RTCStorage *storage)
 {
     // Calculate CRC over the entire structure, excluding the crc32 field itself.
-    const uint8_t *data   = reinterpret_cast<const uint8_t *>(storage);
-    size_t         length = sizeof(RTCStorage) - sizeof(uint32_t);
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(storage);
+    size_t length       = sizeof(RTCStorage) - sizeof(uint32_t);
 
     // This is a standard CRC32 implementation.
     uint32_t crc = 0xFFFFFFFF;

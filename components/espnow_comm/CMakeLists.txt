@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "espnow_comm.cpp"
         "acknowledgment_manager.cpp"
+        "persistence.cpp"
     INCLUDE_DIRS
         "include"
        REQUIRES

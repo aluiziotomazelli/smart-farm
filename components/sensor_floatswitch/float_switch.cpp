@@ -3,7 +3,6 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "driver/rtc_io.h"
 
 static const char *TAG = "FloatSwitch";
 
@@ -15,22 +14,14 @@ static uint64_t now_ms()
 FloatSwitch::FloatSwitch(const Config &cfg)
     : config(cfg)
 {
-    // rtc_capable = rtc_gpio_is_valid_gpio(config.pin);
-}
-
-FloatSwitch::~FloatSwitch()
-{
-    release_rtc_gpio();
 }
 
 bool FloatSwitch::init()
 {
-    ESP_LOGI(TAG, "Init pin=%d NO=%d RTC=%d", config.pin, config.normally_open,
-             rtc_capable);
+    ESP_LOGI(TAG, "Init gpio=%d NO=%d pull=%d", config.gpio, config.normally_open,
+             static_cast<int>(config.pull));
 
-    bool ok = rtc_capable ? configure_rtc_gpio() : configure_gpio();
-
-    if (!ok) {
+    if (!configure_gpio()) {
         return false;
     }
 
@@ -46,52 +37,39 @@ bool FloatSwitch::init()
 bool FloatSwitch::configure_gpio()
 {
     gpio_config_t cfg{};
-    cfg.pin_bit_mask = (1ULL << config.pin);
+    cfg.pin_bit_mask = (1ULL << config.gpio);
     cfg.mode         = GPIO_MODE_INPUT;
+    cfg.intr_type    = GPIO_INTR_DISABLE;
 
-    if (config.normally_open) {
+    // Configura pull-up/pull-down conforme especificado
+    // Estas funções funcionam tanto para GPIOs normais quanto RTC GPIOs
+    switch (config.pull) {
+    case Pull::UP:
         cfg.pull_up_en   = GPIO_PULLUP_ENABLE;
         cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    }
-    else {
+        break;
+    case Pull::DOWN:
         cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
         cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+        break;
+    case Pull::NONE:
+        cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
+        cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        break;
     }
 
-    return gpio_config(&cfg) == ESP_OK;
-}
+    esp_err_t ret = gpio_config(&cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure GPIO %d: %d", config.gpio, ret);
+        return false;
+    }
 
-bool FloatSwitch::configure_rtc_gpio()
-{
-    // if (config.pull == Pull::UP) {
-    //     rtc_gpio_pullup_en(config.pin);
-    //     rtc_gpio_pulldown_dis(config.pin);
-    // }
-    // else if (config.pull == Pull::DOWN) {
-    //     rtc_gpio_pullup_dis(config.pin);
-    //     rtc_gpio_pulldown_en(config.pin);
-    // }
-    // else {
-    //     rtc_gpio_pullup_dis(config.pin);
-    //     rtc_gpio_pulldown_dis(config.pin);
-    // }
-
-    // rtc_gpio_hold_dis(config.pin);
     return true;
-}
-
-void FloatSwitch::release_rtc_gpio()
-{
-    if (rtc_capable && initialized) {
-        // rtc_gpio_hold_dis(config.pin);
-        // rtc_gpio_deinit(config.pin);
-    }
 }
 
 bool FloatSwitch::read_raw() const
 {
-    // return rtc_capable ? rtc_gpio_get_level(config.pin) : gpio_get_level(config.pin);
-    return gpio_get_level(config.pin);
+    return gpio_get_level(config.gpio);
 }
 
 bool FloatSwitch::debounce_update(bool raw)
@@ -121,7 +99,7 @@ bool FloatSwitch::read()
     bool raw = read_raw();
     debounce_update(raw);
 
-    // interpretação física
+    // Interpretação física
     if (config.normally_open) {
         // NO: LOW = contato fechado = água
         return !stable_state;
@@ -134,16 +112,12 @@ bool FloatSwitch::read()
 
 bool FloatSwitch::get_wakeup_info(WakeupInfo &info) const
 {
-    if (!rtc_capable) {
-        return false;
-    }
+    info.gpio_mask = 1ULL << config.gpio;
 
-    info.pin = config.pin;
-
-    if (config.wakeup_edge == WakeupLevel::HIGH)
-        info.level = 1;
+    if (config.wakeup_level == WakeupLevel::HIGH)
+        info.mode = 1;
     else
-        info.level = 0;
+        info.mode = 0;
 
     return true;
 }

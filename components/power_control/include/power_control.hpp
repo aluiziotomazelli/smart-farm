@@ -9,9 +9,9 @@ class PowerControl
 public:
     struct Config
     {
-        gpio_num_t enable_gpio;
-        bool       active_high = true;  // true: HIGH liga, false: LOW liga
-        bool       initial_on  = false; // estado no init
+        gpio_num_t gpio;
+        bool active_high = true;  // true: HIGH liga, false: LOW liga
+        bool initial_on  = false; // estado no init
     };
 
     PowerControl(const PowerControl::Config &cfg);
@@ -25,7 +25,7 @@ public:
 
 private:
     Config config_;
-    bool   state_ = false;
+    bool state_ = false;
 
     void apply_gpio(bool enable);
 };
