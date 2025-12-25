@@ -519,7 +519,27 @@ void EspNowComm::sendPairResponse(const uint8_t *mac, const PairHeader &req_head
 
 void EspNowComm::sendHeartbeat()
 {
-    // Implementation omitted for brevity
+    HeartbeatHeader hb = {};
+    hb.version         = 0x01;
+    hb.type            = MessageType::HEARTBEAT;
+    hb.sequence        = ack_manager_.getNextSequence();
+    hb.timestamp       = esp_timer_get_time() / 1000;
+    hb.source_id       = node_id_;
+    hb.dest_id         = 0xFF; // Broadcast, but sent peer-by-peer
+    hb.ttl             = 1;
+    hb.battery_level   = 1000; // Placeholder
+    hb.status_flags    = 0;
+    hb.free_heap       = esp_get_free_heap_size() / 1024;
+
+    uint8_t packet[sizeof(hb) + 1];
+    memcpy(packet, &hb, sizeof(hb));
+    packet[sizeof(hb)] = esp_rom_crc8_le(0, packet, sizeof(hb));
+
+    for (auto &peer : peers_) {
+        if (peer.is_active && peer.is_confirmed) {
+            esp_now_send(peer.mac_address.data(), packet, sizeof(packet));
+        }
+    }
 }
 
 void EspNowComm::cleanupInactivePeers()
@@ -547,8 +567,28 @@ void EspNowComm::cleanupInactivePeersInternal()
 
 bool EspNowComm::loadPeersIntelligently()
 {
-    // Implementation omitted for brevity
-    return false;
+    if (!persistence_enabled_)
+        return false;
+
+    auto rtc_peers = PeerPersistence::loadFromRTC();
+    if (!rtc_peers.empty()) {
+        ESP_LOGI(TAG, "Loading peers from RTC memory (%zu peers)", rtc_peers.size());
+    } else {
+        auto nvs_peers = PeerPersistence::loadFromNVS();
+        if (!nvs_peers.empty()) {
+            ESP_LOGI(TAG, "Loading peers from NVS (%zu peers)", nvs_peers.size());
+            PeerPersistence::saveToRTC(nvs_peers); // Refresh RTC
+            rtc_peers = nvs_peers;
+        } else {
+            ESP_LOGI(TAG, "No persisted peers found.");
+            return false;
+        }
+    }
+
+    for (const auto &p_peer : rtc_peers) {
+        addPeer(p_peer.node_id, p_peer.mac, 0, false);
+    }
+    return true;
 }
 
 std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeers() const
