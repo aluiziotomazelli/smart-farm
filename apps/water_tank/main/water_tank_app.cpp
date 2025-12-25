@@ -135,10 +135,10 @@ void WaterTankApp::on_espnow_send(uint8_t node_id, esp_now_send_status_t status)
     const char *status_str = (status == ESP_NOW_SEND_SUCCESS) ? "SUCCESS" : "FAIL";
 
     if (node_id == 0xFF) {
-        ESP_LOGD(TAG, "Broadcast send: %s", status_str);
+        ESP_LOGI(TAG, "Broadcast send: %s", status_str);
     }
     else {
-        ESP_LOGD(TAG, "Send to node %u: %s", node_id, status_str);
+        ESP_LOGI(TAG, "Send to node %u: %s", node_id, status_str);
     }
 }
 
@@ -289,7 +289,7 @@ void WaterTankApp::run()
         // _storage.commit();
 
         // === Enviar dados via ESP-NOW ===
-        uint16_t payload = app.level_permille; // Ou use a variável 'level'
+        uint16_t payload = level; // Ou use a variável 'level'
 
         // Opção 1: Enviar broadcast (node_id = 0xFF)
         if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&payload),

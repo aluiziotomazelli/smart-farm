@@ -21,39 +21,37 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
         uint16_t received_level;
         memcpy(&received_level, data, sizeof(received_level));
         ESP_LOGI(TAG, "Received water level: %u‰ from node %u", received_level, node_id);
-    } else {
-        ESP_LOGW(TAG, "Received unexpected data length: %d", len);
     }
 }
 
 void CentralHubApp::init()
 {
     ESP_LOGI(TAG, "Initializing CentralHubApp");
-    storage_.init_partition();
+    // storage_.init_partition();
 
-    if (storage_.load() != ESP_OK) {
-        ESP_LOGW(TAG, "NVS load failed, performing factory reset");
-        storage_.factory_reset();
-    }
+    // if (storage_.load() != ESP_OK) {
+    //     ESP_LOGW(TAG, "NVS load failed, performing factory reset");
+    //     storage_.factory_reset();
+    // }
 
-    auto &core = storage_.getCoreData();
-    if (core.node_id == 0) {
-        ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
-        uint8_t mac[6];
-        esp_efuse_mac_get_default(mac);
-        core.node_id = mac[3] ^ mac[4] ^ mac[5];
-        if (storage_.commit() == ESP_OK) {
-            ESP_LOGI(TAG, "New Node ID %u saved to NVS.", core.node_id);
-        } else {
-            ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
-        }
-    }
+    // auto &core = storage_.getCoreData();
+    // if (core.node_id == 0) {
+    //     ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
+    //     uint8_t mac[6];
+    //     esp_efuse_mac_get_default(mac);
+    //     core.node_id = mac[3] ^ mac[4] ^ mac[5];
+    //     if (storage_.commit() == ESP_OK) {
+    //         ESP_LOGI(TAG, "New Node ID %u saved to NVS.", core.node_id);
+    //     } else {
+    //         ESP_LOGE(TAG, "Failed to save new Node ID to NVS!");
+    //     }
+    // }
 
     // Initialize ESP-NOW communication
     ESPNOWConfig config;
-    config.wifi_channel = 0; // Auto channel
-    config.max_peers = 10;
-    config.auto_pairing = true;
+    config.wifi_channel    = 0; // Auto channel
+    config.max_peers       = 10;
+    config.auto_pairing    = true;
     config.allow_broadcast = true;
 
     if (!comm_.init(config)) {

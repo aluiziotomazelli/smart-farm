@@ -516,8 +516,8 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
                 sendAck(mac, header->sequence);
             }
             if (on_receive_) {
-                const uint8_t *app_payload = data + sizeof(MessageHeader);
-                size_t app_payload_len     = payload_len - sizeof(MessageHeader);
+                const uint8_t *app_payload = data + sizeof(DataHeader);
+                size_t app_payload_len     = payload_len - sizeof(DataHeader);
                 on_receive_(header->source_id, app_payload, app_payload_len,
                             recv_info->rx_ctrl->rssi);
             }
