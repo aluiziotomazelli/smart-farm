@@ -21,8 +21,6 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
         uint16_t received_level;
         memcpy(&received_level, data, sizeof(received_level));
         ESP_LOGI(TAG, "Received water level: %u‰ from node %u", received_level, node_id);
-    } else {
-        ESP_LOGW(TAG, "Received unexpected data length: %d", len);
     }
 }
 
