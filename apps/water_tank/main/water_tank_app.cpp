@@ -200,7 +200,7 @@ void WaterTankApp::init()
             this->on_espnow_send(node_id, status);
         });
 
-        comm_.startDiscovery(30000);
+        comm_.startDiscovery(10000);
     }
 
     esp_reset_reason_t reset_reason     = esp_reset_reason();

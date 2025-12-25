@@ -152,6 +152,10 @@ private:
     // Peer management helpers
     PeerInfo *findPeerByMac(const uint8_t *mac);
     PeerInfo *findPeerById(uint8_t node_id);
+    bool addPeerInternal(uint8_t node_id,
+                         const uint8_t *mac,
+                         uint8_t channel,
+                         bool encrypt);
 
     // Internal protocol logic
     void sendAck(const uint8_t *mac, uint16_t sequence);

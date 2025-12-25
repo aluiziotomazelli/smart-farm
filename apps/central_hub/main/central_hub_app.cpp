@@ -59,7 +59,7 @@ void CentralHubApp::init()
         return;
     }
 
-    comm_.startDiscovery(30000);
+    comm_.startDiscovery(10000);
 
     ESP_LOGI(TAG, "ESP-NOW initialized. Our node ID: %u", comm_.get_id());
 

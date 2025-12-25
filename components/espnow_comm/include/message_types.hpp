@@ -185,10 +185,7 @@ struct ESPNOWConfig
     std::array<uint8_t, 16> lmk; ///< Local Master Key for encryption.
 
     // Feature flags
-    bool auto_pairing;      ///< Automatically pair with unknown devices.
-    bool allow_broadcast;   ///< Allow sending broadcast messages.
     bool enable_discovery;  ///< Enable the peer discovery feature.
-    bool store_peers;       ///< Persist the peer list to NVS/RTC.
     bool enable_statistics; ///< Enable tracking of detailed connection statistics.
 
     /**
@@ -205,10 +202,7 @@ struct ESPNOWConfig
         , peer_timeout(30000)
         , discovery_timeout(10000)
         , enable_encryption(false)
-        , auto_pairing(true)
-        , allow_broadcast(true)
         , enable_discovery(true)
-        , store_peers(true)
         , enable_statistics(true)
     {
         pmk.fill(0);
