@@ -288,18 +288,23 @@ void WaterTankApp::run()
         // _storage.commit();
 
         // === Enviar dados via ESP-NOW ===
-        uint16_t payload = level; // Ou use a variável 'level'
+        uint16_t payload = level;
+        auto peers       = comm_.getPeers();
 
-        // Opção 1: Enviar broadcast (node_id = 0xFF)
-        if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&payload),
-                             sizeof(payload))) {
-            ESP_LOGE(TAG, "Failed to send broadcast");
+        if (peers.empty()) {
+            if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&payload),
+                                 sizeof(payload))) {
+                ESP_LOGE(TAG, "Failed to send broadcast");
+            }
+        } else {
+            for (const auto &peer : peers) {
+                if (!comm_.send(peer.node_id,
+                                reinterpret_cast<const uint8_t *>(&payload),
+                                sizeof(payload))) {
+                    ESP_LOGE(TAG, "Failed to send to peer %u", peer.node_id);
+                }
+            }
         }
-
-        // Opção 2: Enviar para um peer específico (se conhecido)
-        // uint8_t target_node = 2;  // Exemplo
-        // comm_.send(target_node, reinterpret_cast<const uint8_t*>(&payload),
-        // sizeof(payload));
 
         // Processar tarefas internas (timeouts, etc)
         comm_.process();

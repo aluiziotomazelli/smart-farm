@@ -80,7 +80,7 @@ bool EspNowComm::init(const ESPNOWConfig &config)
     initialized_ = true;
 
     if (persistence_enabled_) {
-        loadPeersIntelligently();
+        loadPeers();
     }
 
     ESP_LOGI(TAG, "ESP-NOW initialized. Node ID: %u", node_id_);
@@ -565,7 +565,7 @@ void EspNowComm::cleanupInactivePeersInternal()
     }
 }
 
-bool EspNowComm::loadPeersIntelligently()
+bool EspNowComm::loadPeers()
 {
     if (!persistence_enabled_)
         return false;
@@ -591,15 +591,15 @@ bool EspNowComm::loadPeersIntelligently()
     return true;
 }
 
-std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeers() const
+std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPeers() const
 {
-    // This const method cannot take the mutex in C++.
-    // A better approach would be to return a copy protected by a lock in a non-const version.
-    // For now, we assume this is non-critical or that the caller handles synchronization.
-    return getPersistentPeersInternal();
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    auto peers = getPeersInternal();
+    xSemaphoreGive(mutex_);
+    return peers;
 }
 
-std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeersInternal() const
+std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPeersInternal() const
 {
     std::vector<PeerPersistence::PersistentPeer> p_peers;
     for (const auto &peer : peers_) {
@@ -624,7 +624,7 @@ bool EspNowComm::savePeersToNVS()
 bool EspNowComm::savePeersToNVSInternal()
 {
     if (!persistence_enabled_) return false;
-    auto p_peers = getPersistentPeersInternal();
+    auto p_peers = getPeersInternal();
     if (p_peers.empty()) return true;
     return PeerPersistence::saveToNVS(p_peers);
 }
@@ -640,7 +640,7 @@ bool EspNowComm::savePeersToRTC()
 bool EspNowComm::savePeersToRTCInternal()
 {
     if (!persistence_enabled_) return false;
-    auto p_peers = getPersistentPeersInternal();
+    auto p_peers = getPeersInternal();
     if (p_peers.empty()) return true;
     return PeerPersistence::saveToRTC(p_peers);
 }
