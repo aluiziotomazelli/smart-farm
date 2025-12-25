@@ -158,7 +158,9 @@ bool EspNowComm::send(uint8_t node_id,
     packet_len += sizeof(header);
     memcpy(packet + packet_len, data, length);
     packet_len += length;
-    packet[packet_len++] = esp_rom_crc8_le(0, packet, packet_len);
+    uint8_t crc = esp_rom_crc8_le(0, packet, packet_len);
+    packet[packet_len] = crc;
+    packet_len++;
 
     xSemaphoreGive(mutex_);
 
@@ -214,7 +216,9 @@ bool EspNowComm::broadcast(const uint8_t *data, size_t length)
     packet_len += sizeof(header);
     memcpy(packet + packet_len, data, length);
     packet_len += length;
-    packet[packet_len++] = esp_rom_crc8_le(0, packet, packet_len);
+    uint8_t crc = esp_rom_crc8_le(0, packet, packet_len);
+    packet[packet_len] = crc;
+    packet_len++;
 
     if (esp_now_send(broadcast_mac, packet, packet_len) != ESP_OK) {
         strncpy(last_error_, "Broadcast send failed", sizeof(last_error_) - 1);
