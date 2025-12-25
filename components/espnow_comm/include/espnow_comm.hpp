@@ -141,6 +141,8 @@ public:
     // Manual persistence control
     bool savePeersToNVS();
     bool savePeersToRTC();
+    void cleanupInactivePeers();
+    std::vector<PeerPersistence::PersistentPeer> getPersistentPeers() const;
 
 private:
     // Internal handler methods
@@ -162,9 +164,11 @@ private:
     void sendPairRequest();
     void sendPairResponse(const uint8_t *mac, const PairHeader &request_header);
     void sendHeartbeat();
-    void cleanupInactivePeers();
+    void cleanupInactivePeersInternal();
     bool loadPeersIntelligently();
-    std::vector<PeerPersistence::PersistentPeer> getPersistentPeers() const;
+    std::vector<PeerPersistence::PersistentPeer> getPersistentPeersInternal() const;
+    bool savePeersToNVSInternal();
+    bool savePeersToRTCInternal();
 
     // Static callbacks passed to the ESP-IDF ESP-NOW API
     static void espNowRecvCb(const esp_now_recv_info_t *recv_info,

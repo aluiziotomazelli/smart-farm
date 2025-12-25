@@ -51,8 +51,6 @@ void CentralHubApp::init()
     ESPNOWConfig config;
     config.wifi_channel    = 0; // Auto channel
     config.max_peers       = 10;
-    config.auto_pairing    = true;
-    config.allow_broadcast = true;
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");

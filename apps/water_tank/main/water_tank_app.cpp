@@ -176,13 +176,10 @@ void WaterTankApp::init()
     config.max_peers          = 10;
     config.ack_timeout        = 100; // ms
     config.heartbeat_interval = 0;   // Desabilitado para economia
-    config.auto_pairing       = true;
-    config.allow_broadcast    = true;
     config.max_packet_size    = 250;
 
     // Adicione log para verificar a configuração
-    ESP_LOGI(TAG, "ESP-NOW Config: allow_broadcast=%d, max_packet_size=%u",
-             config.allow_broadcast, config.max_packet_size);
+    ESP_LOGI(TAG, "ESP-NOW Config: max_packet_size=%u", config.max_packet_size);
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");

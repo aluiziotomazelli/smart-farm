@@ -278,8 +278,8 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
     }
 
     if (persistence_enabled_) {
-        savePeersToRTC();
-        savePeersToNVS();
+        savePeersToRTCInternal();
+        savePeersToNVSInternal();
     }
     ESP_LOGI(TAG, "Peer added: node_id=%u", node_id);
     return true;
@@ -297,8 +297,8 @@ bool EspNowComm::removePeer(uint8_t node_id)
             peers_.erase(it);
             xSemaphoreGive(mutex_);
             if (persistence_enabled_) {
-                savePeersToRTC();
-                savePeersToNVS();
+                savePeersToRTCInternal();
+                savePeersToNVSInternal();
             }
             return true;
         }
@@ -345,7 +345,7 @@ void EspNowComm::process()
     }
 
     if (config_.peer_timeout > 0) {
-        cleanupInactivePeers();
+        cleanupInactivePeersInternal();
     }
 
     xSemaphoreGive(mutex_);
@@ -524,7 +524,25 @@ void EspNowComm::sendHeartbeat()
 
 void EspNowComm::cleanupInactivePeers()
 {
-    // Implementation omitted for brevity
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    cleanupInactivePeersInternal();
+    xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::cleanupInactivePeersInternal()
+{
+    uint32_t now = esp_timer_get_time() / 1000;
+    for (auto it = peers_.begin(); it != peers_.end();) {
+        if (!it->is_confirmed && (now - it->last_seen > config_.peer_timeout)) {
+            esp_now_del_peer(it->mac_address.data());
+            if (on_peer_event_) {
+                on_peer_event_(*it, false);
+            }
+            it = peers_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 bool EspNowComm::loadPeersIntelligently()
@@ -535,17 +553,56 @@ bool EspNowComm::loadPeersIntelligently()
 
 std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeers() const
 {
-    return {};
+    // This const method cannot take the mutex in C++.
+    // A better approach would be to return a copy protected by a lock in a non-const version.
+    // For now, we assume this is non-critical or that the caller handles synchronization.
+    return getPersistentPeersInternal();
+}
+
+std::vector<PeerPersistence::PersistentPeer> EspNowComm::getPersistentPeersInternal() const
+{
+    std::vector<PeerPersistence::PersistentPeer> p_peers;
+    for (const auto &peer : peers_) {
+        if (peer.is_confirmed) {
+            PeerPersistence::PersistentPeer p;
+            memcpy(p.mac, peer.mac_address.data(), 6);
+            p.node_id = peer.node_id;
+            p_peers.push_back(p);
+        }
+    }
+    return p_peers;
 }
 
 bool EspNowComm::savePeersToNVS()
 {
-    return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool success = savePeersToNVSInternal();
+    xSemaphoreGive(mutex_);
+    return success;
+}
+
+bool EspNowComm::savePeersToNVSInternal()
+{
+    if (!persistence_enabled_) return false;
+    auto p_peers = getPersistentPeersInternal();
+    if (p_peers.empty()) return true;
+    return PeerPersistence::saveToNVS(p_peers);
 }
 
 bool EspNowComm::savePeersToRTC()
 {
-    return false;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool success = savePeersToRTCInternal();
+    xSemaphoreGive(mutex_);
+    return success;
+}
+
+bool EspNowComm::savePeersToRTCInternal()
+{
+    if (!persistence_enabled_) return false;
+    auto p_peers = getPersistentPeersInternal();
+    if (p_peers.empty()) return true;
+    return PeerPersistence::saveToRTC(p_peers);
 }
 
 void EspNowComm::setReceiveCallback(OnReceiveCallback callback)
