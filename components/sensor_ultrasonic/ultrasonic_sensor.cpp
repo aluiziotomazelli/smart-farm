@@ -16,6 +16,15 @@ UltrasonicSensor::UltrasonicSensor(gpio_num_t trig_pin,
     , trig_pin_(trig_pin)
     , echo_pin_(echo_pin)
 {
+    if (cfg_.ping_count == 0) {
+        ESP_LOGW(TAG, "ping_count cannot be zero. Setting to 1.");
+        cfg_.ping_count = 1;
+    }
+    if (cfg_.ping_count > MAX_PINGS) {
+        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.", cfg_.ping_count,
+                 (unsigned)MAX_PINGS);
+        cfg_.ping_count = MAX_PINGS;
+    }
 }
 
 bool UltrasonicSensor::init()
@@ -44,7 +53,7 @@ bool UltrasonicSensor::init()
         .pin_bit_mask = 1ULL << echo_pin_,
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
     if (gpio_config(&io_conf) != ESP_OK) {
@@ -58,37 +67,48 @@ bool UltrasonicSensor::init()
 
 bool UltrasonicSensor::read_raw_cm_(float &cm, UsFailure &out_failure)
 {
+    out_failure = UsFailure::NONE;
+
     // Send trigger pulse
     gpio_set_level(trig_pin_, 1);
     esp_rom_delay_us(cfg_.ping_duration_us);
     gpio_set_level(trig_pin_, 0);
 
-    // Wait for echo start (rising edge)
-    uint32_t start_time = esp_timer_get_time();
+    // --- Measure pulse ---
+    // The entire measurement process must complete within the timeout period.
+    uint64_t start_time = esp_timer_get_time();
+    uint64_t echo_start = 0;
+    uint64_t echo_end   = 0;
+
+    // 1. Wait for the echo pin to go high (start of pulse)
     while (gpio_get_level(echo_pin_) == 0) {
         if (esp_timer_get_time() - start_time > cfg_.timeout_us) {
-            ESP_LOGW(TAG, "GPIO: Timeout waiting for ECHO pulse start");
+            ESP_LOGD(TAG, "Timeout waiting for ECHO pulse start");
             out_failure = UsFailure::TIMEOUT;
             return false;
         }
     }
+    echo_start = esp_timer_get_time();
 
-    // Measure echo pulse width (high duration)
-    uint32_t echo_start = esp_timer_get_time();
+    // 2. Wait for the echo pin to go low (end of pulse)
     while (gpio_get_level(echo_pin_) == 1) {
-        if (esp_timer_get_time() - echo_start > cfg_.timeout_us) {
-            ESP_LOGW(TAG, "GPIO: Timeout waiting for ECHO pulse end");
+        if (esp_timer_get_time() - start_time > cfg_.timeout_us) {
+            ESP_LOGD(TAG, "Timeout waiting for ECHO pulse end");
             out_failure = UsFailure::TIMEOUT;
             return false;
         }
     }
-    uint32_t echo_end = esp_timer_get_time();
+    echo_end = esp_timer_get_time();
 
-    // Calculate distance: (time × speed of sound) / 2
+    // --- Calculate distance ---
+    if (echo_start == 0 || echo_end == 0) {
+        out_failure = UsFailure::HW_ERROR;
+        return false;
+    }
+
     uint32_t pulse_duration_us = echo_end - echo_start;
     cm                         = (pulse_duration_us * SOUND_SPEED_CM_PER_US) / 2.0f;
 
-    out_failure = UsFailure::NONE;
     return true;
 }
 
@@ -152,11 +172,9 @@ bool UltrasonicSensor::read_distance_cm(float &out_cm,
 
     // Collect multiple samples
     float samples[MAX_PINGS];
-    const size_t ping_count =
-        (cfg_.ping_count <= MAX_PINGS) ? cfg_.ping_count : MAX_PINGS;
     size_t valid = 0;
 
-    for (size_t i = 0; i < ping_count; i++) {
+    for (size_t i = 0; i < cfg_.ping_count; i++) {
         float d;
         UsFailure f;
 
@@ -174,7 +192,7 @@ bool UltrasonicSensor::read_distance_cm(float &out_cm,
         }
 
         // Wait between pings (except after last one)
-        if (i + 1 < ping_count)
+        if (i + 1 < cfg_.ping_count)
             vTaskDelay(pdMS_TO_TICKS(cfg_.ping_interval_ms));
     }
 
@@ -186,7 +204,7 @@ bool UltrasonicSensor::read_distance_cm(float &out_cm,
     }
 
     // Determine quality based on valid ping ratio
-    float ratio = (float)valid / ping_count;
+    float ratio = (float)valid / cfg_.ping_count;
     out_quality = (ratio >= US_VALID_PING_RATIO) ? UsQuality::OK : UsQuality::WEAK;
 
     // Apply selected filter
