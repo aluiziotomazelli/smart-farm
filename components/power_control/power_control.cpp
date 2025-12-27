@@ -21,6 +21,8 @@ esp_err_t PowerControl::init()
         return err;
     }
 
+    gpio_set_drive_capability(config_.gpio, GPIO_DRIVE_CAP_3);
+
     if (config_.initial_on) {
         return on();
     }

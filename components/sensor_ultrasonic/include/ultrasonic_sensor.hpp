@@ -19,9 +19,11 @@ enum class UsQuality
  */
 enum class UsFailure
 {
-    NONE,    /**< No failure occurred */
-    TIMEOUT, /**< No echo received within timeout period */
-    HW_ERROR /**< Electrical or driver-level error */
+    NONE,     /**< No failure occurred */
+    TIMEOUT,  /**< No echo received within timeout period */
+    HW_ERROR, /**< Electrical or driver-level error */
+    INVALID_PULSE,
+    HIGH_VARIANCE
 };
 
 /**
@@ -56,6 +58,9 @@ public:
         uint32_t timeout_us = 30000;    /**< Maximum wait time for echo in microseconds */
         Filter filter       = Filter::MEDIAN; /**< Statistical filter to apply */
         bool blind_ping = true; /**< If true, ignores first ping to clear environment */
+        float min_distance_cm = 10.0f;  /**< Minimum valid distance in centimeters */
+        float max_distance_cm = 200.0f; /**< Maximum valid distance in centimeters */
+        float max_dev_cm      = 15.0f;  /**< Maximum allowed variance in centimeters */
     };
 
     /**
@@ -92,7 +97,7 @@ public:
      * @param[out] out_failure Type of failure if measurement unsuccessful.
      * @return true if a valid measurement was obtained, false otherwise.
      */
-    bool read_distance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
+    bool readDistance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
 private:
     static constexpr size_t MAX_PINGS = 15; /**< Maximum allowed pings per measurement */
@@ -110,7 +115,7 @@ private:
      * @param[out] fail Failure type if ping unsuccessful.
      * @return true if ping succeeded, false otherwise.
      */
-    bool read_raw_cm_(float &cm, UsFailure &fail);
+    bool readRaw_cm_(float &cm, UsFailure &fail);
 
     const UltrasonicConfig cfg_; /**< Configuration parameters for sensor operation */
     gpio_num_t trig_pin_;        /**< GPIO pin for trigger signal */
@@ -123,7 +128,7 @@ private:
      * @param n Number of elements in array.
      * @return Median distance value in centimeters.
      */
-    float reduce_median(float *v, size_t n);
+    float reduceMedian(float *v, size_t n);
 
     /**
      * @brief Applies dominant cluster filter to measurement array.
@@ -135,5 +140,5 @@ private:
      * @param n Number of elements in array.
      * @return Dominant cluster distance value in centimeters.
      */
-    float reduce_dominant_cluster(float *v, size_t n);
+    float reduceDominantCluster(float *v, size_t n);
 };

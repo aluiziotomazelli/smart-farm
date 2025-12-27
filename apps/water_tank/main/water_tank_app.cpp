@@ -39,7 +39,9 @@ static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
     .ping_duration_us = 20,
     .timeout_us       = 25000,
     .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
-    .blind_ping       = false};
+    .blind_ping       = false,
+    .min_distance_cm  = 10.0f,
+    .max_distance_cm  = 200.0f};
 
 static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, cfg);
 
@@ -250,7 +252,7 @@ void WaterTankApp::run()
 
         sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
-        bool ok = sensor.read_distance_cm(distance, quality, failure);
+        bool ok = sensor.readDistance_cm(distance, quality, failure);
         sensor_power_.off();
 
         if (ok) {
@@ -296,10 +298,10 @@ void WaterTankApp::run()
                                  sizeof(payload))) {
                 ESP_LOGE(TAG, "Failed to send broadcast");
             }
-        } else {
+        }
+        else {
             for (const auto &peer : peers) {
-                if (!comm_.send(peer.node_id,
-                                reinterpret_cast<const uint8_t *>(&payload),
+                if (!comm_.send(peer.node_id, reinterpret_cast<const uint8_t *>(&payload),
                                 sizeof(payload))) {
                     ESP_LOGE(TAG, "Failed to send to peer %u", peer.node_id);
                 }
