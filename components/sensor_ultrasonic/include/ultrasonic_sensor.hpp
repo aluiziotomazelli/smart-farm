@@ -117,6 +117,14 @@ private:
     gpio_num_t echo_pin_;        /**< GPIO pin for echo signal */
 
     /**
+     * @brief Validates and sanitizes the configuration.
+     *
+     * @param cfg Original configuration.
+     * @return A sanitized configuration object.
+     */
+    static UltrasonicConfig validate_config_(const UltrasonicConfig &cfg);
+
+    /**
      * @brief Applies median filter to measurement array.
      *
      * @param v Array of distance measurements.
