@@ -12,10 +12,19 @@ static const char *TAG = "UltrasonicSensor";
 UltrasonicSensor::UltrasonicSensor(gpio_num_t trig_pin,
                                    gpio_num_t echo_pin,
                                    const UltrasonicConfig &cfg)
-    : cfg_(validate_config_(cfg))
+    : cfg_(cfg)
     , trig_pin_(trig_pin)
     , echo_pin_(echo_pin)
 {
+    if (cfg_.ping_count == 0) {
+        ESP_LOGW(TAG, "ping_count cannot be zero. Setting to 1.");
+        cfg_.ping_count = 1;
+    }
+    if (cfg_.ping_count > MAX_PINGS) {
+        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.", cfg_.ping_count,
+                 (unsigned)MAX_PINGS);
+        cfg_.ping_count = MAX_PINGS;
+    }
 }
 
 bool UltrasonicSensor::init()
@@ -56,20 +65,20 @@ bool UltrasonicSensor::init()
     return true;
 }
 
-UltrasonicSensor::UltrasonicConfig UltrasonicSensor::validate_config_(
-    const UltrasonicSensor::UltrasonicConfig &cfg)
+void UltrasonicSensor::setPingCount(uint8_t new_ping_count)
 {
-    UltrasonicConfig sanitized_cfg = cfg;
-    if (sanitized_cfg.ping_count == 0) {
+    if (new_ping_count == 0) {
         ESP_LOGW(TAG, "ping_count cannot be zero. Setting to 1.");
-        sanitized_cfg.ping_count = 1;
+        cfg_.ping_count = 1;
     }
-    if (sanitized_cfg.ping_count > MAX_PINGS) {
-        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.",
-                 sanitized_cfg.ping_count, (unsigned)MAX_PINGS);
-        sanitized_cfg.ping_count = MAX_PINGS;
+    else if (new_ping_count > MAX_PINGS) {
+        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.", new_ping_count,
+                 (unsigned)MAX_PINGS);
+        cfg_.ping_count = MAX_PINGS;
     }
-    return sanitized_cfg;
+    else {
+        cfg_.ping_count = new_ping_count;
+    }
 }
 
 bool UltrasonicSensor::read_raw_cm_(float &cm, UsFailure &out_failure)

@@ -50,12 +50,13 @@ public:
     struct UltrasonicConfig
     {
         uint8_t ping_count = 7; /**< Number of pings per measurement (max: 15) */
-        uint16_t ping_interval_ms =
+        const uint16_t ping_interval_ms =
             70; /**< Delay between consecutive pings in milliseconds */
-        uint16_t ping_duration_us = 20; /**< Duration of trigger pulse in microseconds */
-        uint32_t timeout_us = 30000;    /**< Maximum wait time for echo in microseconds */
-        Filter filter       = Filter::MEDIAN; /**< Statistical filter to apply */
-        bool blind_ping = true; /**< If true, ignores first ping to clear environment */
+        const uint16_t ping_duration_us =
+            20; /**< Duration of trigger pulse in microseconds */
+        const uint32_t timeout_us = 30000; /**< Maximum wait time for echo in microseconds */
+        Filter filter             = Filter::MEDIAN; /**< Statistical filter to apply */
+        bool blind_ping           = true; /**< If true, ignores first ping to clear environment */
     };
 
     /**
@@ -94,6 +95,13 @@ public:
      */
     bool read_distance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
+    /**
+     * @brief Sets the number of pings for subsequent measurements.
+     *
+     * @param new_ping_count The new number of pings (will be capped by MAX_PINGS).
+     */
+    void setPingCount(uint8_t new_ping_count);
+
 private:
     static constexpr size_t MAX_PINGS = 15; /**< Maximum allowed pings per measurement */
     static constexpr float SOUND_SPEED_CM_PER_US = 0.034300f; /**< in cm/μs at 20°C */
@@ -112,17 +120,9 @@ private:
      */
     bool read_raw_cm_(float &cm, UsFailure &fail);
 
-    const UltrasonicConfig cfg_; /**< Configuration parameters for sensor operation */
-    gpio_num_t trig_pin_;        /**< GPIO pin for trigger signal */
-    gpio_num_t echo_pin_;        /**< GPIO pin for echo signal */
-
-    /**
-     * @brief Validates and sanitizes the configuration.
-     *
-     * @param cfg Original configuration.
-     * @return A sanitized configuration object.
-     */
-    static UltrasonicConfig validate_config_(const UltrasonicConfig &cfg);
+    UltrasonicConfig cfg_;             /**< Configuration parameters for sensor operation */
+    const gpio_num_t trig_pin_;        /**< GPIO pin for trigger signal */
+    const gpio_num_t echo_pin_;        /**< GPIO pin for echo signal */
 
     /**
      * @brief Applies median filter to measurement array.
