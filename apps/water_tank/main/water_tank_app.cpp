@@ -266,7 +266,7 @@ void WaterTankApp::run()
             }
         }
         else {
-            ESP_LOGW(TAG, "Ultrasonic INVALID reading (failure code: %d)", (int)failure);
+            ESP_LOGW(TAG, "Ultrasonic INVALID reading: %s", us_failure_to_string(failure));
         }
 
         storage_.updateStatus(level, distance, quality, failure);
