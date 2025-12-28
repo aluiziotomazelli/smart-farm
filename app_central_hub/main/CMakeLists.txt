@@ -12,6 +12,3 @@ idf_component_register(
          esp_wifi
          espnow_comm   
 )
-
-# set(requires "nvs_core")
-# list(APPEND REQUIRES ${requires})
