@@ -23,6 +23,10 @@ struct WaterTankStats
     // Wake / sleep
     bool gpio_wakeup_enabled = false;
 
+    // --- Backup Mode ---
+    bool backup_mode_active = false;
+    uint8_t consecutive_failures = 0;
+
     void reset()
     {
         *this = {};

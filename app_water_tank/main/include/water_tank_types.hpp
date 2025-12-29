@@ -30,5 +30,7 @@ struct WaterLevelReport
     float distance_cm;
     UsQuality quality;
     UsFailure failure;
+    bool float_switch_is_full;
+    bool backup_mode_active;
 };
 #pragma pack(pop)

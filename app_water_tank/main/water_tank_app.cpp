@@ -22,7 +22,10 @@
 
 static const char *TAG = "WaterTankApp";
 
-static constexpr uint32_t ULTRASONIC_WARMUP_MS = 600;
+// --- Constants ---
+static constexpr uint32_t ULTRASONIC_WARMUP_MS          = 600;
+static constexpr uint8_t CONSECUTIVE_FAILURES_THRESHOLD = 5;
+static constexpr uint64_t BACKUP_MODE_SLEEP_US          = 15ULL * 1000000ULL; // 15 seconds
 
 // --- Persistence in RTC Memory ---
 RTC_DATA_ATTR CoreStorage rtc_core_data;
@@ -52,17 +55,61 @@ static UltrasonicSensor::UltrasonicConfig us_cfg = {
 
 static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, us_cfg);
 
-static FloatSwitch::Config fs_cfg = {.gpio          = FLOAT_SWITCH_GPIO,
-                                     .normally_open = true,
-                                     .active_level  = FloatSwitch::ActiveLevel::LOW,
-                                     .wakeup_level  = FloatSwitch::WakeupLevel::LOW};
+static FloatSwitch::Config fs_cfg = {
+    .gpio          = FLOAT_SWITCH_GPIO,
+    .normally_open = true,
+    .active_level  = FloatSwitch::ActiveLevel::LOW,
+    .wakeup_on     = FloatSwitch::WakeupCondition::WHEN_TANK_IS_EMPTY,
+};
 static FloatSwitch floatswitch(fs_cfg);
 
 // --- Business Logic ---
+void WaterTankApp::updateOperationMode()
+{
+    auto &stats = storage_.stats;
+
+    // This function implements the state machine for the backup mode.
+    if (stats.quality == UsQuality::INVALID) {
+        // Increment consecutive failures if the reading is invalid.
+        if (stats.consecutive_failures < UINT8_MAX) {
+            stats.consecutive_failures++;
+        }
+    }
+    else if (stats.quality == UsQuality::OK) {
+        // Decrement on OK readings to add hysteresis.
+        if (stats.consecutive_failures > 0) {
+            stats.consecutive_failures--;
+        }
+    }
+    // Note: WEAK readings do not change the counter.
+
+    // Update the backup mode state based on the threshold.
+    if (stats.consecutive_failures >= CONSECUTIVE_FAILURES_THRESHOLD) {
+        stats.backup_mode_active = true;
+    }
+    else if (stats.consecutive_failures == 0) {
+        stats.backup_mode_active = false;
+    }
+}
+
 uint64_t WaterTankApp::decideSleepTimeUs()
 {
     auto &app_stats = storage_.stats;
 
+    // If backup mode is active, the float switch dictates the sleep cycle.
+    if (app_stats.backup_mode_active) {
+        // If the tank is not full (i.e., it's empty or filling),
+        // use a short sleep time to poll the float switch frequently.
+        if (!floatswitch.isTankFull()) {
+            return BACKUP_MODE_SLEEP_US;
+        }
+        // If the tank is full, revert to a long, stable sleep time.
+        else {
+            return TIMER_STABLE_US;
+        }
+    }
+
+    // Normal operation mode: sleep time is based on ultrasonic sensor readings.
     uint64_t timer_us = 0;
     switch (app_stats.quality) {
     case UsQuality::OK:
@@ -107,18 +154,23 @@ void WaterTankApp::configureSleepPolicy(uint64_t timer_us)
         esp_sleep_enable_timer_wakeup(timer_us);
     }
 
-    bool contact_closed                = floatswitch.isContactClosed();
-    storage_.stats.gpio_wakeup_enabled = !contact_closed;
+    // Use the new, safe method from FloatSwitch to decide if GPIO wakeup should be armed.
+    // This prevents wake-up loops.
+    if (floatswitch.shouldEnableWakeup()) {
+        // The wakeup level (HIGH/LOW) depends on the physical connection (active_level).
+        esp_deepsleep_gpio_wake_up_mode_t wakeup_mode =
+            (fs_cfg.active_level == FloatSwitch::ActiveLevel::HIGH)
+                ? ESP_GPIO_WAKEUP_GPIO_HIGH
+                : ESP_GPIO_WAKEUP_GPIO_LOW;
 
-    if (!contact_closed) {
-        FloatSwitch::WakeupInfo wakeup_info;
-        if (floatswitch.getWakeupInfo(wakeup_info)) {
-            esp_deep_sleep_enable_gpio_wakeup(
-                wakeup_info.gpio_mask,
-                (esp_deepsleep_gpio_wake_up_mode_t)wakeup_info.mode);
-        }
+        esp_deep_sleep_enable_gpio_wakeup(1ULL << fs_cfg.gpio, wakeup_mode);
+        storage_.stats.gpio_wakeup_enabled = true;
+        ESP_LOGI(TAG, "GPIO wakeup enabled");
     }
-    ESP_LOGD(TAG, "Float switch: %s", contact_closed ? "closed" : "open");
+    else {
+        storage_.stats.gpio_wakeup_enabled = false;
+        ESP_LOGI(TAG, "GPIO wakeup disabled by logic");
+    }
 }
 
 static uint16_t distance_to_level_permille(float d_cm)
@@ -134,20 +186,26 @@ static uint16_t distance_to_level_permille(float d_cm)
     return static_cast<uint16_t>(level * 1000.0f);
 }
 
-WaterLevelReport WaterTankApp::measureWaterLevel()
+WaterLevelReport WaterTankApp::createWaterLevelReport()
 {
     power_to_sensor.on();
     float distance_cm = 0.0f;
     UsQuality quality = UsQuality::INVALID;
     UsFailure failure = UsFailure::NONE;
+
+    // In backup mode, we still attempt to read the sensor to see if it recovers.
     sensor.readDistance_cm(distance_cm, quality, failure);
+
     power_to_sensor.off();
 
+    // Populate the report with all available data.
     WaterLevelReport report = {
-        .level_permille = distance_to_level_permille(distance_cm),
-        .distance_cm    = distance_cm,
-        .quality        = quality,
-        .failure        = failure,
+        .level_permille       = distance_to_level_permille(distance_cm),
+        .distance_cm          = distance_cm,
+        .quality              = quality,
+        .failure              = failure,
+        .float_switch_is_full = floatswitch.isTankFull(),
+        .backup_mode_active   = storage_.stats.backup_mode_active,
     };
 
     return report;
@@ -180,8 +238,6 @@ void WaterTankApp::onEspNowReceive(uint8_t node_id,
 {
     ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
     // This device is a sensor, so it primarily sends data.
-    // For now, we just log any incoming data. In the future, this could be used for
-    // configuration or commands.
 }
 
 void WaterTankApp::onEspNowSend(uint8_t node_id, esp_now_send_status_t status)
@@ -202,8 +258,6 @@ void WaterTankApp::init()
     storage_.init_partition();
 
     power_to_sensor.init();
-    // ESP_RETURN_ON_ERROR(power_to_sensor.init(), TAG, "Failed to initialize sensor
-    // power");
     sensor.init();
     floatswitch.init();
 
@@ -226,36 +280,30 @@ void WaterTankApp::init()
         }
     }
 
-    // === Inicializar comunicação ESP-NOW ===
+    // Initialize ESP-NOW communication
     ESPNOWConfig config;
-    config.wifi_channel       = 0; // Ou 0 para automático
+    config.wifi_channel       = 0;
     config.max_peers          = 10;
-    config.ack_timeout        = 100; // ms
-    config.heartbeat_interval = 0;   // Desabilitado para economia
-    config.max_packet_size    = 250;
-
-    // Adicione log para verificar a configuração
-    ESP_LOGI(TAG, "ESP-NOW Config: max_packet_size=%u", config.max_packet_size);
+    config.ack_timeout        = 100;
+    config.heartbeat_interval = 0;
+    config.max_packet_size    = sizeof(WaterLevelReport);
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
     }
     else {
         ESP_LOGI(TAG, "ESP-NOW initialized. Our node ID: %u", comm_.get_id());
-
-        // Configurar callbacks (usando lambdas ou std::bind)
         comm_.setReceiveCallback(
             [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
                 this->onEspNowReceive(node_id, data, len, rssi);
             });
-
         comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
             this->onEspNowSend(node_id, status);
         });
-
         comm_.startDiscovery(10000);
     }
 
+    // System status and wakeup reason logging
     esp_reset_reason_t reset_reason     = esp_reset_reason();
     esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
     ESP_LOGI(TAG, "Reset reason: %d, Wakeup cause: %d", reset_reason, wake_cause);
@@ -296,32 +344,34 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "Starting Application Loop");
 
     while (true) {
-        // 1. Measure water level
-        WaterLevelReport report = measureWaterLevel();
+        // 1. Create a comprehensive report with sensor and float switch data.
+        WaterLevelReport report = createWaterLevelReport();
 
-        // 2. Update application state and statistics
+        // 2. Update application state and statistics based on the new report.
         storage_.updateStatus(report.level_permille, report.distance_cm, report.quality,
                               report.failure);
 
-        // 3. Decide sleep time based on the new state
+        // 3. Update the operation mode (normal vs. backup).
+        updateOperationMode();
+
+        // 4. Decide sleep time based on the current state.
         uint64_t timer_us = decideSleepTimeUs();
 
-        // 4. Configure sleep policy
+        // 5. Configure sleep hardware (timer and GPIO).
         configureSleepPolicy(timer_us);
 
-        // 5. Send data via ESP-NOW
+        // 6. Send the report via ESP-NOW.
         sendWaterLevelReport(report);
 
-        // 6. Process communication tasks
+        // 7. Process any pending communication tasks.
         comm_.process();
 
-        // 7. Persist data before sleeping
+        // 8. Persist essential data to RTC memory before sleeping.
         auto &core_data            = storage_.getCoreData();
         core_data.sleep_interval_s = (uint32_t)(timer_us / 1000000ULL);
         rtc_core_data              = core_data;
-        // storage_.commit(); // Optional: commit to NVS if needed before sleep
 
-        // 8. Log summary and enter deep sleep
+        // 9. Log summary and enter deep sleep.
         auto &app_stats = storage_.stats;
         ESP_LOGI(TAG,
                  "Summary - Level: %u‰, Dist: %.2fcm, Quality: %d, Failure: %d, "
@@ -334,9 +384,12 @@ void WaterTankApp::run()
                  app_stats.invalid_count, app_stats.timeout_count);
         ESP_LOGI(TAG, "Core - Boot: %lu, Crash: %lu", core_data.boot_count,
                  core_data.crash_count);
+        ESP_LOGI(TAG, "Mode - Backup: %s, Consecutive Fails: %u",
+                 app_stats.backup_mode_active ? "YES" : "NO",
+                 app_stats.consecutive_failures);
         ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);
 
         vTaskDelay(pdMS_TO_TICKS(2000));
-        // esp_deep_sleep_start();
+        esp_deep_sleep_start();
     }
 }
