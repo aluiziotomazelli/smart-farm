@@ -25,7 +25,7 @@ static const char *TAG = "WaterTankApp";
 // --- Constants ---
 static constexpr uint32_t ULTRASONIC_WARMUP_MS          = 600;
 static constexpr uint8_t CONSECUTIVE_FAILURES_THRESHOLD = 5;
-static constexpr uint64_t BACKUP_MODE_SLEEP_US = 15ULL * 1000000ULL; // 15 seconds
+static constexpr uint64_t BACKUP_MODE_SLEEP_US          = 15ULL * 1000000ULL; // 15 seconds
 
 // --- Persistence in RTC Memory ---
 RTC_DATA_ATTR CoreStorage rtc_core_data;
@@ -71,7 +71,7 @@ void WaterTankApp::updateOperationMode()
     // This function implements the state machine for the backup mode.
     if (stats.quality == UsQuality::INVALID) {
         // Increment consecutive failures if the reading is invalid.
-        if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
+        if (stats.consecutive_failures < UINT8_MAX) {
             stats.consecutive_failures++;
         }
     }
@@ -87,7 +87,7 @@ void WaterTankApp::updateOperationMode()
     if (stats.consecutive_failures >= CONSECUTIVE_FAILURES_THRESHOLD) {
         stats.backup_mode_active = true;
     }
-    else if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
+    else if (stats.consecutive_failures == 0) {
         stats.backup_mode_active = false;
     }
 }
@@ -286,7 +286,7 @@ void WaterTankApp::init()
     config.max_peers          = 10;
     config.ack_timeout        = 100;
     config.heartbeat_interval = 0;
-    config.max_packet_size    = sizeof(WaterLevelReport);
+    config.max_packet_size    = 250; // Use the ESP-NOW maximum packet size
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
@@ -390,6 +390,6 @@ void WaterTankApp::run()
         ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);
 
         vTaskDelay(pdMS_TO_TICKS(2000));
-        // esp_deep_sleep_start();
+        esp_deep_sleep_start();
     }
 }

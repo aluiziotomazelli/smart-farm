@@ -32,8 +32,7 @@ esp_err_t FloatSwitch::configureGpio()
     gpio_config_t cfg{};
     cfg.pin_bit_mask = (1ULL << cfg_.gpio);
     cfg.mode         = GPIO_MODE_INPUT;
-    cfg.intr_type =
-        GPIO_INTR_DISABLE; // Interrupts are handled by the deep sleep wakeup controller.
+    cfg.intr_type    = GPIO_INTR_DISABLE; // Interrupts are handled by the deep sleep wakeup controller.
 
     // The internal pull resistor is configured to oppose the active level.
     // This ensures that the pin is in a defined state when the switch contact is open.
@@ -62,9 +61,8 @@ bool FloatSwitch::isTankFull()
     // First, determine the raw electrical state of the contact.
     bool contact_closed = isContactClosed();
 
-    // Second, interpret the electrical state to determine the physical state (tank
-    // full/empty). This logic depends on the switch type (Normally Open or Normally
-    // Closed).
+    // Second, interpret the electrical state to determine the physical state (tank full/empty).
+    // This logic depends on the switch type (Normally Open or Normally Closed).
     if (cfg_.normally_open) {
         // For a Normally Open (NO) switch:
         // - Contact is OPEN when the tank is full (float is up).
@@ -81,7 +79,7 @@ bool FloatSwitch::isTankFull()
     }
 }
 
-bool FloatSwitch::shouldEnableWakeup()
+bool FloatSwitch::shouldEnableWakeup() const
 {
     if (initialized_ != ESP_OK) {
         ESP_LOGE(TAG, "FloatSwitch not initialized, cannot determine wakeup logic");
@@ -112,7 +110,7 @@ bool FloatSwitch::shouldEnableWakeup()
     }
 }
 
-bool FloatSwitch::isContactClosed()
+bool FloatSwitch::isContactClosed() const
 {
     if (initialized_ != ESP_OK) {
         // This is a critical error, as the application is trying to use the

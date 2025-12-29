@@ -18,13 +18,12 @@ class FloatSwitch
 {
 public:
     /**
-     * @brief Defines the logical condition under which a GPIO wake-up should be
-     * triggered. This abstracts the electrical signal (LOW/HIGH) into a desired
-     * application behavior.
+     * @brief Defines the logical condition under which a GPIO wake-up should be triggered.
+     * This abstracts the electrical signal (LOW/HIGH) into a desired application behavior.
      */
     enum class WakeupCondition
     {
-        NEVER,              ///< Never trigger a wake-up.
+        NEVER,            ///< Never trigger a wake-up.
         WHEN_TANK_IS_EMPTY, ///< Trigger wake-up when the tank becomes empty.
         WHEN_TANK_IS_FULL,  ///< Trigger wake-up when the tank becomes full.
     };
@@ -44,13 +43,10 @@ public:
      */
     struct Config
     {
-        gpio_num_t gpio;           ///< The GPIO pin the switch is connected to.
-        bool normally_open = true; ///< Switch type: true for Normally Open (NO), false
-                                   ///< for Normally Closed (NC).
-        ActiveLevel active_level =
-            ActiveLevel::LOW; ///< Electrical level when the contact is closed.
-        WakeupCondition wakeup_on =
-            WakeupCondition::NEVER; ///< Logical condition for triggering a GPIO wake-up.
+        gpio_num_t gpio;                   ///< The GPIO pin the switch is connected to.
+        bool normally_open = true;         ///< Switch type: true for Normally Open (NO), false for Normally Closed (NC).
+        ActiveLevel active_level = ActiveLevel::LOW; ///< Electrical level when the contact is closed.
+        WakeupCondition wakeup_on = WakeupCondition::NEVER; ///< Logical condition for triggering a GPIO wake-up.
     };
 
     /**
@@ -73,7 +69,7 @@ public:
      * @note This is a raw electrical reading and does not interpret the physical meaning.
      * @return True if the contact is determined to be closed, false otherwise.
      */
-    bool isContactClosed();
+    bool isContactClosed() const;
 
     /**
      * @brief Determines the logical state of the tank (full or empty).
@@ -84,21 +80,18 @@ public:
     bool isTankFull();
 
     /**
-     * @brief Determines if the GPIO wake-up source should be enabled for the next sleep
-     * cycle.
+     * @brief Determines if the GPIO wake-up source should be enabled for the next sleep cycle.
      *
-     * This function contains the critical logic to prevent wake-up loops. It checks the
-     * current state of the tank against the desired `WakeupCondition`. A wake-up is only
-     * recommended if the tank is NOT currently in the state that would cause an immediate
-     * wake-up.
+     * This function contains the critical logic to prevent wake-up loops. It checks the current
+     * state of the tank against the desired `WakeupCondition`. A wake-up is only recommended
+     * if the tank is NOT currently in the state that would cause an immediate wake-up.
      *
-     * For example, if `wakeup_on` is `WHEN_TANK_IS_EMPTY`, this function will only return
-     * `true` if the tank is currently FULL, thereby arming the trigger for when it
-     * becomes empty.
+     * For example, if `wakeup_on` is `WHEN_TANK_IS_EMPTY`, this function will only return `true`
+     * if the tank is currently FULL, thereby arming the trigger for when it becomes empty.
      *
      * @return True if the GPIO wake-up should be armed, false otherwise.
      */
-    bool shouldEnableWakeup();
+    bool shouldEnableWakeup() const;
 
 private:
     Config cfg_;
