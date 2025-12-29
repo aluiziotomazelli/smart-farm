@@ -29,11 +29,20 @@ const char *us_failure_to_string(UsFailure failure)
 
 UltrasonicSensor::UltrasonicSensor(gpio_num_t trig_pin,
                                    gpio_num_t echo_pin,
-                                   const UltrasonicConfig &cfg)
+                                   UltrasonicConfig &cfg)
     : cfg_(cfg)
     , trig_pin_(trig_pin)
     , echo_pin_(echo_pin)
 {
+    if (cfg_.ping_count == 0) {
+        ESP_LOGW(TAG, "ping_count cannot be zero. Setting to 1.");
+        cfg_.ping_count = 1;
+    }
+    if (cfg_.ping_count > MAX_PINGS) {
+        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.",
+                 cfg_.ping_count, (unsigned)MAX_PINGS);
+        cfg_.ping_count = MAX_PINGS;
+    }
 }
 
 bool UltrasonicSensor::init()
@@ -203,10 +212,9 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
 
     // Collect multiple samples
     float samples[MAX_PINGS];
-    const size_t ping_count = std::min((size_t)cfg_.ping_count, MAX_PINGS);
-    size_t valid            = 0;
+    uint8_t valid = 0;
 
-    for (size_t i = 0; i < ping_count; i++) {
+    for (size_t i = 0; i < cfg_.ping_count; i++) {
         gpio_set_direction(echo_pin_, GPIO_MODE_INPUT);
         float distance;
         UsFailure failure;
@@ -228,7 +236,7 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
         gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
         gpio_set_level(echo_pin_, 0);
         // Wait between pings (except after the last one)
-        if (i + 1 < ping_count) {
+        if (i + 1 < cfg_.ping_count) {
             vTaskDelay(pdMS_TO_TICKS(cfg_.ping_interval_ms));
         }
     }
@@ -236,7 +244,7 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     // --- Process collected samples ---
 
     // 1. Check if any valid samples were collected
-    float ratio = (ping_count > 0) ? ((float)valid / ping_count) : 0;
+    float ratio = (cfg_.ping_count > 0) ? ((float)valid / cfg_.ping_count) : 0;
     if (ratio < US_INVALID_PING_RATIO) {
         out_quality = UsQuality::INVALID;
         // Determine the most likely cause of failure
@@ -311,4 +319,20 @@ float UltrasonicSensor::getStdDev(float *samples, uint8_t valids)
     ESP_LOGD(TAG, "Samples: %u, Mean: %.2f, StdDev: %.2f", valids, mean, std_dev);
 
     return std_dev;
+}
+
+void UltrasonicSensor::setPingCount(uint8_t new_ping_count)
+{
+    if (new_ping_count == 0) {
+        ESP_LOGW(TAG, "ping_count cannot be zero. Setting to 1.");
+        cfg_.ping_count = 1;
+    }
+    else if (new_ping_count > MAX_PINGS) {
+        ESP_LOGW(TAG, "ping_count=%u exceeds MAX_PINGS=%u. Capping value.",
+                 new_ping_count, (unsigned)MAX_PINGS);
+        cfg_.ping_count = MAX_PINGS;
+    }
+    else {
+        cfg_.ping_count = new_ping_count;
+    }
 }

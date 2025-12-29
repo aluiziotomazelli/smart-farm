@@ -4,7 +4,7 @@
 #include "power_control.hpp"
 #include "ultrasonic_sensor.hpp"
 
-#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -41,7 +41,7 @@ static constexpr PowerControl::Config power_cfg = {
 static PowerControl power_to_sensor(power_cfg);
 
 // --- Hardware Configurations ---
-static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
+static UltrasonicSensor::UltrasonicConfig us_cfg = {
     .ping_count       = 9,
     .ping_interval_ms = 70,
     .ping_duration_us = 20,
@@ -52,7 +52,7 @@ static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
     .max_distance_cm  = 200.0f,
     .warmup_time_ms   = 600};
 
-static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, cfg);
+static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, us_cfg);
 
 static FloatSwitch::Config fs_cfg = {.gpio          = FLOAT_SWITCH_GPIO,
                                      .normally_open = true,
@@ -117,6 +117,7 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
                                               (esp_deepsleep_gpio_wake_up_mode_t)wi.mode);
         }
     }
+    ESP_LOGD(TAG, "Float switch: %s", float_switch_closed ? "closed" : "open");
 }
 
 static uint16_t distance_to_level_permille(float d_cm)
@@ -261,36 +262,50 @@ void WaterTankApp::run()
         UsFailure failure = UsFailure::NONE;
         uint16_t level    = 0;
 
-        // ESP_RETURN_ON_ERROR(power_to_sensor.on(), TAG, "Failed to power on sensor");
         power_to_sensor.on();
-        // vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
-        bool ok = sensor.readDistance_cm(distance, quality, failure);
-        // ESP_RETURN_ON_ERROR(power_to_sensor.off(), TAG, "Failed to power off sensor");
+        sensor.readDistance_cm(distance, quality, failure);
         power_to_sensor.off();
 
-        if (ok) {
-            level = distance_to_level_permille(distance);
-            if (quality == UsQuality::WEAK) {
-                ESP_LOGW(TAG, "Ultrasonic WEAK reading: %.2f cm (level: %u‰)", distance,
-                         level);
-            }
-            else {
-                ESP_LOGI(TAG, "Distance: %.2f cm, Level: %u‰", distance, level);
-            }
-        }
-        else {
-            ESP_LOGW(TAG, "Ultrasonic INVALID reading: %s",
-                     us_failure_to_string(failure));
+        app.last_distance_cm = distance;
+        app.quality          = quality;
+        app.failure          = failure;
+
+        uint64_t timer_us = 0;
+        switch (quality) {
+        case UsQuality::OK:
+            level          = distance_to_level_permille(distance);
+            app.fill_state = infer_fill_state(level);
+            timer_us       = decide_timer_us(app.fill_state);
+            app.ok_count++;
+            sensor.setPingCount(us_cfg.ping_count);
+            ESP_LOGI(TAG, "US OK reading: %.2f cm (level: %u‰)", distance, level);
+            break;
+        case UsQuality::WEAK:
+            level          = distance_to_level_permille(distance);
+            app.fill_state = infer_fill_state(level);
+            timer_us       = decide_timer_us(app.fill_state) * WEAK_SLEEP_FACTOR;
+            app.weak_count++;
+            sensor.setPingCount(us_cfg.ping_count + 2);
+            ESP_LOGW(TAG, "US WEAK reading: %.2f cm (level: %u‰)", distance, level);
+            break;
+        case UsQuality::INVALID:
+            timer_us       = TIMER_UNKNOWN_US / 4;
+            app.fill_state = FillState::UNKNOWN;
+            sensor.setPingCount(us_cfg.ping_count + 4);
+            if (failure == UsFailure::TIMEOUT)
+                app.timeout_count++;
+            else if (failure == UsFailure::HW_ERROR)
+                app.hw_error_count++;
+            else
+                app.invalid_count++;
+            level = app.level_permille;
+            ESP_LOGW(TAG, "US INVALID reading");
+            break;
+        default:
+            timer_us = TIMER_UNKNOWN_US / 4;
+            break;
         }
 
-        storage_.updateStatus(level, distance, quality, failure);
-        app.fill_state = infer_fill_state(level);
-
-        uint64_t timer_us = decide_timer_us(app.fill_state);
-        if (quality == UsQuality::WEAK)
-            timer_us = static_cast<uint64_t>(timer_us * WEAK_SLEEP_FACTOR);
-        else if (quality == UsQuality::INVALID)
-            timer_us = static_cast<uint64_t>(timer_us * INVALID_SLEEP_FACTOR);
         core.sleep_interval_s          = (uint32_t)(timer_us / 1000000ULL);
         rtc_core_data.sleep_interval_s = core.sleep_interval_s;
 
@@ -331,6 +346,7 @@ void WaterTankApp::run()
                  app.level_permille, app.measure_count, app.ok_count, app.weak_count,
                  app.invalid_count, core.boot_count, core.crash_count);
 
+        ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core.sleep_interval_s);
         vTaskDelay(pdMS_TO_TICKS(2000));
         // esp_deep_sleep_start();
     }

@@ -62,18 +62,20 @@ public:
     struct UltrasonicConfig
     {
         uint8_t ping_count = 7; /**< Number of pings per measurement cycle (max: 15). */
-        uint16_t ping_interval_ms =
+        const uint16_t ping_interval_ms =
             70; /**< Delay between consecutive pings in milliseconds. */
-        uint16_t ping_duration_us =
+        const uint16_t ping_duration_us =
             20; /**< Duration of the trigger pulse in microseconds. */
-        uint32_t timeout_us =
+        const uint32_t timeout_us =
             30000; /**< Maximum wait time for an echo pulse in microseconds. */
         Filter filter =
             Filter::MEDIAN; /**< Statistical filter to apply to the measurements. */
         bool blind_ping =
             true; /**< If true, performs and discards one ping before the main cycle. */
-        float min_distance_cm = 10.0f;  /**< The minimum valid distance in centimeters. */
-        float max_distance_cm = 200.0f; /**< The maximum valid distance in centimeters. */
+        const float min_distance_cm =
+            10.0f; /**< The minimum valid distance in centimeters. */
+        const float max_distance_cm =
+            200.0f; /**< The maximum valid distance in centimeters. */
         float max_dev_cm =
             15.0f; /**< The maximum standard deviation allowed for a valid reading. */
         const uint16_t warmup_time_ms = 600;
@@ -86,9 +88,9 @@ public:
      * @param echo_pin GPIO pin number for the echo signal input.
      * @param cfg Configuration parameters for the sensor's operation.
      */
-    UltrasonicSensor(gpio_num_t trig_pin,
-                     gpio_num_t echo_pin,
-                     const UltrasonicConfig &cfg);
+    UltrasonicSensor(const gpio_num_t trig_pin,
+                     const gpio_num_t echo_pin,
+                     UltrasonicConfig &cfg);
 
     /**
      * @brief Default destructor.
@@ -115,10 +117,17 @@ public:
      */
     bool readDistance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
+    /**
+     * @brief Sets the number of pings for subsequent measurements.
+     *
+     * @param new_ping_count The new number of pings (will be capped by MAX_PINGS).
+     */
+    void setPingCount(uint8_t new_ping_count);
+
 private:
-    const UltrasonicConfig cfg_; /**< Sensor configuration parameters. */
-    gpio_num_t trig_pin_;        /**< GPIO pin for the trigger signal. */
-    gpio_num_t echo_pin_;        /**< GPIO pin for the echo signal. */
+    UltrasonicConfig cfg_; /**< Sensor configuration parameters. */
+    gpio_num_t trig_pin_;  /**< GPIO pin for the trigger signal. */
+    gpio_num_t echo_pin_;  /**< GPIO pin for the echo signal. */
 
     static constexpr size_t MAX_PINGS =
         15; /**< Maximum configurable pings per measurement. */
