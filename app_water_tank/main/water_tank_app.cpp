@@ -26,8 +26,6 @@ static constexpr uint32_t ULTRASONIC_WARMUP_MS = 600;
 
 // --- Persistence in RTC Memory ---
 RTC_DATA_ATTR CoreStorage rtc_core_data;
-RTC_DATA_ATTR uint16_t rtc_last_level_permille = 0;
-RTC_DATA_ATTR bool rtc_has_level               = false;
 
 WaterTankApp::WaterTankApp()
 {
@@ -62,47 +60,47 @@ static FloatSwitch::Config fs_cfg = {.gpio          = FLOAT_SWITCH_GPIO,
 static FloatSwitch floatswitch(fs_cfg);
 
 // --- Business Logic ---
-FillState WaterTankApp::infer_fill_state(uint16_t current_level)
+uint64_t WaterTankApp::decideSleepTimeUs()
 {
-    if (!rtc_has_level) {
-        rtc_last_level_permille = current_level;
-        rtc_has_level           = true;
-        ESP_LOGD(TAG, "Fill state: Unknown (First reading)");
-        return FillState::UNKNOWN;
-    }
+    auto &app_stats = storage_.stats;
 
-    int delta               = (int)current_level - (int)rtc_last_level_permille;
-    rtc_last_level_permille = current_level;
-
-    if (delta > +LEVEL_DELTA_MIN) {
-        ESP_LOGD(TAG, "Fill state: Filling, Delta: %d", delta);
-        return FillState::FILLING;
-    }
-    if (delta < -LEVEL_DELTA_MIN) {
-        ESP_LOGD(TAG, "Fill state: Draining, Delta: %d", delta);
-        return FillState::DRAINING;
-    }
-
-    ESP_LOGD(TAG, "Fill state: Stable, Delta: %d", delta);
-    return FillState::STABLE;
-}
-
-uint64_t WaterTankApp::decide_timer_us(FillState state)
-{
-    switch (state) {
-    case FillState::FILLING:
-        return TIMER_FILLING_US;
-    case FillState::DRAINING:
-        return TIMER_DRAIN_US;
-    case FillState::STABLE:
-        return TIMER_STABLE_US;
-    case FillState::UNKNOWN:
+    uint64_t timer_us = 0;
+    switch (app_stats.quality) {
+    case UsQuality::OK:
+    case UsQuality::WEAK:
+        // For OK or WEAK quality, the sleep time is based on the fill state.
+        switch (app_stats.fill_state) {
+        case FillState::FILLING:
+            timer_us = TIMER_FILLING_US;
+            break;
+        case FillState::DRAINING:
+            timer_us = TIMER_DRAIN_US;
+            break;
+        case FillState::STABLE:
+            timer_us = TIMER_STABLE_US;
+            break;
+        case FillState::UNKNOWN:
+        default:
+            timer_us = TIMER_UNKNOWN_US;
+            break;
+        }
+        if (app_stats.quality == UsQuality::WEAK) {
+            timer_us *= WEAK_SLEEP_FACTOR;
+        }
+        sensor.setPingCount(us_cfg.ping_count);
+        break;
+    case UsQuality::INVALID:
     default:
-        return TIMER_UNKNOWN_US;
+        // For INVALID quality, use a shorter sleep time to retry sooner.
+        timer_us = TIMER_UNKNOWN_US * INVALID_SLEEP_FACTOR;
+        sensor.setPingCount(us_cfg.ping_count + 4);
+        break;
     }
+
+    return timer_us;
 }
 
-void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t timer_us)
+void WaterTankApp::configureSleepPolicy(bool float_switch_closed, uint64_t timer_us)
 {
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
@@ -111,10 +109,11 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
     }
 
     if (!float_switch_closed) {
-        FloatSwitch::WakeupInfo wi;
-        if (floatswitch.get_wakeup_info(wi)) {
-            esp_deep_sleep_enable_gpio_wakeup(wi.gpio_mask,
-                                              (esp_deepsleep_gpio_wake_up_mode_t)wi.mode);
+        FloatSwitch::WakeupInfo wakeup_info;
+        if (floatswitch.get_wakeup_info(wakeup_info)) {
+            esp_deep_sleep_enable_gpio_wakeup(
+                wakeup_info.gpio_mask,
+                (esp_deepsleep_gpio_wake_up_mode_t)wakeup_info.mode);
         }
     }
     ESP_LOGD(TAG, "Float switch: %s", float_switch_closed ? "closed" : "open");
@@ -122,19 +121,59 @@ void WaterTankApp::configure_sleep_policy(bool float_switch_closed, uint64_t tim
 
 static uint16_t distance_to_level_permille(float d_cm)
 {
-    if (d_cm >= LEVEL_MIN_CM)
+    if (d_cm >= LEVEL_MIN_CM) {
         return 0;
-    if (d_cm <= LEVEL_MAX_CM)
+    }
+    if (d_cm <= LEVEL_MAX_CM) {
         return 1000;
+    }
     float span  = LEVEL_MIN_CM - LEVEL_MAX_CM;
     float level = (LEVEL_MIN_CM - d_cm) / span;
     return static_cast<uint16_t>(level * 1000.0f);
 }
 
-void WaterTankApp::on_espnow_receive(uint8_t node_id,
-                                     const uint8_t *data,
-                                     int len,
-                                     int8_t rssi)
+WaterLevelReport WaterTankApp::measureWaterLevel()
+{
+    power_to_sensor.on();
+    float distance_cm = 0.0f;
+    UsQuality quality = UsQuality::INVALID;
+    UsFailure failure = UsFailure::NONE;
+    sensor.readDistance_cm(distance_cm, quality, failure);
+    power_to_sensor.off();
+
+    WaterLevelReport report = {
+        .level_permille = distance_to_level_permille(distance_cm),
+        .distance_cm    = distance_cm,
+        .quality        = quality,
+        .failure        = failure,
+    };
+
+    return report;
+}
+
+void WaterTankApp::sendWaterLevelReport(const WaterLevelReport &report)
+{
+    auto peers = comm_.getPeers();
+
+    if (peers.empty()) {
+        if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&report), sizeof(report))) {
+            ESP_LOGE(TAG, "Failed to send broadcast");
+        }
+    }
+    else {
+        for (const auto &peer : peers) {
+            if (!comm_.send(peer.node_id, reinterpret_cast<const uint8_t *>(&report),
+                            sizeof(report))) {
+                ESP_LOGE(TAG, "Failed to send to peer %u", peer.node_id);
+            }
+        }
+    }
+}
+
+void WaterTankApp::onEspNowReceive(uint8_t node_id,
+                                   const uint8_t *data,
+                                   int len,
+                                   int8_t rssi)
 {
     ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
     // This device is a sensor, so it primarily sends data.
@@ -142,7 +181,7 @@ void WaterTankApp::on_espnow_receive(uint8_t node_id,
     // configuration or commands.
 }
 
-void WaterTankApp::on_espnow_send(uint8_t node_id, esp_now_send_status_t status)
+void WaterTankApp::onEspNowSend(uint8_t node_id, esp_now_send_status_t status)
 {
     const char *status_str = (status == ESP_NOW_SEND_SUCCESS) ? "SUCCESS" : "FAIL";
 
@@ -154,7 +193,7 @@ void WaterTankApp::on_espnow_send(uint8_t node_id, esp_now_send_status_t status)
     }
 }
 
-void WaterTankApp::init()
+void WaterTankApp::initialize()
 {
     ESP_LOGI(TAG, "Initializing WaterTankApp");
     storage_.init_partition();
@@ -204,11 +243,11 @@ void WaterTankApp::init()
         // Configurar callbacks (usando lambdas ou std::bind)
         comm_.setReceiveCallback(
             [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
-                this->on_espnow_receive(node_id, data, len, rssi);
+                this->onEspNowReceive(node_id, data, len, rssi);
             });
 
         comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
-            this->on_espnow_send(node_id, status);
+            this->onEspNowSend(node_id, status);
         });
 
         comm_.startDiscovery(10000);
@@ -254,99 +293,48 @@ void WaterTankApp::run()
     ESP_LOGI(TAG, "Starting Application Loop");
 
     while (true) {
-        auto &core = storage_.getCoreData();
-        auto &app  = storage_.stats;
+        // 1. Measure water level
+        WaterLevelReport report = measureWaterLevel();
 
-        float distance    = 0.0f;
-        UsQuality quality = UsQuality::INVALID;
-        UsFailure failure = UsFailure::NONE;
-        uint16_t level    = 0;
+        // 2. Update application state and statistics
+        storage_.updateStatus(report.level_permille, report.distance_cm, report.quality,
+                              report.failure);
 
-        power_to_sensor.on();
-        sensor.readDistance_cm(distance, quality, failure);
-        power_to_sensor.off();
+        // 3. Decide sleep time based on the new state
+        uint64_t timer_us = decideSleepTimeUs();
 
-        app.last_distance_cm = distance;
-        app.quality          = quality;
-        app.failure          = failure;
+        // 4. Configure sleep policy
+        bool float_switch_closed           = floatswitch.read();
+        storage_.stats.gpio_wakeup_enabled = !float_switch_closed;
+        configureSleepPolicy(float_switch_closed, timer_us);
 
-        uint64_t timer_us = 0;
-        switch (quality) {
-        case UsQuality::OK:
-            level          = distance_to_level_permille(distance);
-            app.fill_state = infer_fill_state(level);
-            timer_us       = decide_timer_us(app.fill_state);
-            app.ok_count++;
-            sensor.setPingCount(us_cfg.ping_count);
-            ESP_LOGI(TAG, "US OK reading: %.2f cm (level: %u‰)", distance, level);
-            break;
-        case UsQuality::WEAK:
-            level          = distance_to_level_permille(distance);
-            app.fill_state = infer_fill_state(level);
-            timer_us       = decide_timer_us(app.fill_state) * WEAK_SLEEP_FACTOR;
-            app.weak_count++;
-            sensor.setPingCount(us_cfg.ping_count + 2);
-            ESP_LOGW(TAG, "US WEAK reading: %.2f cm (level: %u‰)", distance, level);
-            break;
-        case UsQuality::INVALID:
-            timer_us       = TIMER_UNKNOWN_US / 4;
-            app.fill_state = FillState::UNKNOWN;
-            sensor.setPingCount(us_cfg.ping_count + 4);
-            if (failure == UsFailure::TIMEOUT)
-                app.timeout_count++;
-            else if (failure == UsFailure::HW_ERROR)
-                app.hw_error_count++;
-            else
-                app.invalid_count++;
-            level = app.level_permille;
-            ESP_LOGW(TAG, "US INVALID reading");
-            break;
-        default:
-            timer_us = TIMER_UNKNOWN_US / 4;
-            break;
-        }
+        // 5. Send data via ESP-NOW
+        sendWaterLevelReport(report);
 
-        core.sleep_interval_s          = (uint32_t)(timer_us / 1000000ULL);
-        rtc_core_data.sleep_interval_s = core.sleep_interval_s;
-
-        bool float_switch_closed = floatswitch.read();
-        app.gpio_wakeup_enabled  = !float_switch_closed;
-        configure_sleep_policy(float_switch_closed, timer_us);
-
-        app.sample_uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-
-        core = rtc_core_data;
-        // _storage.commit();
-
-        // === Enviar dados via ESP-NOW ===
-        uint16_t payload = level;
-        auto peers       = comm_.getPeers();
-
-        if (peers.empty()) {
-            if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&payload),
-                                 sizeof(payload))) {
-                ESP_LOGE(TAG, "Failed to send broadcast");
-            }
-        }
-        else {
-            for (const auto &peer : peers) {
-                if (!comm_.send(peer.node_id, reinterpret_cast<const uint8_t *>(&payload),
-                                sizeof(payload))) {
-                    ESP_LOGE(TAG, "Failed to send to peer %u", peer.node_id);
-                }
-            }
-        }
-
-        // Processar tarefas internas (timeouts, etc)
+        // 6. Process communication tasks
         comm_.process();
 
-        ESP_LOGI(TAG,
-                 "Summary - Level: %u‰, Measures: %lu (OK:%lu WEAK:%lu INV:%lu), Boot: "
-                 "%lu, Crash: %lu",
-                 app.level_permille, app.measure_count, app.ok_count, app.weak_count,
-                 app.invalid_count, core.boot_count, core.crash_count);
+        // 7. Persist data before sleeping
+        auto &core_data           = storage_.getCoreData();
+        core_data.sleep_interval_s = (uint32_t)(timer_us / 1000000ULL);
+        rtc_core_data             = core_data;
+        // storage_.commit(); // Optional: commit to NVS if needed before sleep
 
-        ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core.sleep_interval_s);
+        // 8. Log summary and enter deep sleep
+        auto &app_stats = storage_.stats;
+        ESP_LOGI(TAG,
+                 "Summary - Level: %u‰, Dist: %.2fcm, Quality: %d, Failure: %d, "
+                 "State: %d",
+                 app_stats.level_permille, app_stats.last_distance_cm, (int)app_stats.quality,
+                 (int)app_stats.failure, (int)app_stats.fill_state);
+        ESP_LOGI(
+            TAG, "Stats - Total: %lu, OK: %lu, WEAK: %lu, INV: %lu, Timeout: %lu",
+            app_stats.measure_count, app_stats.ok_count, app_stats.weak_count,
+            app_stats.invalid_count, app_stats.timeout_count);
+        ESP_LOGI(TAG, "Core - Boot: %lu, Crash: %lu", core_data.boot_count,
+                 core_data.crash_count);
+        ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);
+
         vTaskDelay(pdMS_TO_TICKS(2000));
         // esp_deep_sleep_start();
     }
