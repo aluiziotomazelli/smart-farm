@@ -1,4 +1,5 @@
 #include "central_hub_app.hpp"
+#include "water_tank_types.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -19,10 +20,17 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
 {
     ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
 
-    if (len == sizeof(uint16_t)) {
-        uint16_t received_level;
-        memcpy(&received_level, data, sizeof(received_level));
-        ESP_LOGI(TAG, "Received water level: %u‰ from node %u", received_level, node_id);
+    if (len == sizeof(WaterLevelReport)) {
+        WaterLevelReport report;
+        memcpy(&report, data, sizeof(report));
+        ESP_LOGI(TAG,
+                 "From node %u: Level=%u‰, Dist=%.2fcm, V=%.2fV, Q=%d, F=%d, Full=%d, "
+                 "Backup=%d",
+                 node_id, report.level_permille, report.distance_cm,
+                 report.battery_mv / 1000.0f, (int)report.quality, (int)report.failure,
+                 (int)report.float_switch_is_full, (int)report.backup_mode_active);
+    } else {
+        ESP_LOGW(TAG, "Received packet with unexpected size: %d bytes", len);
     }
 }
 

@@ -223,8 +223,9 @@ void WaterTankApp::sendWaterLevelReport(const WaterLevelReport &report)
     }
     else {
         for (const auto &peer : peers) {
+            // Require ACK by setting the last parameter to true
             if (!comm_.send(peer.node_id, reinterpret_cast<const uint8_t *>(&report),
-                            sizeof(report))) {
+                            sizeof(report), true)) {
                 ESP_LOGE(TAG, "Failed to send to peer %u", peer.node_id);
             }
         }
@@ -250,6 +251,16 @@ void WaterTankApp::onEspNowSend(uint8_t node_id, esp_now_send_status_t status)
     else {
         ESP_LOGI(TAG, "Send to node %u: %s", node_id, status_str);
     }
+}
+
+void WaterTankApp::onAckSuccess(uint8_t node_id)
+{
+    ESP_LOGI(TAG, "ACK received from node %u", node_id);
+}
+
+void WaterTankApp::onAckTimeout(uint8_t node_id)
+{
+    ESP_LOGW(TAG, "ACK timeout for node %u", node_id);
 }
 
 void WaterTankApp::init()
@@ -300,6 +311,8 @@ void WaterTankApp::init()
         comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
             this->onEspNowSend(node_id, status);
         });
+        comm_.setAckSuccessCallback([this](uint8_t node_id) { this->onAckSuccess(node_id); });
+        comm_.setAckTimeoutCallback([this](uint8_t node_id) { this->onAckTimeout(node_id); });
         comm_.startDiscovery(10000);
     }
 

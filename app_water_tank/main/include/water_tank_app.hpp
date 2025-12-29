@@ -76,6 +76,18 @@ public:
      */
     void onEspNowSend(uint8_t node_id, esp_now_send_status_t status);
 
+    /**
+     * @brief Callback function for handling successful acknowledgment of a sent packet.
+     * @param node_id The ID of the node that sent the ACK.
+     */
+    void onAckSuccess(uint8_t node_id);
+
+    /**
+     * @brief Callback function for handling a timeout waiting for acknowledgment.
+     * @param node_id The ID of the node that was expected to send the ACK.
+     */
+    void onAckTimeout(uint8_t node_id);
+
 private:
     WaterTankNvs storage_; ///< Handles persistence of application data and statistics.
     EspNowComm comm_;      ///< Manages ESP-NOW communication with the central hub.
