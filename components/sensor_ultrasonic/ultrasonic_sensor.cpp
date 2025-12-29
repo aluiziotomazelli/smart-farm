@@ -9,6 +9,24 @@
 
 static const char *TAG = "UltrasonicSensor";
 
+const char *us_failure_to_string(UsFailure failure)
+{
+    switch (failure) {
+    case UsFailure::NONE:
+        return "No failure";
+    case UsFailure::TIMEOUT:
+        return "Echo timeout";
+    case UsFailure::HW_ERROR:
+        return "Hardware error";
+    case UsFailure::INVALID_PULSE:
+        return "Invalid pulse width";
+    case UsFailure::HIGH_VARIANCE:
+        return "High variance in readings";
+    default:
+        return "Unknown failure";
+    }
+}
+
 UltrasonicSensor::UltrasonicSensor(gpio_num_t trig_pin,
                                    gpio_num_t echo_pin,
                                    const UltrasonicConfig &cfg)
@@ -58,9 +76,8 @@ bool UltrasonicSensor::init()
 
 bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)
 {
-    // 1. Teste de estado inicial dos pinos
-    int echo_initial = gpio_get_level(echo_pin_);
-    if (echo_initial == 1) {
+    // Check initial state of the ECHO pin. If it's already high, it might be stuck.
+    if (gpio_get_level(echo_pin_) == 1) {
         ESP_LOGE(TAG, "ECHO pin stuck HIGH");
         out_failure = UsFailure::HW_ERROR;
         return false;
@@ -71,7 +88,7 @@ bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)
     esp_rom_delay_us(cfg_.ping_duration_us);
     gpio_set_level(trig_pin_, 0);
 
-    // Wait for echo start (rising edge)
+    // Wait for echo pulse to start (rising edge)
     uint32_t start_time = esp_timer_get_time();
     while (gpio_get_level(echo_pin_) == 0) {
         if (esp_timer_get_time() - start_time > cfg_.timeout_us) {
@@ -81,7 +98,7 @@ bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)
         }
     }
 
-    // Measure echo pulse width (high duration)
+    // Measure the duration of the echo pulse (high level)
     uint32_t echo_start = esp_timer_get_time();
     while (gpio_get_level(echo_pin_) == 1) {
         if (esp_timer_get_time() - echo_start > cfg_.timeout_us) {
@@ -96,6 +113,7 @@ bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)
     uint32_t pulse_duration_us = echo_end - echo_start;
     cm                         = (pulse_duration_us * SOUND_SPEED_CM_PER_US) / 2.0f;
 
+    // Check if the calculated distance is within the valid range.
     if (cm < cfg_.min_distance_cm || cm > cfg_.max_distance_cm) {
         ESP_LOGW(TAG, "Invalid distance: %.2f cm", cm);
         out_failure = UsFailure::INVALID_PULSE;
@@ -115,35 +133,36 @@ float UltrasonicSensor::reduceMedian(float *v, size_t n)
 float UltrasonicSensor::reduceDominantCluster(float *v, size_t n)
 {
     static constexpr float DELTA_CM =
-        5.0f; // Maximum distance between values in same cluster
+        5.0f; // Max distance between values in the same cluster
 
     std::sort(v, v + n);
 
-    float best      = v[0];
-    size_t best_cnt = 1;
-    float cur       = v[0];
-    size_t cur_cnt  = 1;
+    float best_cluster_val      = v[0];
+    size_t best_cluster_size    = 1;
+    float current_cluster_val   = v[0];
+    size_t current_cluster_size = 1;
 
     // Find the largest cluster of values within DELTA_CM of each other
     for (size_t i = 1; i < n; i++) {
-        if (fabsf(v[i] - cur) <= DELTA_CM) {
-            cur_cnt++;
+        if (fabsf(v[i] - current_cluster_val) <= DELTA_CM) {
+            current_cluster_size++;
         }
         else {
-            if (cur_cnt > best_cnt) {
-                best     = cur;
-                best_cnt = cur_cnt;
+            if (current_cluster_size > best_cluster_size) {
+                best_cluster_val  = current_cluster_val;
+                best_cluster_size = current_cluster_size;
             }
-            cur     = v[i];
-            cur_cnt = 1;
+            current_cluster_val  = v[i];
+            current_cluster_size = 1;
         }
     }
 
-    // Check if last cluster is the largest
-    if (cur_cnt > best_cnt)
-        best = cur;
+    // Check if the last cluster was the largest
+    if (current_cluster_size > best_cluster_size) {
+        best_cluster_val = current_cluster_val;
+    }
 
-    return best;
+    return best_cluster_val;
 }
 
 bool UltrasonicSensor::readDistance_cm(float &out_cm,
@@ -157,100 +176,103 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     uint8_t hw_err_cnt  = 0;
     uint8_t invalid_cnt = 0;
 
-    // Optional blind ping to clear environment
+    // Optional blind ping to clear the environment before taking real samples.
     if (cfg_.blind_ping) {
-        float d;
-        UsFailure f;
-        readRaw_cm_(d, f);
+        float dummy_distance;
+        UsFailure dummy_failure;
+        readRaw_cm_(dummy_distance, dummy_failure);
         vTaskDelay(pdMS_TO_TICKS(cfg_.ping_interval_ms));
     }
 
     // Collect multiple samples
     float samples[MAX_PINGS];
-    const size_t ping_count =
-        (cfg_.ping_count <= MAX_PINGS) ? cfg_.ping_count : MAX_PINGS;
-    size_t valid = 0;
+    const size_t ping_count = std::min((size_t)cfg_.ping_count, MAX_PINGS);
+    size_t valid            = 0;
 
     for (size_t i = 0; i < ping_count; i++) {
         float d;
         UsFailure f;
-
         if (readRaw_cm_(d, f)) {
             samples[valid++] = d;
-            ESP_LOGD(TAG, "d=%.2f cm failure=%d", d, (int)f);
+            ESP_LOGD(TAG, "Ping success: d=%.2f cm", d);
         }
         else {
-            // Track failure types
+            // Track failure types for later analysis
             if (f == UsFailure::TIMEOUT)
                 timeout_cnt++;
             else if (f == UsFailure::HW_ERROR)
                 hw_err_cnt++;
             else if (f == UsFailure::INVALID_PULSE)
                 invalid_cnt++;
-
-            ESP_LOGD(TAG, "ping failure=%d", (int)f);
+            ESP_LOGD(TAG, "Ping failure: %s", us_failure_to_string(f));
         }
 
-        // Wait between pings (except after last one)
-        if (i + 1 < ping_count)
+        // Wait between pings (except after the last one)
+        if (i + 1 < ping_count) {
             vTaskDelay(pdMS_TO_TICKS(cfg_.ping_interval_ms));
+        }
     }
 
-    // Process collected samples
-    if (valid == 0) {
+    // --- Process collected samples ---
+
+    // 1. Check if any valid samples were collected
+    float ratio = (ping_count > 0) ? ((float)valid / ping_count) : 0;
+    if (ratio < US_INVALID_PING_RATIO) {
         out_quality = UsQuality::INVALID;
-
-        if (invalid_cnt > hw_err_cnt && invalid_cnt > timeout_cnt)
-            out_failure = UsFailure::INVALID_PULSE;
+        // Determine the most likely cause of failure
+        if (hw_err_cnt > 0)
+            out_failure = UsFailure::HW_ERROR;
+        else if (timeout_cnt > invalid_cnt)
+            out_failure = UsFailure::TIMEOUT;
         else
-            out_failure = (hw_err_cnt > 0) ? UsFailure::HW_ERROR : UsFailure::TIMEOUT;
-
+            out_failure = UsFailure::INVALID_PULSE;
+        ESP_LOGW(TAG, "Invalid reading: valid ping ratio too low (%.2f)", ratio);
         return false;
     }
 
-    // Calcula média
+    // 2. Calculate mean and standard deviation for valid samples
     float mean = 0;
-    for (size_t i = 0; i < valid; i++) {
-        mean += samples[i];
-    }
+    for (size_t i = 0; i < valid; i++) mean += samples[i];
     mean /= valid;
 
-    // Calcula desvio padrão
     float variance = 0;
-    for (size_t i = 0; i < valid; i++) {
-        float diff = samples[i] - mean;
-        variance += diff * diff;
-    }
+    for (size_t i = 0; i < valid; i++) variance += pow(samples[i] - mean, 2);
     float std_dev = sqrtf(variance / valid);
+    ESP_LOGD(TAG, "Samples: %u/%u, Mean: %.2f, StdDev: %.2f", valid, ping_count, mean,
+             std_dev);
 
-    ESP_LOGD(TAG, "mean=%.2f std_dev=%.2f", mean, std_dev);
-
-    // Se desvio padrão muito alto, indica leituras erráticas
+    // 3. Check for high variance (erratic readings)
     if (std_dev > cfg_.max_dev_cm) {
-        ESP_LOGW(TAG, "High variance detected: std_dev=%.2f cm (max=%.2f)!", std_dev,
+        ESP_LOGW(TAG, "High variance detected: std_dev=%.2f cm (max=%.2f)", std_dev,
                  cfg_.max_dev_cm);
         out_quality = UsQuality::INVALID;
         out_failure = UsFailure::HIGH_VARIANCE;
         return false;
     }
 
-    // Determine quality based on valid ping ratio
-    float ratio = (float)valid / cfg_.ping_count;
-
+    // 4. Determine final quality based on ping ratio
     if (ratio >= US_VALID_PING_RATIO) {
-        // Se desvio alto mas ainda aceitável, reduz qualidade
+        out_quality = UsQuality::OK;
+        // Downgrade to WEAK if variance is high but still acceptable
         if (std_dev > cfg_.max_dev_cm * 0.6f) {
             out_quality = UsQuality::WEAK;
-        }
-        else {
-            out_quality = UsQuality::OK;
+            out_failure = UsFailure::HIGH_VARIANCE;
         }
     }
-    else {
+    else { // Ratio is between INVALID and VALID thresholds
         out_quality = UsQuality::WEAK;
+        // Per requirements, if the signal is already weak due to low ping count,
+        // a moderately high variance should invalidate it completely.
+        if (std_dev > cfg_.max_dev_cm * 0.6f) {
+            ESP_LOGW(TAG, "Weak signal with high variance, invalidating. std_dev=%.2f",
+                     std_dev);
+            out_quality = UsQuality::INVALID;
+            out_failure = UsFailure::HIGH_VARIANCE;
+            return false;
+        }
     }
 
-    // Apply selected filter
+    // 5. Apply the selected filter to get the final value
     float value;
     if (cfg_.filter == Filter::MEDIAN) {
         value = reduceMedian(samples, valid);
@@ -259,8 +281,7 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
         value = reduceDominantCluster(samples, valid);
     }
 
-    ESP_LOGD(TAG, "valid=%u ratio=%.2f value=%.2f", valid, ratio, value);
-
+    ESP_LOGD(TAG, "Final result: value=%.2f cm, quality=%d", value, (int)out_quality);
     out_cm = value;
     return true;
 }

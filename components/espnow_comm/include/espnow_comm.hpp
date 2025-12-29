@@ -26,10 +26,16 @@ public:
     void deinit();
     uint8_t get_id() const;
 
-    bool send(uint8_t node_id, const uint8_t *data, size_t length, bool require_ack = true);
+    bool send(uint8_t node_id,
+              const uint8_t *data,
+              size_t length,
+              bool require_ack = true);
     bool broadcast(const uint8_t *data, size_t length);
 
-    bool addPeer(uint8_t node_id, const uint8_t *mac, uint8_t channel = 0, bool encrypt = false);
+    bool addPeer(uint8_t node_id,
+                 const uint8_t *mac,
+                 uint8_t channel = 0,
+                 bool encrypt    = false);
     bool removePeer(uint8_t node_id);
     const PeerInfo *getPeerInfo(uint8_t node_id) const;
     std::vector<PeerPersistence::PersistentPeer> getPeers() const;
@@ -38,8 +44,10 @@ public:
     void stopDiscovery();
     void process();
 
-    using OnReceiveCallback = std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
-    using OnSendCallback = std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
+    using OnReceiveCallback =
+        std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
+    using OnSendCallback =
+        std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
     using OnPeerEventCallback = std::function<void(const PeerInfo &peer, bool added)>;
 
     void setReceiveCallback(OnReceiveCallback callback);
@@ -54,13 +62,18 @@ public:
     void cleanupInactivePeers();
 
 private:
-    void handleReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
+    void handleReceive(const esp_now_recv_info_t *recv_info,
+                       const uint8_t *data,
+                       int len);
     void handleSend(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
 
     PeerInfo *findPeerByMac(const uint8_t *mac);
     PeerInfo *findPeerById(uint8_t node_id);
 
-    bool addPeerInternal(uint8_t node_id, const uint8_t *mac, uint8_t channel, bool encrypt);
+    bool addPeerInternal(uint8_t node_id,
+                         const uint8_t *mac,
+                         uint8_t channel,
+                         bool encrypt);
 
     void sendAck(const uint8_t *mac, uint16_t sequence);
     void sendPairRequest();
@@ -73,8 +86,11 @@ private:
     bool savePeersToNVSInternal();
     bool savePeersToRTCInternal();
 
-    static void espNowRecvCb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len);
-    static void espNowSendCb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
+    static void espNowRecvCb(const esp_now_recv_info_t *recv_info,
+                             const uint8_t *data,
+                             int len);
+    static void espNowSendCb(const esp_now_send_info_t *tx_info,
+                             esp_now_send_status_t status);
 
     ESPNOWConfig config_;
     uint8_t node_id_;

@@ -4,6 +4,7 @@
 #include "ultrasonic_sensor.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#include "esp_check.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_sleep.h"
@@ -149,7 +150,9 @@ void WaterTankApp::init()
     ESP_LOGI(TAG, "Initializing WaterTankApp");
     storage_.init_partition();
 
-    ESP_ERROR_CHECK(sensor_power_.init());
+    sensor_power_.init();
+    // ESP_RETURN_ON_ERROR(sensor_power_.init(), TAG, "Failed to initialize sensor
+    // power");
     sensor.init();
     floatswitch.init();
 
@@ -250,9 +253,11 @@ void WaterTankApp::run()
         UsFailure failure = UsFailure::NONE;
         uint16_t level    = 0;
 
+        // ESP_RETURN_ON_ERROR(sensor_power_.on(), TAG, "Failed to power on sensor");
         sensor_power_.on();
         vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
         bool ok = sensor.readDistance_cm(distance, quality, failure);
+        // ESP_RETURN_ON_ERROR(sensor_power_.off(), TAG, "Failed to power off sensor");
         sensor_power_.off();
 
         if (ok) {
@@ -266,7 +271,8 @@ void WaterTankApp::run()
             }
         }
         else {
-            ESP_LOGW(TAG, "Ultrasonic INVALID reading (failure code: %d)", (int)failure);
+            ESP_LOGW(TAG, "Ultrasonic INVALID reading: %s",
+                     us_failure_to_string(failure));
         }
 
         storage_.updateStatus(level, distance, quality, failure);

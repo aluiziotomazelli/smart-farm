@@ -1,4 +1,6 @@
 #include "central_hub_app.hpp"
+
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
@@ -49,8 +51,8 @@ void CentralHubApp::init()
 
     // Initialize ESP-NOW communication
     ESPNOWConfig config;
-    config.wifi_channel    = 0; // Auto channel
-    config.max_peers       = 10;
+    config.wifi_channel = 0; // Auto channel
+    config.max_peers    = 10;
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");

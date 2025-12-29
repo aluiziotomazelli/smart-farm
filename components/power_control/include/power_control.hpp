@@ -27,5 +27,5 @@ private:
     Config config_;
     bool state_ = false;
 
-    void apply_gpio(bool enable);
+    esp_err_t apply_gpio(bool enable);
 };
