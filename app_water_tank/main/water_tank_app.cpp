@@ -25,7 +25,7 @@ static const char *TAG = "WaterTankApp";
 // --- Constants ---
 static constexpr uint32_t ULTRASONIC_WARMUP_MS          = 600;
 static constexpr uint8_t CONSECUTIVE_FAILURES_THRESHOLD = 5;
-static constexpr uint64_t BACKUP_MODE_SLEEP_US          = 15ULL * 1000000ULL; // 15 seconds
+static constexpr uint64_t BACKUP_MODE_SLEEP_US = 15ULL * 1000000ULL; // 15 seconds
 
 // --- Persistence in RTC Memory ---
 RTC_DATA_ATTR CoreStorage rtc_core_data;
@@ -71,7 +71,7 @@ void WaterTankApp::updateOperationMode()
     // This function implements the state machine for the backup mode.
     if (stats.quality == UsQuality::INVALID) {
         // Increment consecutive failures if the reading is invalid.
-        if (stats.consecutive_failures < UINT8_MAX) {
+        if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
             stats.consecutive_failures++;
         }
     }
@@ -87,7 +87,7 @@ void WaterTankApp::updateOperationMode()
     if (stats.consecutive_failures >= CONSECUTIVE_FAILURES_THRESHOLD) {
         stats.backup_mode_active = true;
     }
-    else if (stats.consecutive_failures == 0) {
+    else if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
         stats.backup_mode_active = false;
     }
 }
@@ -390,6 +390,6 @@ void WaterTankApp::run()
         ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);
 
         vTaskDelay(pdMS_TO_TICKS(2000));
-        esp_deep_sleep_start();
+        // esp_deep_sleep_start();
     }
 }

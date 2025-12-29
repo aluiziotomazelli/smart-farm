@@ -29,12 +29,16 @@ public:
      */
     void run();
 
-private:
     /**
-     * @brief Powers up the ultrasonic sensor, takes a measurement, and powers it down.
+     * @brief Creates a comprehensive report with sensor and float switch data.
      * @return A WaterLevelReport struct containing the measurement data.
      */
-    WaterLevelReport measureWaterLevel();
+    WaterLevelReport createWaterLevelReport();
+
+    /**
+     * @brief Updates the operation mode (normal vs. backup) based on the current state.
+     */
+    void updateOperationMode();
 
     /**
      * @brief Sends the water level report to the central hub via ESP-NOW.
