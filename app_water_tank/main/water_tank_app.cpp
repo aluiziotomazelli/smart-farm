@@ -1,6 +1,7 @@
 #include "water_tank_app.hpp"
 #include "float_switch.hpp"
 #include "nvs_core.hpp"
+#include "power_control.hpp"
 #include "ultrasonic_sensor.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
@@ -29,9 +30,15 @@ RTC_DATA_ATTR uint16_t rtc_last_level_permille = 0;
 RTC_DATA_ATTR bool rtc_has_level               = false;
 
 WaterTankApp::WaterTankApp()
-    : sensor_power_({.gpio = POWER_GPIO, .active_high = true, .initial_on = false})
 {
 }
+
+static constexpr PowerControl::Config power_cfg = {
+    .gpio           = POWER_GPIO,
+    .inverted_logic = true,
+    .initial_on     = false,
+};
+static PowerControl power_to_sensor(power_cfg);
 
 // --- Hardware Configurations ---
 static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
@@ -42,7 +49,8 @@ static constexpr UltrasonicSensor::UltrasonicConfig cfg = {
     .filter           = UltrasonicSensor::Filter::DOMINANT_CLUSTER,
     .blind_ping       = false,
     .min_distance_cm  = 10.0f,
-    .max_distance_cm  = 200.0f};
+    .max_distance_cm  = 200.0f,
+    .warmup_time_ms   = 600};
 
 static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, cfg);
 
@@ -150,8 +158,8 @@ void WaterTankApp::init()
     ESP_LOGI(TAG, "Initializing WaterTankApp");
     storage_.init_partition();
 
-    sensor_power_.init();
-    // ESP_RETURN_ON_ERROR(sensor_power_.init(), TAG, "Failed to initialize sensor
+    power_to_sensor.init();
+    // ESP_RETURN_ON_ERROR(power_to_sensor.init(), TAG, "Failed to initialize sensor
     // power");
     sensor.init();
     floatswitch.init();
@@ -253,12 +261,12 @@ void WaterTankApp::run()
         UsFailure failure = UsFailure::NONE;
         uint16_t level    = 0;
 
-        // ESP_RETURN_ON_ERROR(sensor_power_.on(), TAG, "Failed to power on sensor");
-        sensor_power_.on();
-        vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
+        // ESP_RETURN_ON_ERROR(power_to_sensor.on(), TAG, "Failed to power on sensor");
+        power_to_sensor.on();
+        // vTaskDelay(pdMS_TO_TICKS(ULTRASONIC_WARMUP_MS));
         bool ok = sensor.readDistance_cm(distance, quality, failure);
-        // ESP_RETURN_ON_ERROR(sensor_power_.off(), TAG, "Failed to power off sensor");
-        sensor_power_.off();
+        // ESP_RETURN_ON_ERROR(power_to_sensor.off(), TAG, "Failed to power off sensor");
+        power_to_sensor.off();
 
         if (ok) {
             level = distance_to_level_permille(distance);

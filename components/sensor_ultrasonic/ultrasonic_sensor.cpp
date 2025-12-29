@@ -69,6 +69,12 @@ bool UltrasonicSensor::init()
         ESP_LOGE(TAG, "Failed to configure ECHO pin");
         return false;
     }
+
+    // Configure ECHO pin as output, set it to low, pull it to ground
+    // and clear sensor noise from any residual interference
+    gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
+    gpio_set_level(echo_pin_, 0);
+
     ESP_LOGI(TAG, "ECHO pin configured");
 
     return true;
@@ -114,7 +120,7 @@ bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)
     cm                         = (pulse_duration_us * SOUND_SPEED_CM_PER_US) / 2.0f;
 
     // Check if the calculated distance is within the valid range.
-    if (cm < cfg_.min_distance_cm || cm > cfg_.max_distance_cm) {
+    if (cm > cfg_.max_distance_cm || cm < cfg_.min_distance_cm) {
         ESP_LOGW(TAG, "Invalid distance: %.2f cm", cm);
         out_failure = UsFailure::INVALID_PULSE;
         return false;
@@ -176,6 +182,17 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     uint8_t hw_err_cnt  = 0;
     uint8_t invalid_cnt = 0;
 
+    // Configure echo pin as output and set it to low to pull it to ground
+    // and clear sensor noise from any residual interference
+    // It will be set as input before reading the distance
+    gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
+    gpio_set_level(echo_pin_, 0);
+
+    // Wait for the sensor to warm up
+    vTaskDelay(pdMS_TO_TICKS(cfg_.warmup_time_ms));
+
+    // Configure echo pin as input
+
     // Optional blind ping to clear the environment before taking real samples.
     if (cfg_.blind_ping) {
         float dummy_distance;
@@ -190,23 +207,26 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     size_t valid            = 0;
 
     for (size_t i = 0; i < ping_count; i++) {
-        float d;
-        UsFailure f;
-        if (readRaw_cm_(d, f)) {
-            samples[valid++] = d;
-            ESP_LOGD(TAG, "Ping success: d=%.2f cm", d);
+        gpio_set_direction(echo_pin_, GPIO_MODE_INPUT);
+        float distance;
+        UsFailure failure;
+        if (readRaw_cm_(distance, failure)) {
+            samples[valid++] = distance;
+            ESP_LOGD(TAG, "Ping success: d=%.2f cm", distance);
         }
         else {
             // Track failure types for later analysis
-            if (f == UsFailure::TIMEOUT)
+            if (failure == UsFailure::TIMEOUT)
                 timeout_cnt++;
-            else if (f == UsFailure::HW_ERROR)
+            else if (failure == UsFailure::HW_ERROR)
                 hw_err_cnt++;
-            else if (f == UsFailure::INVALID_PULSE)
+            else if (failure == UsFailure::INVALID_PULSE)
                 invalid_cnt++;
-            ESP_LOGD(TAG, "Ping failure: %s", us_failure_to_string(f));
+            ESP_LOGD(TAG, "Ping failure: %s", us_failure_to_string(failure));
         }
 
+        gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
+        gpio_set_level(echo_pin_, 0);
         // Wait between pings (except after the last one)
         if (i + 1 < ping_count) {
             vTaskDelay(pdMS_TO_TICKS(cfg_.ping_interval_ms));
@@ -231,15 +251,7 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     }
 
     // 2. Calculate mean and standard deviation for valid samples
-    float mean = 0;
-    for (size_t i = 0; i < valid; i++) mean += samples[i];
-    mean /= valid;
-
-    float variance = 0;
-    for (size_t i = 0; i < valid; i++) variance += pow(samples[i] - mean, 2);
-    float std_dev = sqrtf(variance / valid);
-    ESP_LOGD(TAG, "Samples: %u/%u, Mean: %.2f, StdDev: %.2f", valid, ping_count, mean,
-             std_dev);
+    float std_dev = getStdDev(samples, valid);
 
     // 3. Check for high variance (erratic readings)
     if (std_dev > cfg_.max_dev_cm) {
@@ -264,7 +276,8 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
         // Per requirements, if the signal is already weak due to low ping count,
         // a moderately high variance should invalidate it completely.
         if (std_dev > cfg_.max_dev_cm * 0.6f) {
-            ESP_LOGW(TAG, "Weak signal with high variance, invalidating. std_dev=%.2f",
+            ESP_LOGW(TAG,
+                     "Weak signal with high variance, invalidating, std_dev = % .2f ",
                      std_dev);
             out_quality = UsQuality::INVALID;
             out_failure = UsFailure::HIGH_VARIANCE;
@@ -284,4 +297,18 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
     ESP_LOGD(TAG, "Final result: value=%.2f cm, quality=%d", value, (int)out_quality);
     out_cm = value;
     return true;
+}
+
+float UltrasonicSensor::getStdDev(float *samples, uint8_t valids)
+{
+    float mean = 0;
+    for (uint8_t i = 0; i < valids; i++) mean += samples[i];
+    mean /= valids;
+
+    float variance = 0;
+    for (size_t i = 0; i < valids; i++) variance += pow(samples[i] - mean, 2);
+    float std_dev = sqrtf(variance / valids);
+    ESP_LOGD(TAG, "Samples: %u, Mean: %.2f, StdDev: %.2f", valids, mean, std_dev);
+
+    return std_dev;
 }

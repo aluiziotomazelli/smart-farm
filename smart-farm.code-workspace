@@ -4,11 +4,11 @@
 			"path": "app_water_tank"
 		},
 		{
-			"path": "components"
-		},
-		{
 			"path": "app_central_hub"
 		}
+		{
+			"path": "components"
+		},
 	],
 	"settings": {}
 }

@@ -1,6 +1,9 @@
 #include "power_control.hpp"
-#include "esp_check.h"
+
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "esp_check.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -14,7 +17,7 @@ PowerControl::PowerControl(const PowerControl::Config &cfg)
 esp_err_t PowerControl::init()
 {
     ESP_LOGI(TAG, "Initializing power control on GPIO %d (active_%s, initial_%s)",
-             config_.gpio, config_.active_high ? "high" : "low",
+             config_.gpio, config_.inverted_logic ? "high" : "low",
              config_.initial_on ? "on" : "off");
 
     // Set GPIO as output
@@ -47,7 +50,7 @@ esp_err_t PowerControl::on()
         return ret;
     }
     state_ = true;
-    ESP_LOGD(TAG, "Power OFF successful");
+    ESP_LOGD(TAG, "Power ON successful");
     return ESP_OK;
 }
 
@@ -69,7 +72,7 @@ bool PowerControl::is_on() const
 
 esp_err_t PowerControl::apply_gpio(bool enable)
 {
-    bool level = config_.active_high ? enable : !enable;
+    bool level = config_.inverted_logic ? !enable : enable;
     ESP_RETURN_ON_ERROR(gpio_set_level(config_.gpio, level), TAG,
                         "GPIO: %d set level: %d failed", config_.gpio, level);
 

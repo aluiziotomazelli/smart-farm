@@ -10,8 +10,8 @@ public:
     struct Config
     {
         gpio_num_t gpio;
-        bool active_high = true;  // true: HIGH liga, false: LOW liga
-        bool initial_on  = false; // estado no init
+        bool inverted_logic = false; // true: LOW liga, false: HIGH liga
+        bool initial_on     = false; // estado no init
     };
 
     PowerControl(const PowerControl::Config &cfg);

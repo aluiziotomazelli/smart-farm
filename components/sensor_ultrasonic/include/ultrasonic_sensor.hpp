@@ -76,6 +76,7 @@ public:
         float max_distance_cm = 200.0f; /**< The maximum valid distance in centimeters. */
         float max_dev_cm =
             15.0f; /**< The maximum standard deviation allowed for a valid reading. */
+        const uint16_t warmup_time_ms = 600;
     };
 
     /**
@@ -115,6 +116,10 @@ public:
     bool readDistance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
 
 private:
+    const UltrasonicConfig cfg_; /**< Sensor configuration parameters. */
+    gpio_num_t trig_pin_;        /**< GPIO pin for the trigger signal. */
+    gpio_num_t echo_pin_;        /**< GPIO pin for the echo signal. */
+
     static constexpr size_t MAX_PINGS =
         15; /**< Maximum configurable pings per measurement. */
     static constexpr float SOUND_SPEED_CM_PER_US =
@@ -136,10 +141,6 @@ private:
      */
     bool readRaw_cm_(float &cm, UsFailure &fail);
 
-    const UltrasonicConfig cfg_; /**< Sensor configuration parameters. */
-    gpio_num_t trig_pin_;        /**< GPIO pin for the trigger signal. */
-    gpio_num_t echo_pin_;        /**< GPIO pin for the echo signal. */
-
     /**
      * @brief Applies a median filter to an array of measurements.
      *
@@ -160,4 +161,15 @@ private:
      * @return The dominant cluster's average distance in centimeters.
      */
     float reduceDominantCluster(float *v, size_t n);
+
+    /**
+     * @brief Checks if the variance of the measured distances is within the allowed
+     * range.
+     *
+     * @param samples Pointer to the array of distance measurements.
+     * @param valids The number of valid measurements.
+     * @param ratio The ratio of max deviation.
+     * @return true if the variance is within the allowed range, false otherwise.
+     */
+    float getStdDev(float *samples, uint8_t valids);
 };

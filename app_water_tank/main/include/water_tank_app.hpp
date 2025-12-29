@@ -1,7 +1,6 @@
 #pragma once
 
 #include "espnow_comm.hpp"
-#include "power_control.hpp"
 #include "water_tank_nvs.hpp"
 
 class WaterTankApp
@@ -21,7 +20,6 @@ private:
     void on_espnow_send(uint8_t node_id, esp_now_send_status_t status);
 
 private:
-    PowerControl sensor_power_;
     WaterTankNvs storage_;
     EspNowComm comm_;
 };
