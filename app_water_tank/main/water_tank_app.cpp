@@ -54,8 +54,7 @@ static UltrasonicSensor sensor(TRIGER_GPIO, ECHO_GPIO, us_cfg);
 
 static FloatSwitch::Config fs_cfg = {.gpio          = FLOAT_SWITCH_GPIO,
                                      .normally_open = true,
-                                     .pull          = FloatSwitch::Pull::UP,
-                                     .debounce_ms   = 50,
+                                     .active_level  = FloatSwitch::ActiveLevel::LOW,
                                      .wakeup_level  = FloatSwitch::WakeupLevel::LOW};
 static FloatSwitch floatswitch(fs_cfg);
 
@@ -100,7 +99,7 @@ uint64_t WaterTankApp::decideSleepTimeUs()
     return timer_us;
 }
 
-void WaterTankApp::configureSleepPolicy(bool float_switch_closed, uint64_t timer_us)
+void WaterTankApp::configureSleepPolicy(uint64_t timer_us)
 {
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
@@ -108,15 +107,18 @@ void WaterTankApp::configureSleepPolicy(bool float_switch_closed, uint64_t timer
         esp_sleep_enable_timer_wakeup(timer_us);
     }
 
-    if (!float_switch_closed) {
+    bool contact_closed                = floatswitch.isContactClosed();
+    storage_.stats.gpio_wakeup_enabled = !contact_closed;
+
+    if (!contact_closed) {
         FloatSwitch::WakeupInfo wakeup_info;
-        if (floatswitch.get_wakeup_info(wakeup_info)) {
+        if (floatswitch.getWakeupInfo(wakeup_info)) {
             esp_deep_sleep_enable_gpio_wakeup(
                 wakeup_info.gpio_mask,
                 (esp_deepsleep_gpio_wake_up_mode_t)wakeup_info.mode);
         }
     }
-    ESP_LOGD(TAG, "Float switch: %s", float_switch_closed ? "closed" : "open");
+    ESP_LOGD(TAG, "Float switch: %s", contact_closed ? "closed" : "open");
 }
 
 static uint16_t distance_to_level_permille(float d_cm)
@@ -156,7 +158,8 @@ void WaterTankApp::sendWaterLevelReport(const WaterLevelReport &report)
     auto peers = comm_.getPeers();
 
     if (peers.empty()) {
-        if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&report), sizeof(report))) {
+        if (!comm_.broadcast(reinterpret_cast<const uint8_t *>(&report),
+                             sizeof(report))) {
             ESP_LOGE(TAG, "Failed to send broadcast");
         }
     }
@@ -193,7 +196,7 @@ void WaterTankApp::onEspNowSend(uint8_t node_id, esp_now_send_status_t status)
     }
 }
 
-void WaterTankApp::initialize()
+void WaterTankApp::init()
 {
     ESP_LOGI(TAG, "Initializing WaterTankApp");
     storage_.init_partition();
@@ -304,9 +307,7 @@ void WaterTankApp::run()
         uint64_t timer_us = decideSleepTimeUs();
 
         // 4. Configure sleep policy
-        bool float_switch_closed           = floatswitch.read();
-        storage_.stats.gpio_wakeup_enabled = !float_switch_closed;
-        configureSleepPolicy(float_switch_closed, timer_us);
+        configureSleepPolicy(timer_us);
 
         // 5. Send data via ESP-NOW
         sendWaterLevelReport(report);
@@ -315,9 +316,9 @@ void WaterTankApp::run()
         comm_.process();
 
         // 7. Persist data before sleeping
-        auto &core_data           = storage_.getCoreData();
+        auto &core_data            = storage_.getCoreData();
         core_data.sleep_interval_s = (uint32_t)(timer_us / 1000000ULL);
-        rtc_core_data             = core_data;
+        rtc_core_data              = core_data;
         // storage_.commit(); // Optional: commit to NVS if needed before sleep
 
         // 8. Log summary and enter deep sleep
@@ -325,12 +326,12 @@ void WaterTankApp::run()
         ESP_LOGI(TAG,
                  "Summary - Level: %u‰, Dist: %.2fcm, Quality: %d, Failure: %d, "
                  "State: %d",
-                 app_stats.level_permille, app_stats.last_distance_cm, (int)app_stats.quality,
-                 (int)app_stats.failure, (int)app_stats.fill_state);
-        ESP_LOGI(
-            TAG, "Stats - Total: %lu, OK: %lu, WEAK: %lu, INV: %lu, Timeout: %lu",
-            app_stats.measure_count, app_stats.ok_count, app_stats.weak_count,
-            app_stats.invalid_count, app_stats.timeout_count);
+                 app_stats.level_permille, app_stats.last_distance_cm,
+                 (int)app_stats.quality, (int)app_stats.failure,
+                 (int)app_stats.fill_state);
+        ESP_LOGI(TAG, "Stats - Total: %lu, OK: %lu, WEAK: %lu, INV: %lu, Timeout: %lu",
+                 app_stats.measure_count, app_stats.ok_count, app_stats.weak_count,
+                 app_stats.invalid_count, app_stats.timeout_count);
         ESP_LOGI(TAG, "Core - Boot: %lu, Crash: %lu", core_data.boot_count,
                  core_data.crash_count);
         ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);

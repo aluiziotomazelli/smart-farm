@@ -2,122 +2,115 @@
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "esp_check.h"
 #include "esp_timer.h"
 
 static const char *TAG = "FloatSwitch";
 
-static uint64_t now_ms()
-{
-    return esp_timer_get_time() / 1000;
-}
-
 FloatSwitch::FloatSwitch(const Config &cfg)
-    : config(cfg)
+    : cfg_(cfg)
 {
 }
 
-bool FloatSwitch::init()
+esp_err_t FloatSwitch::init()
 {
-    ESP_LOGI(TAG, "Init gpio=%d NO=%d pull=%d", config.gpio, config.normally_open,
-             static_cast<int>(config.pull));
+    ESP_LOGI(TAG, "Init gpio=%d NO=%d active_level=%d", cfg_.gpio, cfg_.normally_open,
+             static_cast<int>(cfg_.active_level));
 
-    if (!configure_gpio()) {
-        return false;
-    }
+    ESP_RETURN_ON_ERROR(configureGpio(), TAG, "Failed to configure GPIO %d", cfg_.gpio);
 
-    bool raw           = read_raw();
-    stable_state       = raw;
-    pending_state      = raw;
-    last_transition_ms = now_ms();
+    initialized_ = ESP_OK;
 
-    initialized = true;
-    return true;
+    return ESP_OK;
 }
 
-bool FloatSwitch::configure_gpio()
+esp_err_t FloatSwitch::configureGpio()
 {
     gpio_config_t cfg{};
-    cfg.pin_bit_mask = (1ULL << config.gpio);
+    cfg.pin_bit_mask = (1ULL << cfg_.gpio);
     cfg.mode         = GPIO_MODE_INPUT;
     cfg.intr_type    = GPIO_INTR_DISABLE;
 
-    // Configura pull-up/pull-down conforme especificado
-    // Estas funções funcionam tanto para GPIOs normais quanto RTC GPIOs
-    switch (config.pull) {
-    case Pull::UP:
+    // Configura pull interno de acordo com o nível ativo do contato:
+    // ActiveLevel::LOW  -> contato fecha em GND  -> pull-up
+    // ActiveLevel::HIGH -> contato fecha em 3V3  -> pull-down
+    switch (cfg_.active_level) {
+    case ActiveLevel::LOW:
         cfg.pull_up_en   = GPIO_PULLUP_ENABLE;
         cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
         break;
-    case Pull::DOWN:
+    case ActiveLevel::HIGH:
         cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
         cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
         break;
-    case Pull::NONE:
-        cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
-        cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        break;
     }
-
     esp_err_t ret = gpio_config(&cfg);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure GPIO %d: %d", config.gpio, ret);
-        return false;
+        return ret;
     }
 
-    return true;
+    return ESP_OK;
 }
 
-bool FloatSwitch::read_raw() const
+bool FloatSwitch::isTankFull()
 {
-    return gpio_get_level(config.gpio);
-}
+    bool contact_closed = isContactClosed();
 
-bool FloatSwitch::debounce_update(bool raw)
-{
-    uint64_t t = now_ms();
-
-    if (raw != pending_state) {
-        pending_state      = raw;
-        last_transition_ms = t;
-        return false;
-    }
-
-    if ((t - last_transition_ms) >= config.debounce_ms && stable_state != pending_state) {
-        stable_state = pending_state;
-        return true;
-    }
-
-    return false;
-}
-
-bool FloatSwitch::read()
-{
-    if (!initialized) {
-        return false;
-    }
-
-    bool raw = read_raw();
-    debounce_update(raw);
-
+    bool tank_full;
     // Interpretação física
-    if (config.normally_open) {
-        // NO: LOW = contato fechado = água
-        return !stable_state;
-    }
+    if (cfg_.normally_open)
+        // NO: contato fechado = Tanque vazio
+        // NO: contato aberto = Tanque cheio
+        tank_full = !contact_closed;
+
     else {
-        // NC: HIGH = contato aberto = água
-        return stable_state;
+        // NC: contato fechado = Tanque cheio
+        // NC: contato aberto = Tanque vazio
+        tank_full = contact_closed;
     }
+    return tank_full;
 }
 
-bool FloatSwitch::get_wakeup_info(WakeupInfo &info) const
+bool FloatSwitch::getWakeupInfo(WakeupInfo &info) const
 {
-    info.gpio_mask = 1ULL << config.gpio;
+    info.gpio_mask = 1ULL << cfg_.gpio;
 
-    if (config.wakeup_level == WakeupLevel::HIGH)
+    if (cfg_.wakeup_level == WakeupLevel::HIGH)
         info.mode = 1;
     else
         info.mode = 0;
 
     return true;
+}
+
+bool FloatSwitch::isContactClosed() const
+{
+    if (initialized_ != ESP_OK) {
+        ESP_LOGE(TAG, "FloatSwitch not initialized");
+        abort();
+    }
+
+    const uint8_t samples   = 5;
+    const uint32_t delay_us = 5000;
+    uint8_t high_count      = 0;
+
+    for (uint8_t i = 0; i < samples; i++) {
+        if (gpio_get_level(cfg_.gpio)) {
+            high_count++;
+        }
+        esp_rom_delay_us(delay_us);
+    }
+
+    bool raw_stable = (high_count > (samples / 2));
+
+    bool contact_closed;
+    // If active_level == LOW, contact closed = (raw_stable == 0)
+    if (cfg_.active_level == ActiveLevel::LOW) {
+        contact_closed = !raw_stable;
+    }
+    else { // If active_level == HIGH, contact closed = (raw_stable == 1)
+        contact_closed = raw_stable;
+    }
+    return contact_closed;
 }

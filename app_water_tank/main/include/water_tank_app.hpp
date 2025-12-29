@@ -22,7 +22,7 @@ public:
     /**
      * @brief Initializes all hardware, NVS, and communication components.
      */
-    void initialize();
+    void init();
 
     /**
      * @brief Contains the main application loop.
@@ -43,17 +43,18 @@ private:
     void sendWaterLevelReport(const WaterLevelReport &report);
 
     /**
-     * @brief Determines the optimal deep sleep duration based on the current tank fill state.
+     * @brief Determines the optimal deep sleep duration based on the current tank fill
+     * state.
      * @return The sleep duration in microseconds.
      */
     uint64_t decideSleepTimeUs();
 
     /**
-     * @brief Configures the ESP32's wakeup sources (Timer and GPIO) for the next sleep cycle.
-     * @param float_switch_closed True if the float switch is currently closed (tank is full).
+     * @brief Configures the ESP32's wakeup sources (Timer and GPIO) for the next sleep
+     * cycle.
      * @param timer_us The sleep duration in microseconds.
      */
-    void configureSleepPolicy(bool float_switch_closed, uint64_t timer_us);
+    void configureSleepPolicy(uint64_t timer_us);
 
     /**
      * @brief Callback function for handling incoming ESP-NOW messages.

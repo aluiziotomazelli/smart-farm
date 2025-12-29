@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esp_err.h"
 #include <cstdint>
 #include "driver/gpio.h"
 
@@ -12,19 +13,17 @@ public:
         HIGH,
     };
 
-    enum class Pull
+    enum class ActiveLevel
     {
-        UP,
-        DOWN,
-        NONE
+        LOW,
+        HIGH,
     };
 
     struct Config
     {
         gpio_num_t gpio;
         bool normally_open       = true; // NO=true, NC=false
-        Pull pull                = Pull::UP;
-        uint32_t debounce_ms     = 50;
+        ActiveLevel active_level = ActiveLevel::LOW;
         WakeupLevel wakeup_level = WakeupLevel::LOW;
     };
 
@@ -39,26 +38,19 @@ public:
     explicit FloatSwitch(const Config &cfg);
     ~FloatSwitch() = default;
 
-    bool init();
+    esp_err_t init();
+
+    // Electrical contact is closed
+    bool isContactClosed() const;
 
     // Estado lógico: true = água presente
-    bool read();
-
-    // Estado elétrico do GPIO
-    bool read_raw() const;
+    bool isTankFull();
 
     // Informação para configurar wakeup (não registra no sistema)
-    bool get_wakeup_info(WakeupInfo &info) const;
+    bool getWakeupInfo(WakeupInfo &info) const;
 
 private:
-    Config config;
-    bool initialized = false;
-
-    // debounce
-    bool stable_state           = false;
-    bool pending_state          = false;
-    uint64_t last_transition_ms = 0;
-
-    bool debounce_update(bool raw_state);
-    bool configure_gpio();
+    Config cfg_;
+    esp_err_t initialized_ = ESP_FAIL;
+    esp_err_t configureGpio();
 };
