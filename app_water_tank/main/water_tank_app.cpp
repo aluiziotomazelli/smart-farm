@@ -87,7 +87,7 @@ void WaterTankApp::updateOperationMode()
     if (stats.consecutive_failures >= CONSECUTIVE_FAILURES_THRESHOLD) {
         stats.backup_mode_active = true;
     }
-    else if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
+    else if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD - 1) {
         stats.backup_mode_active = false;
     }
 }
@@ -286,7 +286,7 @@ void WaterTankApp::init()
     config.max_peers          = 10;
     config.ack_timeout        = 100;
     config.heartbeat_interval = 0;
-    config.max_packet_size    = sizeof(WaterLevelReport);
+    config.max_packet_size    = 250;
 
     if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
