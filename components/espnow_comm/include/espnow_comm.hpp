@@ -49,10 +49,14 @@ public:
     using OnSendCallback =
         std::function<void(uint8_t node_id, esp_now_send_status_t status)>;
     using OnPeerEventCallback = std::function<void(const PeerInfo &peer, bool added)>;
+    using OnAckSuccessCallback = std::function<void(uint8_t node_id)>;
+    using OnAckTimeoutCallback = std::function<void(uint8_t node_id)>;
 
     void setReceiveCallback(OnReceiveCallback callback);
     void setSendCallback(OnSendCallback callback);
     void setPeerEventCallback(OnPeerEventCallback callback);
+    void setAckSuccessCallback(OnAckSuccessCallback callback);
+    void setAckTimeoutCallback(OnAckTimeoutCallback callback);
 
     size_t getPeerCount() const;
     const char *getLastError() const;
@@ -101,6 +105,8 @@ private:
     OnReceiveCallback on_receive_;
     OnSendCallback on_send_;
     OnPeerEventCallback on_peer_event_;
+    OnAckSuccessCallback on_ack_success_;
+    OnAckTimeoutCallback on_ack_timeout_;
 
     AcknowledgmentManager ack_manager_;
 

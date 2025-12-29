@@ -15,6 +15,16 @@
  */
 class AcknowledgmentManager
 {
+public:
+    /**
+     * @struct AckTimeoutEvent
+     * @brief Represents a timeout event for a specific message.
+     */
+    struct AckTimeoutEvent {
+        uint16_t sequence;       ///< The sequence number of the timed-out message.
+        uint8_t  destination_id; ///< The node_id the message was sent to.
+    };
+
 private:
     /**
      * @struct PendingAck
@@ -61,9 +71,9 @@ public:
 
     /**
      * @brief Checks for messages that have timed out waiting for an ACK.
-     * @return A vector of sequence numbers for messages that have timed out.
+     * @return A vector of timeout events for messages that have timed out.
      */
-    std::vector<uint16_t> checkTimeouts();
+    std::vector<AckTimeoutEvent> checkTimeouts();
 
     /**
      * @brief Gets the next available sequence number.

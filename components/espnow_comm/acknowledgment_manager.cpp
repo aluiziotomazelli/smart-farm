@@ -37,10 +37,10 @@ bool AcknowledgmentManager::markAsAcknowledged(uint16_t sequence)
     return false; // Not found
 }
 
-std::vector<uint16_t> AcknowledgmentManager::checkTimeouts()
+std::vector<AcknowledgmentManager::AckTimeoutEvent> AcknowledgmentManager::checkTimeouts()
 {
-    std::vector<uint16_t> timed_out_sequences;
-    int64_t               current_time_us = esp_timer_get_time();
+    std::vector<AckTimeoutEvent> timed_out_events;
+    int64_t                      current_time_us = esp_timer_get_time();
 
     for (auto it = pending_acks_.begin(); it != pending_acks_.end();) {
         PendingAck &pending = it->second;
@@ -51,7 +51,7 @@ std::vector<uint16_t> AcknowledgmentManager::checkTimeouts()
 
             if (pending.retries >= max_retries_) {
                 // Max retries reached, give up on this message
-                timed_out_sequences.push_back(pending.sequence);
+                timed_out_events.push_back({pending.sequence, pending.destination_id});
                 it = pending_acks_.erase(it);
             }
             else {
@@ -66,7 +66,7 @@ std::vector<uint16_t> AcknowledgmentManager::checkTimeouts()
         }
     }
 
-    return timed_out_sequences;
+    return timed_out_events;
 }
 
 uint16_t AcknowledgmentManager::getNextSequence()

@@ -325,7 +325,12 @@ void EspNowComm::process()
     xSemaphoreTake(mutex_, portMAX_DELAY);
     uint32_t now = esp_timer_get_time() / 1000;
 
-    ack_manager_.checkTimeouts();
+    auto timeouts = ack_manager_.checkTimeouts();
+    if (!timeouts.empty() && on_ack_timeout_) {
+        for (const auto &event : timeouts) {
+            on_ack_timeout_(event.destination_id);
+        }
+    }
 
     if (discovery_active_ && (now > discovery_end_time_)) {
         stopDiscovery();
@@ -389,7 +394,11 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
         }
         break;
     case MessageType::ACK:
-        ack_manager_.markAsAcknowledged(header->sequence);
+        if (ack_manager_.markAsAcknowledged(header->sequence)) {
+            if (on_ack_success_) {
+                on_ack_success_(header->source_id);
+            }
+        }
         break;
     case MessageType::PAIR_REQUEST: {
         if (discovery_active_) {
@@ -658,6 +667,16 @@ void EspNowComm::setSendCallback(OnSendCallback callback)
 void EspNowComm::setPeerEventCallback(OnPeerEventCallback callback)
 {
     on_peer_event_ = callback;
+}
+
+void EspNowComm::setAckSuccessCallback(OnAckSuccessCallback callback)
+{
+    on_ack_success_ = callback;
+}
+
+void EspNowComm::setAckTimeoutCallback(OnAckTimeoutCallback callback)
+{
+    on_ack_timeout_ = callback;
 }
 
 size_t EspNowComm::getPeerCount() const
