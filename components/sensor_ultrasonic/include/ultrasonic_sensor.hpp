@@ -1,33 +1,9 @@
 #pragma once
 
+#include "common_types.hpp"
 #include <cstddef>
 #include <cstdint>
 #include "driver/gpio.h"
-
-/**
- * @brief Quality classification for an ultrasonic measurement.
- * @details Determines the reliability of a sensor reading.
- */
-enum class UsQuality
-{
-    OK,      /**< Measurement is reliable and within expected parameters. */
-    WEAK,    /**< Measurement is valid but may have reduced accuracy. */
-    INVALID, /**< Measurement is unreliable and should be discarded. */
-};
-
-/**
- * @brief Defines the specific reason for a measurement failure.
- */
-enum class UsFailure
-{
-    NONE,          /**< No failure occurred. */
-    TIMEOUT,       /**< The echo pulse was not received within the timeout period. */
-    HW_ERROR,      /**< A hardware-level error, such as a stuck ECHO pin. */
-    INVALID_PULSE, /**< The measured pulse corresponds to a distance outside the valid
-                      range. */
-    HIGH_VARIANCE, /**< The variance among valid pings is too high, indicating
-                      instability. */
-};
 
 /**
  * @brief Converts a UsFailure enum to a human-readable string.

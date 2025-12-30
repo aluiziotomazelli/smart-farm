@@ -10,5 +10,6 @@ idf_component_register(
     REQUIRES
          core
          esp_wifi
-         espnow_comm   
+         espnow_comm
+         common_types
 )

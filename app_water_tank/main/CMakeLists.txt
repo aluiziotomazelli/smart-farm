@@ -12,4 +12,5 @@ idf_component_register(
         core
         power_control
         espnow_comm
+        common_types
 )

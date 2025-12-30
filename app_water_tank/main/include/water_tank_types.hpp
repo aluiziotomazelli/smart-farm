@@ -1,7 +1,7 @@
 #pragma once
-#include "ultrasonic_sensor.hpp"
-#include <stdint.h>
+#include "common_types.hpp"
 
+// Constantes específicas para a lógica de negócio do water_tank
 static constexpr float LEVEL_MIN_CM = 150.0f; // caixa vazia
 static constexpr float LEVEL_MAX_CM = 20.0f;  // caixa cheia
 
@@ -22,15 +22,3 @@ enum class FillState : uint8_t
     FILLING,
     DRAINING
 };
-
-#pragma pack(push, 1)
-struct WaterLevelReport
-{
-    uint16_t level_permille;
-    float distance_cm;
-    UsQuality quality;
-    UsFailure failure;
-    bool float_switch_is_full;
-    bool backup_mode_active;
-};
-#pragma pack(pop)

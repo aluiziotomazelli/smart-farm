@@ -1,5 +1,5 @@
 #include "central_hub_app.hpp"
-#include "water_tank_types.hpp"
+#include "common_types.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
