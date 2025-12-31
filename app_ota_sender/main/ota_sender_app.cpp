@@ -11,13 +11,24 @@
 static const char *TAG = "OtaSenderApp";
 
 OtaSenderApp::OtaSenderApp()
-    : command_sent_(false)
+    : wifi_manager_(nullptr)
+    , command_sent_(false)
 {
 }
 
 void OtaSenderApp::init()
 {
     ESP_LOGI(TAG, "Initializing OtaSenderApp");
+
+    wifi_manager_ = WiFiManager::getInstance();
+    if (wifi_manager_->init() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize WiFiManager");
+        return;
+    }
+    if (wifi_manager_->start() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WiFiManager");
+        return;
+    }
 
     ESPNOWConfig config;
     config.wifi_channel = 0; // Auto channel

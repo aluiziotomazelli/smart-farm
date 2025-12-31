@@ -4,6 +4,7 @@
 #include "espnow_comm.hpp"
 #include "nvs_core.hpp"
 #include "ota_manager.hpp"
+#include "wifi_manager.hpp"
 #include "message_types.hpp"
 
 class CentralHubApp
@@ -21,4 +22,6 @@ private:
     // NvsCore storage_;
     EspNowComm comm_;
     OtaManager *ota_manager_;
+    WiFiManager *wifi_manager_;
+    ESPNOWConfig espnow_config_;
 };
