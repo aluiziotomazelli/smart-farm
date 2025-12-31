@@ -9,6 +9,4 @@ idf_component_register(
         esp_netif
         esp_wifi
         nvs_flash
-        mdns
-        # common_types
 )

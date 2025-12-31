@@ -7,8 +7,12 @@
 #include "nvs_flash.h"
 #include <cstring>
 
-const char *OtaManager::TAG       = "OTA";
-OtaManager *OtaManager::instance_ = nullptr;
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+const char *OtaManager::TAG                   = "OTA";
+OtaManager *OtaManager::instance_             = nullptr;
+SemaphoreHandle_t OtaManager::instance_mutex_ = xSemaphoreCreateMutex();
 
 OtaManager::OtaManager()
     : wifi_connected_(false)
@@ -25,9 +29,11 @@ OtaManager::~OtaManager()
 
 OtaManager *OtaManager::getInstance()
 {
+    xSemaphoreTake(instance_mutex_, portMAX_DELAY);
     if (instance_ == nullptr) {
         instance_ = new OtaManager();
     }
+    xSemaphoreGive(instance_mutex_);
     return instance_;
 }
 
@@ -47,7 +53,7 @@ esp_err_t OtaManager::storeCredentials(const std::string &ssid,
     }
 
     nvs_handle_t h;
-    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &h);
+    esp_err_t err = nvs_open("ota_manager", NVS_READWRITE, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Falha ao abrir NVS: %s", esp_err_to_name(err));
         return err;
@@ -74,8 +80,9 @@ esp_err_t OtaManager::storeCredentials(const std::string &ssid,
 esp_err_t OtaManager::loadCredentials(std::string &ssid, std::string &password)
 {
     nvs_handle_t h;
-    esp_err_t err = nvs_open("wifi", NVS_READONLY, &h);
+    esp_err_t err = nvs_open("ota_manager", NVS_READONLY, &h);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao abrir NVS para leitura: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -85,8 +92,14 @@ esp_err_t OtaManager::loadCredentials(std::string &ssid, std::string &password)
     size_t pass_len   = sizeof(pass_buf);
 
     err = nvs_get_str(h, "ssid", ssid_buf, &ssid_len);
-    if (err == ESP_OK) {
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler SSID do NVS: %s", esp_err_to_name(err));
+    }
+    else {
         err = nvs_get_str(h, "pass", pass_buf, &pass_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Falha ao ler senha do NVS: %s", esp_err_to_name(err));
+        }
     }
 
     nvs_close(h);
@@ -109,7 +122,7 @@ bool OtaManager::hasCredentials()
 void OtaManager::clearCredentials()
 {
     nvs_handle_t h;
-    if (nvs_open("wifi", NVS_READWRITE, &h) == ESP_OK) {
+    if (nvs_open("ota_manager", NVS_READWRITE, &h) == ESP_OK) {
         nvs_erase_key(h, "ssid");
         nvs_erase_key(h, "pass");
         nvs_commit(h);
@@ -150,18 +163,28 @@ esp_err_t OtaManager::connectWiFi(const std::string &ssid,
         return err;
     }
 
-    err = esp_wifi_connect();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Falha ao conectar: %s", esp_err_to_name(err));
-        return err;
+    const int max_retries = 3;
+    for (int i = 0; i < max_retries; ++i) {
+        ESP_LOGI(TAG, "Tentativa de conexão %d/%d...", i + 1, max_retries);
+        err = esp_wifi_connect();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Falha ao chamar esp_wifi_connect: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            continue;
+        }
+
+        if (waitForIp(timeout_ms)) {
+            wifi_connected_ = true;
+            return ESP_OK;
+        }
+
+        ESP_LOGW(TAG, "WiFi timeout na tentativa %d. Tentando novamente em 5 segundos...",
+                 i + 1);
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
-    if (waitForIp(timeout_ms)) {
-        wifi_connected_ = true;
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG, "WiFi timeout");
+    ESP_LOGE(TAG, "Falha ao conectar ao WiFi após %d tentativas.", max_retries);
     return ESP_ERR_TIMEOUT;
 }
 

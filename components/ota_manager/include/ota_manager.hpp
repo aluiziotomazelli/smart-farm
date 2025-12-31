@@ -1,15 +1,20 @@
-#ifndef OTA_MANAGER_H
-#define OTA_MANAGER_H
+#pragma once
 
 #include "esp_err.h"
 #include <cstdint>
 #include <string>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 class OtaManager
 {
 public:
     // Singleton
     static OtaManager *getInstance();
+
+    // Prevent copying
+    OtaManager(const OtaManager &)            = delete;
+    OtaManager &operator=(const OtaManager &) = delete;
 
     // Gerenciamento de credenciais
     esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
@@ -40,6 +45,7 @@ private:
 
     // Singleton
     static OtaManager *instance_;
+    static SemaphoreHandle_t instance_mutex_;
 
     // Estado
     bool wifi_connected_;
@@ -51,5 +57,3 @@ private:
 
     static const char *TAG;
 };
-
-#endif // OTA_MANAGER_H
