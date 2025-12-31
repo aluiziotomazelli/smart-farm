@@ -47,9 +47,6 @@ public:
     void stopDiscovery();
     void process();
 
-    void pauseForOta();
-    void resumeAfterOta();
-
     using OnReceiveCallback =
         std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
     using OnSendCallback =

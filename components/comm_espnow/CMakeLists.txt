@@ -1,9 +1,0 @@
-idf_component_register(
-    SRCS
-        comm_espnow.cpp
-    INCLUDE_DIRS
-        include
-    REQUIRES
-        esp_wifi
-        comm
-)

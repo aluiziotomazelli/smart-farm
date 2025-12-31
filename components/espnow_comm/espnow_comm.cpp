@@ -123,11 +123,7 @@ void EspNowComm::pauseForOta()
     stopDiscovery();
     esp_now_deinit();
     esp_wifi_stop();
-<<<<<<< HEAD
-    initialized_ = false;
-=======
     initialized_ = false; // The component is no longer in an operational state
->>>>>>> ota-manager-review-6657768359624518049
     xSemaphoreGive(mutex_);
 }
 
