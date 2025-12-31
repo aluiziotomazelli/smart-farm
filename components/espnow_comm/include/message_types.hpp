@@ -22,7 +22,8 @@ enum class MessageType : uint8_t
     PAIR_RESPONSE = 0x04, ///< Responds to a pairing request.
     HEARTBEAT     = 0x05, ///< A keep-alive signal to maintain peer status.
     ERROR         = 0x06, ///< Notifies about a protocol or communication error.
-    COMMAND       = 0x07  ///< A control command for the remote device.
+    COMMAND       = 0x07, ///< A control command for the remote device.
+    OTA           = 0x08  ///< A command to initiate an Over-the-Air update.
 };
 
 // ====================================================

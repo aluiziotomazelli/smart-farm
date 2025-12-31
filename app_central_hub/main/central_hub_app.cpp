@@ -10,6 +10,7 @@
 static const char *TAG = "CentralHubApp";
 
 CentralHubApp::CentralHubApp()
+    : ota_manager_(nullptr)
 {
 }
 
@@ -31,6 +32,30 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
                  (int)report.float_switch_is_full, (int)report.backup_mode_active);
     } else {
         ESP_LOGW(TAG, "Received packet with unexpected size: %d bytes", len);
+    }
+}
+
+void CentralHubApp::onOtaCommand(uint8_t node_id, const OtaCommand &command)
+{
+    ESP_LOGI(TAG, "Received OTA command from node %u", node_id);
+    ESP_LOGI(TAG, "URL: %s", command.url);
+    ESP_LOGI(TAG, "SSID: %s", command.ssid);
+
+    esp_err_t err = ota_manager_->storeCredentials(command.ssid, command.password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to store credentials: %s", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "Credentials stored, pausing ESP-NOW and starting OTA...");
+    comm_.pauseForOta();
+
+    // This call will not return if successful, as it will restart the device.
+    err = ota_manager_->performOta(command.url);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "OTA failed: %s", esp_err_to_name(err));
+        // If OTA fails, resume ESP-NOW to allow for another attempt.
+        comm_.resumeAfterOta();
     }
 }
 
@@ -75,6 +100,13 @@ void CentralHubApp::init()
         [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
             this->on_espnow_receive(node_id, data, len, rssi);
         });
+
+    comm_.setOtaCommandCallback(
+        [this](uint8_t node_id, const OtaCommand &command) {
+            this->onOtaCommand(node_id, command);
+        });
+
+    ota_manager_ = OtaManager::getInstance();
 }
 
 void CentralHubApp::run()

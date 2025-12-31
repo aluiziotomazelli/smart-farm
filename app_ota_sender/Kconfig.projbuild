@@ -1,0 +1,21 @@
+menu "OTA Sender Configuration"
+
+    config OTA_SENDER_FIRMWARE_URL
+        string "Firmware URL"
+        default "http://192.168.1.100:8070/firmware.bin"
+        help
+            URL of the firmware binary for the OTA update.
+
+    config OTA_SENDER_WIFI_SSID
+        string "WiFi SSID"
+        default "YOUR_WIFI_SSID"
+        help
+            SSID of the WiFi network to connect to for the OTA update.
+
+    config OTA_SENDER_WIFI_PASSWORD
+        string "WiFi Password"
+        default "YOUR_WIFI_PASSWORD"
+        help
+            Password of the WiFi network.
+
+endmenu

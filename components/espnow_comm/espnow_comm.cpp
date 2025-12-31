@@ -89,6 +89,53 @@ bool EspNowComm::init(const ESPNOWConfig &config)
     return true;
 }
 
+bool EspNowComm::sendOtaCommand(uint8_t node_id, const OtaCommand &command)
+{
+    if (!initialized_) {
+        strncpy(last_error_, "Not initialized", sizeof(last_error_) - 1);
+        return false;
+    }
+
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    PeerInfo *peer = findPeerById(node_id);
+    if (!peer) {
+        xSemaphoreGive(mutex_);
+        snprintf(last_error_, sizeof(last_error_), "Peer %u not found", node_id);
+        return false;
+    }
+
+    MessageHeader header;
+    header.version   = 0x01;
+    header.type      = MessageType::OTA;
+    header.sequence  = ack_manager_.getNextSequence();
+    header.timestamp = esp_timer_get_time() / 1000;
+    header.source_id = node_id_;
+    header.dest_id   = node_id;
+    header.ttl       = 1;
+
+    uint8_t packet[sizeof(MessageHeader) + sizeof(OtaCommand) + 1];
+    size_t packet_len = 0;
+    memcpy(packet, &header, sizeof(header));
+    packet_len += sizeof(header);
+    memcpy(packet + packet_len, &command, sizeof(command));
+    packet_len += sizeof(command);
+    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
+    packet[packet_len] = crc;
+    packet_len++;
+
+    xSemaphoreGive(mutex_);
+
+    esp_err_t err = esp_now_send(peer->mac_address.data(), packet, packet_len);
+    if (err != ESP_OK) {
+        snprintf(last_error_, sizeof(last_error_), "OTA command send failed: %s",
+                 esp_err_to_name(err));
+        return false;
+    }
+
+    return true;
+}
+
 void EspNowComm::deinit()
 {
     if (!initialized_)
@@ -475,6 +522,19 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
     case MessageType::PAIR_RESPONSE:
         addPeerInternal(header->source_id, mac, 0, false);
         break;
+    case MessageType::OTA:
+        if (on_ota_command_) {
+            const size_t expected_len = sizeof(MessageHeader) + sizeof(OtaCommand) + 1;
+            if (len == expected_len) {
+                const OtaCommand *command =
+                    reinterpret_cast<const OtaCommand *>(data + sizeof(MessageHeader));
+                on_ota_command_(header->source_id, *command);
+            } else {
+                ESP_LOGW(TAG, "Received OTA command with incorrect size. Got %d, expected %d",
+                         len, expected_len);
+            }
+        }
+        break;
     default:
         break;
     }
@@ -750,6 +810,11 @@ void EspNowComm::setAckSuccessCallback(OnAckSuccessCallback callback)
 void EspNowComm::setAckTimeoutCallback(OnAckTimeoutCallback callback)
 {
     on_ack_timeout_ = callback;
+}
+
+void EspNowComm::setOtaCommandCallback(OnOtaCommandCallback callback)
+{
+    on_ota_command_ = callback;
 }
 
 size_t EspNowComm::getPeerCount() const

@@ -38,4 +38,11 @@ struct WaterLevelReport
     bool float_switch_is_full;
     bool backup_mode_active;
 };
+
+struct OtaCommand
+{
+    char url[256];
+    char ssid[32];
+    char password[64];
+};
 #pragma pack(pop)
