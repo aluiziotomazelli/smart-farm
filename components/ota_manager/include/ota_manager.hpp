@@ -2,10 +2,10 @@
 #define OTA_MANAGER_H
 
 #include "esp_err.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 #include <cstdint>
 #include <string>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 class OtaManager
 {
@@ -14,12 +14,11 @@ public:
     static OtaManager *getInstance();
 
     // Prevent copying
-    OtaManager(const OtaManager &) = delete;
+    OtaManager(const OtaManager &)            = delete;
     OtaManager &operator=(const OtaManager &) = delete;
 
     // Gerenciamento de credenciais
-    esp_err_t storeCredentials(const std::string &ssid, const std::string &passw
-ord);
+    esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
     esp_err_t loadCredentials(std::string &ssid, std::string &password);
     bool hasCredentials();
     void clearCredentials();
