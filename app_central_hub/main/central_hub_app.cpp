@@ -31,7 +31,8 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
                  node_id, report.level_permille, report.distance_cm,
                  report.battery_mv / 1000.0f, (int)report.quality, (int)report.failure,
                  (int)report.float_switch_is_full, (int)report.backup_mode_active);
-    } else {
+    }
+    else {
         ESP_LOGW(TAG, "Received packet with unexpected size: %d bytes", len);
     }
 }
@@ -84,7 +85,7 @@ void CentralHubApp::init()
     ESP_LOGI(TAG, "Initializing CentralHubApp");
 
     wifi_manager_ = WiFiManager::getInstance();
-    ota_manager_ = OtaManager::getInstance();
+    ota_manager_  = OtaManager::getInstance();
 
     // One-time initialization of the network stack
     if (wifi_manager_->init() != ESP_OK) {
@@ -127,7 +128,7 @@ void CentralHubApp::init()
         return;
     }
 
-    comm_.startDiscovery(10000);
+    comm_.startDiscovery(60000);
 
     ESP_LOGI(TAG, "ESP-NOW initialized. Our node ID: %u", comm_.get_id());
 
@@ -136,10 +137,9 @@ void CentralHubApp::init()
             this->on_espnow_receive(node_id, data, len, rssi);
         });
 
-    comm_.setOtaCommandCallback(
-        [this](uint8_t node_id, const OtaCommand &command) {
-            this->onOtaCommand(node_id, command);
-        });
+    comm_.setOtaCommandCallback([this](uint8_t node_id, const OtaCommand &command) {
+        this->onOtaCommand(node_id, command);
+    });
 }
 
 void CentralHubApp::run()

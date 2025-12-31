@@ -5,9 +5,15 @@
 		},
 		{
 			"path": "app_central_hub"
-		}
+		},
+		{
+			"path": "app_ota_sender"
+		},
 		{
 			"path": "components"
+		},
+		{
+			"path": "managed_components"
 		},
 	],
 	"settings": {}
