@@ -112,6 +112,72 @@ void EspNowComm::deinit()
     ESP_LOGI(TAG, "ESP-NOW deinitialized");
 }
 
+void EspNowComm::pauseForOta()
+{
+    if (!initialized_)
+        return;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    ESP_LOGI(TAG, "Pausing ESP-NOW for OTA");
+    stopDiscovery();
+    esp_now_deinit();
+    esp_wifi_stop();
+    initialized_ = false; // The component is no longer in an operational state
+    xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::resumeAfterOta()
+{
+    if (initialized_)
+        return;
+
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    ESP_LOGI(TAG, "Resuming ESP-NOW after OTA");
+
+    // Re-initialize WiFi and ESP-NOW
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_now_init());
+
+    // Restore PMK if encryption is enabled
+    if (config_.enable_encryption)
+    {
+        ESP_ERROR_CHECK(esp_now_set_pmk(config_.pmk.data()));
+    }
+
+    // Re-register callbacks
+    ESP_ERROR_CHECK(esp_now_register_recv_cb(espNowRecvCb));
+    ESP_ERROR_CHECK(esp_now_register_send_cb(espNowSendCb));
+
+    // Re-add peers
+    ESP_LOGI(TAG, "Re-adding %d peers...", peers_.size());
+    for (const auto &peer : peers_)
+    {
+        esp_now_peer_info_t esp_peer = {};
+        memcpy(esp_peer.peer_addr, peer.mac_address.data(), ESP_NOW_ETH_ALEN);
+        esp_peer.channel = config_.wifi_channel;
+        esp_peer.ifidx   = WIFI_IF_STA;
+        esp_peer.encrypt = config_.enable_encryption;
+
+        if (esp_peer.encrypt)
+        {
+            memcpy(esp_peer.lmk, config_.lmk.data(), ESP_NOW_KEY_LEN);
+        }
+
+        esp_err_t add_err = esp_now_add_peer(&esp_peer);
+        if (add_err == ESP_ERR_ESPNOW_EXIST)
+        {
+            ESP_LOGW(TAG, "Peer " MACSTR " already exists, ignoring.", MAC2STR(peer.mac_address.data()));
+        }
+        else if (add_err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Failed to re-add peer " MACSTR ", error: %s", MAC2STR(peer.mac_address.data()), esp_err_to_name(add_err));
+        }
+    }
+
+    initialized_ = true;
+    xSemaphoreGive(mutex_);
+}
+
 uint8_t EspNowComm::get_id() const
 {
     return node_id_;
