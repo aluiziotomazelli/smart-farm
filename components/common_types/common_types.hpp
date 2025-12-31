@@ -27,7 +27,6 @@ enum class UsFailure : uint8_t
                       instability. */
 };
 
-
 #pragma pack(push, 1)
 struct WaterLevelReport
 {

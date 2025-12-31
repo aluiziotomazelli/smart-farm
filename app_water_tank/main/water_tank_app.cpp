@@ -196,6 +196,11 @@ WaterLevelReport WaterTankApp::createWaterLevelReport()
     // In backup mode, we still attempt to read the sensor to see if it recovers.
     sensor.readDistance_cm(distance_cm, quality, failure);
 
+    // If the sensor read is invalid, use the last reading.
+    if (distance_cm == 0.0f && quality == UsQuality::INVALID) {
+        distance_cm = storage_.stats.last_distance_cm;
+    }
+
     power_to_sensor.off();
 
     // Populate the report with all available data.
@@ -311,8 +316,10 @@ void WaterTankApp::init()
         comm_.setSendCallback([this](uint8_t node_id, esp_now_send_status_t status) {
             this->onEspNowSend(node_id, status);
         });
-        comm_.setAckSuccessCallback([this](uint8_t node_id) { this->onAckSuccess(node_id); });
-        comm_.setAckTimeoutCallback([this](uint8_t node_id) { this->onAckTimeout(node_id); });
+        comm_.setAckSuccessCallback(
+            [this](uint8_t node_id) { this->onAckSuccess(node_id); });
+        comm_.setAckTimeoutCallback(
+            [this](uint8_t node_id) { this->onAckTimeout(node_id); });
         comm_.startDiscovery(10000);
     }
 

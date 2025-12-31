@@ -61,6 +61,8 @@ bool EspNowComm::init(const ESPNOWConfig &config)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    esp_wifi_set_max_tx_power(84);
+
     ESP_ERROR_CHECK(esp_now_init());
 
     ESP_ERROR_CHECK(esp_now_register_recv_cb(espNowRecvCb));
@@ -112,6 +114,43 @@ void EspNowComm::deinit()
     ESP_LOGI(TAG, "ESP-NOW deinitialized");
 }
 
+void EspNowComm::pauseForOta()
+{
+    if (!initialized_)
+        return;
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    ESP_LOGI(TAG, "Pausing ESP-NOW for OTA");
+    stopDiscovery();
+    esp_now_deinit();
+    esp_wifi_stop();
+    initialized_ = false;
+    xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::resumeAfterOta()
+{
+    if (initialized_)
+        return;
+
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    ESP_LOGI(TAG, "Resuming ESP-NOW after OTA");
+    ESP_LOGI(TAG, "Retomando ESP-NOW...");
+
+    // WiFi stack ainda está ativo, só restart
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_start();
+    esp_wifi_set_max_tx_power(84);
+
+    ESP_ERROR_CHECK(esp_now_init());
+    // Re-registrar callbacks
+    // Re-adicionar peers
+
+    initialized_ = true;
+    instance_    = this;
+    xSemaphoreGive(mutex_);
+}
+
 uint8_t EspNowComm::get_id() const
 {
     return node_id_;
@@ -143,14 +182,14 @@ bool EspNowComm::send(uint8_t node_id,
     }
 
     DataHeader header;
-    header.version       = 0x01;
-    header.type          = MessageType::DATA;
-    header.sequence      = ack_manager_.getNextSequence();
-    header.timestamp     = esp_timer_get_time() / 1000;
-    header.source_id     = node_id_;
-    header.dest_id       = node_id;
-    header.ttl           = 1;
-    header.data_length   = length;
+    header.version     = 0x01;
+    header.type        = MessageType::DATA;
+    header.sequence    = ack_manager_.getNextSequence();
+    header.timestamp   = esp_timer_get_time() / 1000;
+    header.source_id   = node_id_;
+    header.dest_id     = node_id;
+    header.ttl         = 1;
+    header.data_length = length;
 
     uint8_t packet[config_.max_packet_size];
     size_t packet_len = 0;
@@ -158,7 +197,7 @@ bool EspNowComm::send(uint8_t node_id,
     packet_len += sizeof(header);
     memcpy(packet + packet_len, data, length);
     packet_len += length;
-    uint8_t crc = esp_rom_crc8_le(0, packet, packet_len);
+    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
     packet[packet_len] = crc;
     packet_len++;
 
@@ -194,8 +233,7 @@ bool EspNowComm::broadcast(const uint8_t *data, size_t length)
         esp_now_peer_info_t peer_info = {};
         memcpy(peer_info.peer_addr, broadcast_mac, 6);
         if (esp_now_add_peer(&peer_info) != ESP_OK) {
-            strncpy(last_error_, "Failed to add broadcast peer",
-                    sizeof(last_error_) - 1);
+            strncpy(last_error_, "Failed to add broadcast peer", sizeof(last_error_) - 1);
             return false;
         }
     }
@@ -216,7 +254,7 @@ bool EspNowComm::broadcast(const uint8_t *data, size_t length)
     packet_len += sizeof(header);
     memcpy(packet + packet_len, data, length);
     packet_len += length;
-    uint8_t crc = esp_rom_crc8_le(0, packet, packet_len);
+    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
     packet[packet_len] = crc;
     packet_len++;
 
@@ -265,12 +303,12 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
         return false;
     }
 
-    PeerInfo new_peer           = {};
-    new_peer.node_id            = node_id;
+    PeerInfo new_peer = {};
+    new_peer.node_id  = node_id;
     memcpy(new_peer.mac_address.data(), mac, 6);
-    new_peer.is_confirmed       = true;
-    new_peer.is_active          = true;
-    new_peer.last_seen          = esp_timer_get_time() / 1000;
+    new_peer.is_confirmed = true;
+    new_peer.is_active    = true;
+    new_peer.last_seen    = esp_timer_get_time() / 1000;
     peers_.push_back(new_peer);
 
     if (on_peer_event_) {
@@ -400,7 +438,8 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
             }
         }
         break;
-    case MessageType::PAIR_REQUEST: {
+    case MessageType::PAIR_REQUEST:
+    {
         if (discovery_active_) {
             addPeerInternal(header->source_id, mac, 0, false);
             sendPairResponse(mac, *reinterpret_cast<const PairHeader *>(data));
@@ -425,7 +464,8 @@ void EspNowComm::handleSend(const esp_now_send_info_t *tx_info,
     if (peer) {
         if (status == ESP_NOW_SEND_SUCCESS) {
             peer->link_quality = std::min(100, peer->link_quality + 1);
-        } else {
+        }
+        else {
             peer->tx_failures++;
             peer->link_quality = std::max(0, peer->link_quality - 5);
         }
@@ -493,13 +533,13 @@ void EspNowComm::sendPairRequest()
         esp_now_add_peer(&peer_info);
     }
 
-    PairHeader header    = {};
-    header.version       = 0x01;
-    header.type          = MessageType::PAIR_REQUEST;
-    header.sequence      = ack_manager_.getNextSequence();
-    header.timestamp     = esp_timer_get_time() / 1000;
-    header.source_id     = node_id_;
-    header.dest_id       = 0xFF;
+    PairHeader header = {};
+    header.version    = 0x01;
+    header.type       = MessageType::PAIR_REQUEST;
+    header.sequence   = ack_manager_.getNextSequence();
+    header.timestamp  = esp_timer_get_time() / 1000;
+    header.source_id  = node_id_;
+    header.dest_id    = 0xFF;
     snprintf(header.device_name, sizeof(header.device_name), "Device_%u", node_id_);
 
     uint8_t packet[sizeof(header) + 1];
@@ -510,13 +550,13 @@ void EspNowComm::sendPairRequest()
 
 void EspNowComm::sendPairResponse(const uint8_t *mac, const PairHeader &req_header)
 {
-    PairHeader resp_header    = {};
-    resp_header.version       = 0x01;
-    resp_header.type          = MessageType::PAIR_RESPONSE;
-    resp_header.sequence      = req_header.sequence;
-    resp_header.timestamp     = esp_timer_get_time() / 1000;
-    resp_header.source_id     = node_id_;
-    resp_header.dest_id       = req_header.source_id;
+    PairHeader resp_header = {};
+    resp_header.version    = 0x01;
+    resp_header.type       = MessageType::PAIR_RESPONSE;
+    resp_header.sequence   = req_header.sequence;
+    resp_header.timestamp  = esp_timer_get_time() / 1000;
+    resp_header.source_id  = node_id_;
+    resp_header.dest_id    = req_header.source_id;
     snprintf(resp_header.device_name, sizeof(resp_header.device_name), "Device_%u",
              node_id_);
 
@@ -568,7 +608,8 @@ void EspNowComm::cleanupInactivePeersInternal()
                 on_peer_event_(*it, false);
             }
             it = peers_.erase(it);
-        } else {
+        }
+        else {
             ++it;
         }
     }
@@ -582,13 +623,15 @@ bool EspNowComm::loadPeers()
     auto rtc_peers = PeerPersistence::loadFromRTC();
     if (!rtc_peers.empty()) {
         ESP_LOGI(TAG, "Loading peers from RTC memory (%zu peers)", rtc_peers.size());
-    } else {
+    }
+    else {
         auto nvs_peers = PeerPersistence::loadFromNVS();
         if (!nvs_peers.empty()) {
             ESP_LOGI(TAG, "Loading peers from NVS (%zu peers)", nvs_peers.size());
             PeerPersistence::saveToRTC(nvs_peers); // Refresh RTC
             rtc_peers = nvs_peers;
-        } else {
+        }
+        else {
             ESP_LOGI(TAG, "No persisted peers found.");
             return false;
         }
@@ -632,9 +675,11 @@ bool EspNowComm::savePeersToNVS()
 
 bool EspNowComm::savePeersToNVSInternal()
 {
-    if (!persistence_enabled_) return false;
+    if (!persistence_enabled_)
+        return false;
     auto p_peers = getPeersInternal();
-    if (p_peers.empty()) return true;
+    if (p_peers.empty())
+        return true;
     return PeerPersistence::saveToNVS(p_peers);
 }
 
@@ -648,9 +693,11 @@ bool EspNowComm::savePeersToRTC()
 
 bool EspNowComm::savePeersToRTCInternal()
 {
-    if (!persistence_enabled_) return false;
+    if (!persistence_enabled_)
+        return false;
     auto p_peers = getPeersInternal();
-    if (p_peers.empty()) return true;
+    if (p_peers.empty())
+        return true;
     return PeerPersistence::saveToRTC(p_peers);
 }
 
