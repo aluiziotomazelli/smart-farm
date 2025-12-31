@@ -1,9 +1,8 @@
 #pragma once
 
-#include "acknowledgment_manager.hpp"
+#include "acknowledgment_manager.hpp" // Included because it's now a member object
 #include "message_types.hpp"
 #include "persistence.hpp"
-#include "../../common_types/common_types.hpp"
 
 #include <array>
 #include <cstdint>
@@ -35,7 +34,6 @@ public:
               size_t length,
               bool require_ack = true);
     bool broadcast(const uint8_t *data, size_t length);
-    bool sendOtaCommand(uint8_t node_id, const OtaCommand &command);
 
     bool addPeer(uint8_t node_id,
                  const uint8_t *mac,

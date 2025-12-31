@@ -1,5 +1,4 @@
 #include "ota_sender_app.hpp"
-#include "common_types.hpp"
 #include "message_types.hpp"
 #include "sdkconfig.h"
 #include <cstring>
@@ -62,7 +61,6 @@ void OtaSenderApp::sendOtaCommand(uint8_t node_id)
     } else {
         ESP_LOGE(TAG, "Failed to send OTA command to node %u.", node_id);
     }
-
 }
 
 void OtaSenderApp::run()

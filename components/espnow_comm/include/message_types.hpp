@@ -110,6 +110,17 @@ struct HeartbeatHeader : public MessageHeader
     uint8_t free_heap;      ///< Free heap memory in kilobytes.
 };
 
+/**
+ * @struct OtaCommand
+ * @brief Payload for the OTA message type.
+ */
+struct OtaCommand
+{
+    char url[256];      ///< The URL of the firmware binary.
+    char ssid[32];      ///< The WiFi SSID to connect to. Can be empty to use stored credentials.
+    char password[64];  ///< The WiFi password.
+};
+
 #pragma pack(pop) // Restore default padding.
 
 // ====================================================

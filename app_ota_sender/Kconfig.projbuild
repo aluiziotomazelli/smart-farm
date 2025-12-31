@@ -8,13 +8,13 @@ menu "OTA Sender Configuration"
 
     config OTA_SENDER_WIFI_SSID
         string "WiFi SSID"
-        default "YOUR_WIFI_SSID"
+        default ""
         help
-            SSID of the WiFi network to connect to for the OTA update.
+            SSID of the WiFi network to connect to for the OTA update. Leave blank to use stored credentials on the target device.
 
     config OTA_SENDER_WIFI_PASSWORD
         string "WiFi Password"
-        default "YOUR_WIFI_PASSWORD"
+        default ""
         help
             Password of the WiFi network.
 

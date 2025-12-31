@@ -4,7 +4,7 @@
 #include "espnow_comm.hpp"
 #include "nvs_core.hpp"
 #include "ota_manager.hpp"
-#include "common_types.hpp"
+#include "message_types.hpp"
 
 class CentralHubApp
 {

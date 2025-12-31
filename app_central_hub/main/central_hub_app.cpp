@@ -37,26 +37,43 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
 
 void CentralHubApp::onOtaCommand(uint8_t node_id, const OtaCommand &command)
 {
+    if (!ota_manager_) {
+        ESP_LOGE(TAG, "OtaManager not initialized!");
+        return;
+    }
     ESP_LOGI(TAG, "Received OTA command from node %u", node_id);
     ESP_LOGI(TAG, "URL: %s", command.url);
-    ESP_LOGI(TAG, "SSID: %s", command.ssid);
 
-    esp_err_t err = ota_manager_->storeCredentials(command.ssid, command.password);
+    // Only store credentials if a new SSID is provided
+    if (strlen(command.ssid) > 0) {
+        ESP_LOGI(TAG, "New credentials received. Storing SSID: %s", command.ssid);
+        esp_err_t err = ota_manager_->storeCredentials(command.ssid, command.password);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to store credentials: %s", esp_err_to_name(err));
+            return;
+        }
+    } else {
+        ESP_LOGI(TAG, "No new credentials provided. Using stored credentials.");
+    }
+
+    ESP_LOGI(TAG, "Pausing ESP-NOW and starting OTA...");
+    comm_.pauseForOta();
+
+    // Connect to WiFi before starting OTA
+    esp_err_t err = ota_manager_->connectWiFi();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to store credentials: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to connect to WiFi: %s", esp_err_to_name(err));
+        comm_.resumeAfterOta();
         return;
     }
 
-    ESP_LOGI(TAG, "Credentials stored, pausing ESP-NOW and starting OTA...");
-    comm_.pauseForOta();
-
-    // This call will not return if successful, as it will restart the device.
+    // Perform OTA
     err = ota_manager_->performOta(command.url);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "OTA failed: %s", esp_err_to_name(err));
-        // If OTA fails, resume ESP-NOW to allow for another attempt.
         comm_.resumeAfterOta();
     }
+    // On success, the device will restart.
 }
 
 void CentralHubApp::init()
