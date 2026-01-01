@@ -22,7 +22,7 @@ public:
     EspNowComm(const EspNowComm &)            = delete;
     EspNowComm &operator=(const EspNowComm &) = delete;
 
-    bool init(const ESPNOWConfig &config, common::NodeType node_type);
+    bool init(const ESPNOWConfig &config);
     void deinit();
     uint8_t get_id() const;
 

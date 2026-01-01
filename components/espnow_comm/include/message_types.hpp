@@ -179,6 +179,10 @@ struct PeerInfo
  */
 struct ESPNOWConfig
 {
+    // Identity parameters
+    uint8_t node_id;            ///< The unique ID of this node.
+    common::NodeType node_type; ///< The type of this node (e.g., HUB, SENSOR).
+
     // Network parameters
     uint8_t wifi_channel;   ///< WiFi channel to operate on (1-13). 0 for current.
     bool enable_long_range; ///< Enable ESP-IDF's long-range mode.
@@ -207,7 +211,9 @@ struct ESPNOWConfig
      * @brief Default constructor with sensible defaults.
      */
     ESPNOWConfig()
-        : wifi_channel(0)
+        : node_id(0)
+        , node_type(common::NodeType::UNKNOWN)
+        , wifi_channel(0)
         , enable_long_range(false)
         , max_packet_size(250)
         , max_peers(20)

@@ -285,9 +285,7 @@ void WaterTankApp::init()
     auto &core = storage_.getCoreData();
     if (core.node_id == 0) {
         ESP_LOGI(TAG, "Node ID not set, generating from MAC address...");
-        uint8_t mac[6];
-        esp_efuse_mac_get_default(mac);
-        core.node_id = mac[3] ^ mac[4] ^ mac[5];
+        core.node_id = common::generate_node_id();
         if (storage_.commit() == ESP_OK) {
             ESP_LOGI(TAG, "New Node ID saved to NVS.");
         }
@@ -298,13 +296,15 @@ void WaterTankApp::init()
 
     // Initialize ESP-NOW communication
     ESPNOWConfig config;
+    config.node_id            = core.node_id;
+    config.node_type          = common::NodeType::WATER_TANK;
     config.wifi_channel       = 0;
     config.max_peers          = 10;
     config.ack_timeout        = 100;
     config.heartbeat_interval = 0;
     config.max_packet_size    = 250;
 
-    if (!comm_.init(config, common::NodeType::WATER_TANK)) {
+    if (!comm_.init(config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
     }
     else {

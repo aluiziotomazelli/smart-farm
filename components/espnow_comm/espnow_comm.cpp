@@ -29,10 +29,6 @@ EspNowComm::EspNowComm(bool enable_persistence)
         PeerPersistence::initNVS();
     }
 
-    uint8_t mac[6];
-    esp_efuse_mac_get_default(mac);
-    node_id_ = mac[3] ^ mac[4] ^ mac[5];
-
     mutex_ = xSemaphoreCreateMutex();
 }
 
@@ -44,7 +40,7 @@ EspNowComm::~EspNowComm()
     }
 }
 
-bool EspNowComm::init(const ESPNOWConfig &config, common::NodeType node_type)
+bool EspNowComm::init(const ESPNOWConfig &config)
 {
     if (initialized_) {
         strncpy(last_error_, "Already initialized", sizeof(last_error_) - 1);
@@ -52,7 +48,8 @@ bool EspNowComm::init(const ESPNOWConfig &config, common::NodeType node_type)
     }
 
     config_    = config;
-    node_type_ = node_type;
+    node_id_   = config.node_id;
+    node_type_ = config.node_type;
 
     ESP_LOGI(TAG, "Initializing ESP-NOW service...");
     ESP_ERROR_CHECK(esp_now_init());
