@@ -263,6 +263,7 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
     peers_.push_back(new_peer);
 
     if (on_peer_event_) {
+        ESP_LOGI(TAG, "Firing on_peer_event callback for node_id: %u", new_peer.node_id);
         on_peer_event_(new_peer, true);
     }
 

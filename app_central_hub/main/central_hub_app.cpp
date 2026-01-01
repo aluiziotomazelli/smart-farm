@@ -9,10 +9,16 @@
 
 static const char *TAG = "CentralHubApp";
 
+#include <cstring>
+
 CentralHubApp::CentralHubApp()
     : ota_manager_(nullptr)
     , wifi_manager_(nullptr)
+    , ota_command_received_(false)
+    , ota_command_sender_id_(0)
 {
+    // Ensure the received_ota_command_ struct is zero-initialized
+    memset(&received_ota_command_, 0, sizeof(received_ota_command_));
 }
 
 void CentralHubApp::on_espnow_receive(uint8_t node_id,
@@ -48,37 +54,12 @@ void CentralHubApp::onOtaCommand(uint8_t node_id, const OtaCommand &command)
     ESP_LOGI(TAG, "Received OTA command from node %u", node_id);
     ESP_LOGI(TAG, "URL: %s", command.url);
 
-    // Stop ESP-NOW to free up the radio
-    comm_.deinit();
-
-    // Store credentials if provided
-    if (strlen(command.ssid) > 0) {
-        ESP_LOGI(TAG, "Storing new credentials for SSID: %s", command.ssid);
-        wifi_manager_->storeCredentials(command.ssid, command.password);
-    }
-
-    std::string ssid, password;
-    if (wifi_manager_->loadCredentials(ssid, password) != ESP_OK) {
-        ESP_LOGE(TAG, "No credentials stored and none provided. Aborting OTA.");
-        otaCleanupAndResume();
-        return;
-    }
-
-    ESP_LOGI(TAG, "Connecting to Wi-Fi...");
-    if (wifi_manager_->connect(ssid, password) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi. Resuming ESP-NOW.");
-        otaCleanupAndResume();
-        return;
-    }
-
-    ESP_LOGI(TAG, "Performing OTA...");
-    esp_err_t ota_err = ota_manager_->performOta(command.url);
-    if (ota_err != ESP_OK) {
-        ESP_LOGE(TAG, "OTA failed. Cleaning up and resuming ESP-NOW.");
-        otaCleanupAndResume();
-    }
-    // On success, the device will restart.
+    // Set flag to handle OTA in the main loop
+    ota_command_received_ = true;
+    received_ota_command_ = command;
+    ota_command_sender_id_ = node_id;
 }
+
 
 void CentralHubApp::init()
 {

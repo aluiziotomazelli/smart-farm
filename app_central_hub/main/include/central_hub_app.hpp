@@ -25,4 +25,8 @@ private:
     OtaManager *ota_manager_;
     WiFiManager *wifi_manager_;
     ESPNOWConfig espnow_config_;
+
+    bool ota_command_received_;
+    OtaCommand received_ota_command_;
+    uint8_t ota_command_sender_id_;
 };

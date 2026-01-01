@@ -116,7 +116,7 @@ struct HeartbeatHeader : public MessageHeader
  */
 struct OtaCommand
 {
-    char url[256];      ///< The URL of the firmware binary.
+    char url[128];      ///< The URL of the firmware binary.
     char ssid[32];      ///< The WiFi SSID to connect to. Can be empty to use stored credentials.
     char password[64];  ///< The WiFi password.
 };
