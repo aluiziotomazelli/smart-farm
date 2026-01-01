@@ -264,6 +264,7 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
 
     if (on_peer_event_) {
         on_peer_event_(new_peer, true);
+        ESP_LOGI(TAG, "Firing on_peer_event callback for node_id: %u", new_peer.node_id);
     }
 
     if (persistence_enabled_) {
@@ -349,14 +350,20 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
                                const uint8_t *data,
                                int len)
 {
-    if (len < sizeof(MessageHeader) + 1)
+    if (len < sizeof(MessageHeader) + 1) {
+        ESP_LOGW(TAG, "Packet too short for header.");
         return;
+    }
 
-    if (esp_rom_crc8_le(0, data, len - 1) != data[len - 1])
+    if (esp_rom_crc8_le(0, data, len - 1) != data[len - 1]) {
+        ESP_LOGE(TAG, "CRC check failed.");
         return;
+    }
 
     const MessageHeader *header = reinterpret_cast<const MessageHeader *>(data);
-    const uint8_t *mac          = recv_info->src_addr;
+    // ESP_LOGI(TAG, "Packet source_id: %u, type: 0x%02X", header->source_id,
+    //  (uint8_t)header->type);
+    const uint8_t *mac = recv_info->src_addr;
 
     xSemaphoreTake(mutex_, portMAX_DELAY);
 
@@ -400,15 +407,21 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
     case MessageType::PAIR_RESPONSE:
         addPeerInternal(header->source_id, mac, 0, false);
         break;
+
     case MessageType::OTA:
         if (on_ota_command_) {
             const size_t expected_len = sizeof(MessageHeader) + sizeof(OtaCommand) + 1;
+            ESP_LOGD(TAG, "OTA message: received len=%d, expected len=%d", len,
+                     expected_len);
             if (len == expected_len) {
                 const OtaCommand *command =
                     reinterpret_cast<const OtaCommand *>(data + sizeof(MessageHeader));
                 on_ota_command_(header->source_id, *command);
-            } else {
-                ESP_LOGW(TAG, "Received OTA command with incorrect size. Got %d, expected %d",
+            }
+            else {
+                ESP_LOGW(TAG,
+                         "Received OTA command with incorrect size. Got %d, "
+                         "expected %d",
                          len, expected_len);
             }
         }

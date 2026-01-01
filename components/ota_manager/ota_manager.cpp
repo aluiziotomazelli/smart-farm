@@ -36,11 +36,12 @@ esp_err_t OtaManager::performOta(const std::string &url)
 {
     ESP_LOGI(TAG, "Iniciando OTA de: %s", url.c_str());
 
-    esp_http_client_config_t http_config = {
-        .url               = url.c_str(),
-        .timeout_ms        = 10000,
-        .keep_alive_enable = true,
-    };
+    esp_http_client_config_t http_config = {.url            = url.c_str(),
+                                            .cert_pem       = NULL,
+                                            .timeout_ms     = 10000,
+                                            .transport_type = HTTP_TRANSPORT_OVER_TCP,
+                                            .skip_cert_common_name_check = true,
+                                            .keep_alive_enable           = true};
 
     esp_https_ota_config_t ota_config = {
         .http_config = &http_config,
@@ -60,9 +61,7 @@ esp_err_t OtaManager::performOta(const std::string &url)
     return ret;
 }
 
-esp_err_t OtaManager::performOtaWithMdns(const std::string &hostname,
-                                         uint16_t port,
-                                         const std::string &path)
+esp_err_t OtaManager::performOtaWithMdns(const std::string &hostname)
 {
     std::string url;
     esp_err_t err = resolveServerMdns(hostname, url);
@@ -71,8 +70,8 @@ esp_err_t OtaManager::performOtaWithMdns(const std::string &hostname,
     }
 
     // Construir URL completa
-    std::string full_url = url + ":" + std::to_string(port) + "/" + device_type_ + path;
-
+    std::string full_url =
+        "http://" + url + ":" + "8070/" + device_type_ + "/" + device_type_ + ".bin";
     return performOta(full_url);
 }
 
@@ -80,17 +79,26 @@ esp_err_t OtaManager::resolveServerMdns(const std::string &hostname, std::string
 {
     ESP_LOGI(TAG, "Resolvendo %s.local via mDNS...", hostname.c_str());
 
-    mdns_init();
+    // Tentar inicializar (ignora se já está inicializado)
+    esp_err_t init_err = mdns_init();
+    if (init_err != ESP_OK && init_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Erro ao inicializar mDNS: %s", esp_err_to_name(init_err));
+        return init_err;
+    }
 
     esp_ip4_addr_t addr;
     addr.addr = 0;
 
+    ESP_LOGI(TAG, "Consultando: %s", hostname.c_str());
     esp_err_t err = mdns_query_a(hostname.c_str(), 5000, &addr);
+
+    ESP_LOGI(TAG, "Resultado da query: %s, addr: " IPSTR, esp_err_to_name(err),
+             IP2STR(&addr));
 
     if (err == ESP_OK && addr.addr != 0) {
         char ip_str[16];
         snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&addr));
-        url = std::string("http://") + ip_str;
+        url = ip_str;
 
         ESP_LOGI(TAG, "✓ Servidor encontrado: %s", url.c_str());
         mdns_free();

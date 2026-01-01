@@ -4,8 +4,8 @@
 #include "nvs_flash.h"
 #include <cstring>
 
-const char *WiFiManager::TAG = "WiFiManager";
-WiFiManager *WiFiManager::instance_ = nullptr;
+const char *WiFiManager::TAG                   = "WiFiManager";
+WiFiManager *WiFiManager::instance_            = nullptr;
 SemaphoreHandle_t WiFiManager::instance_mutex_ = xSemaphoreCreateMutex();
 
 WiFiManager::WiFiManager()
@@ -38,18 +38,21 @@ esp_err_t WiFiManager::init()
     }
     ESP_LOGI(TAG, "Initializing network stack...");
     esp_err_t err = esp_netif_init();
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     err = esp_event_loop_create_default();
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     if (esp_netif_create_default_wifi_sta() == nullptr) {
         return ESP_FAIL;
     }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    err = esp_wifi_init(&cfg);
-    if (err != ESP_OK) return err;
+    err                    = esp_wifi_init(&cfg);
+    if (err != ESP_OK)
+        return err;
     initialized_ = true;
     return ESP_OK;
 }
@@ -103,7 +106,8 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
 
     wifi_config_t wifi_config = {};
     strncpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, password.c_str(), sizeof(wifi_config.sta.password) - 1);
+    strncpy((char *)wifi_config.sta.password, password.c_str(),
+            sizeof(wifi_config.sta.password) - 1);
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     esp_err_t err = esp_wifi_connect();
@@ -131,6 +135,12 @@ esp_err_t WiFiManager::disconnect()
     if (err == ESP_OK) {
         connected_ = false;
     }
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        ESP_LOGW(TAG, "WiFi ainda conectado! Forçando desconexão...");
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
     return err;
 }
 
@@ -152,11 +162,13 @@ bool WiFiManager::waitForIp(uint32_t timeout_ms)
     return false;
 }
 
-esp_err_t WiFiManager::storeCredentials(const std::string &ssid, const std::string &password)
+esp_err_t WiFiManager::storeCredentials(const std::string &ssid,
+                                        const std::string &password)
 {
     nvs_handle_t h;
     esp_err_t err = nvs_open("wifi_manager", NVS_READWRITE, &h);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     err = nvs_set_str(h, "ssid", ssid.c_str());
     if (err == ESP_OK) {
@@ -174,12 +186,13 @@ esp_err_t WiFiManager::loadCredentials(std::string &ssid, std::string &password)
 {
     nvs_handle_t h;
     esp_err_t err = nvs_open("wifi_manager", NVS_READONLY, &h);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
 
     char ssid_buf[32] = {0};
     char pass_buf[64] = {0};
-    size_t ssid_len = sizeof(ssid_buf);
-    size_t pass_len = sizeof(pass_buf);
+    size_t ssid_len   = sizeof(ssid_buf);
+    size_t pass_len   = sizeof(pass_buf);
 
     err = nvs_get_str(h, "ssid", ssid_buf, &ssid_len);
     if (err == ESP_OK) {
@@ -188,7 +201,7 @@ esp_err_t WiFiManager::loadCredentials(std::string &ssid, std::string &password)
     nvs_close(h);
 
     if (err == ESP_OK) {
-        ssid = ssid_buf;
+        ssid     = ssid_buf;
         password = pass_buf;
     }
     return err;

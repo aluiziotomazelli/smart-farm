@@ -84,8 +84,9 @@ struct DataHeader : public MessageHeader
 struct AckHeader : public MessageHeader
 {
     uint16_t acked_sequence; ///< The sequence number of the message being acknowledged.
-    uint8_t rssi;            ///< The RSSI (Received Signal Strength Indicator) of the received message.
-    ErrorCode error_code;    ///< An error code, if any.
+    uint8_t
+        rssi; ///< The RSSI (Received Signal Strength Indicator) of the received message.
+    ErrorCode error_code; ///< An error code, if any.
 };
 
 /**
@@ -116,9 +117,10 @@ struct HeartbeatHeader : public MessageHeader
  */
 struct OtaCommand
 {
-    char url[256];      ///< The URL of the firmware binary.
-    char ssid[32];      ///< The WiFi SSID to connect to. Can be empty to use stored credentials.
-    char password[64];  ///< The WiFi password.
+    char url[128];     ///< The URL of the firmware binary.
+    char ssid[32];     ///< The WiFi SSID to connect to. Can be empty to use stored
+                       ///< credentials.
+    char password[64]; ///< The WiFi password.
 };
 
 #pragma pack(pop) // Restore default padding.
@@ -188,8 +190,8 @@ struct ESPNOWConfig
     // Timeout parameters (milliseconds)
     uint32_t ack_timeout;        ///< Time to wait for an ACK.
     uint32_t heartbeat_interval; ///< Interval to send heartbeats.
-    uint32_t peer_timeout;       ///< Time of inactivity before a peer is considered inactive.
-    uint32_t discovery_timeout;  ///< Duration for the discovery process.
+    uint32_t peer_timeout; ///< Time of inactivity before a peer is considered inactive.
+    uint32_t discovery_timeout; ///< Duration for the discovery process.
 
     // Security settings
     bool enable_encryption;      ///< Enable ESP-NOW's built-in encryption.
@@ -233,11 +235,8 @@ struct ESPNOWConfig
  * @param length The length of the payload data.
  * @param rssi The Received Signal Strength Indicator.
  */
-using MessageCallback =
-    std::function<void(uint8_t sender_id,
-                       const uint8_t *data,
-                       size_t length,
-                       int8_t rssi)>;
+using MessageCallback = std::function<
+    void(uint8_t sender_id, const uint8_t *data, size_t length, int8_t rssi)>;
 
 /**
  * @brief Callback for message delivery status.
@@ -246,9 +245,7 @@ using MessageCallback =
  * @param delivery_time Time taken for delivery and acknowledgment in ms.
  */
 using DeliveryCallback =
-    std::function<void(uint8_t recipient_id,
-                       bool success,
-                       uint32_t delivery_time)>;
+    std::function<void(uint8_t recipient_id, bool success, uint32_t delivery_time)>;
 
 /**
  * @brief Callback for peer events (e.g., added, removed, updated).
@@ -256,5 +253,4 @@ using DeliveryCallback =
  * @param event_type A string describing the event (e.g., "added", "removed").
  */
 using PeerEventCallback =
-    std::function<void(const PeerInfo &peer,
-                       const char *event_type)>;
+    std::function<void(const PeerInfo &peer, const char *event_type)>;

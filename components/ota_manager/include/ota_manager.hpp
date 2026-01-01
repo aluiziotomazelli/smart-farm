@@ -18,9 +18,7 @@ public:
 
     // OTA
     esp_err_t performOta(const std::string &url);
-    esp_err_t performOtaWithMdns(const std::string &hostname,
-                                 uint16_t port           = 8070,
-                                 const std::string &path = "/firmware.bin");
+    esp_err_t performOtaWithMdns(const std::string &hostname);
 
     // Configuração
     void setDeviceType(const std::string &device_type);
