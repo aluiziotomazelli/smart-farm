@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common_types.hpp"
 #include "espnow_comm.hpp"
 #include "water_tank_nvs.hpp"
 #include "water_tank_types.hpp"

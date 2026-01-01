@@ -10,6 +10,7 @@ idf_component_register(
         esp_timer
         nvs_flash
         driver
+        common_types
     PRIV_REQUIRES
         esp_common
 )

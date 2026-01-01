@@ -44,14 +44,15 @@ EspNowComm::~EspNowComm()
     }
 }
 
-bool EspNowComm::init(const ESPNOWConfig &config)
+bool EspNowComm::init(const ESPNOWConfig &config, common::NodeType node_type)
 {
     if (initialized_) {
         strncpy(last_error_, "Already initialized", sizeof(last_error_) - 1);
         return false;
     }
 
-    config_ = config;
+    config_    = config;
+    node_type_ = node_type;
 
     ESP_LOGI(TAG, "Initializing ESP-NOW service...");
     ESP_ERROR_CHECK(esp_now_init());
@@ -398,9 +399,33 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
         break;
     case MessageType::PAIR_REQUEST:
     {
-        if (discovery_active_) {
+        if (!discovery_active_) {
+            break;
+        }
+
+        const PairHeader *pair_header = reinterpret_cast<const PairHeader *>(data);
+        bool should_pair              = false;
+
+        // Regra: Hub aceita qualquer um.
+        if (node_type_ == common::NodeType::HUB) {
+            should_pair = true;
+            ESP_LOGI(TAG, "Hub accepting pair request from node type %d",
+                     (int)pair_header->node_type);
+        }
+        // Regra: Não-Hub só aceita Hub.
+        else if (pair_header->node_type == common::NodeType::HUB) {
+            should_pair = true;
+            ESP_LOGI(TAG, "Device accepting pair request from Hub.");
+        }
+        else {
+            ESP_LOGW(TAG,
+                     "Device of type %d rejecting pair request from node type %d",
+                     (int)node_type_, (int)pair_header->node_type);
+        }
+
+        if (should_pair) {
             addPeerInternal(header->source_id, mac, 0, false);
-            sendPairResponse(mac, *reinterpret_cast<const PairHeader *>(data));
+            sendPairResponse(mac, *pair_header);
         }
         break;
     }
@@ -517,6 +542,7 @@ void EspNowComm::sendPairRequest()
     header.timestamp  = esp_timer_get_time() / 1000;
     header.source_id  = node_id_;
     header.dest_id    = 0xFF;
+    header.node_type  = node_type_;
     snprintf(header.device_name, sizeof(header.device_name), "Device_%u", node_id_);
 
     uint8_t packet[sizeof(header) + 1];
@@ -534,6 +560,7 @@ void EspNowComm::sendPairResponse(const uint8_t *mac, const PairHeader &req_head
     resp_header.timestamp  = esp_timer_get_time() / 1000;
     resp_header.source_id  = node_id_;
     resp_header.dest_id    = req_header.source_id;
+    resp_header.node_type  = node_type_;
     snprintf(resp_header.device_name, sizeof(resp_header.device_name), "Device_%u",
              node_id_);
 

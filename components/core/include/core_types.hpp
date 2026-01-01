@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "common_types.hpp"
 
 /* =========================
  *  Versão do schema
@@ -11,15 +12,7 @@ static constexpr uint32_t CORE_SCHEMA_VERSION = 1;
 /* =========================
  *  Identidade do nó
  * ========================= */
-enum class NodeType : uint8_t
-{
-    UNKNOWN = 0,
-    WATER_TANK,
-    SOLAR_SENSOR,
-    LOAD_CONTROLLER,
-    WEATHER,
-    HUB,
-};
+using common::NodeType;
 
 /* =========================
  *  Perfil de energia

@@ -22,7 +22,7 @@ public:
     EspNowComm(const EspNowComm &)            = delete;
     EspNowComm &operator=(const EspNowComm &) = delete;
 
-    bool init(const ESPNOWConfig &config);
+    bool init(const ESPNOWConfig &config, common::NodeType node_type);
     void deinit();
     uint8_t get_id() const;
 
@@ -102,6 +102,7 @@ private:
 
     ESPNOWConfig config_;
     uint8_t node_id_;
+    common::NodeType node_type_;
     std::vector<PeerInfo> peers_;
     bool initialized_;
     bool persistence_enabled_;

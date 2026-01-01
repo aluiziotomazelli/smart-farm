@@ -1,6 +1,7 @@
 // message_types.hpp
 #pragma once
 
+#include "common_types.hpp"
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -95,9 +96,9 @@ struct AckHeader : public MessageHeader
  */
 struct PairHeader : public MessageHeader
 {
-    char device_name[16];  ///< A human-readable name for the device.
-    uint8_t capabilities;  ///< A bitmask of the device's capabilities.
-    uint8_t auth_token[8]; ///< An authentication token, if required.
+    char device_name[16];       ///< A human-readable name for the device.
+    common::NodeType node_type; ///< The type of the node sending the request.
+    uint8_t auth_token[8];      ///< An authentication token, if required.
 };
 
 /**

@@ -304,7 +304,7 @@ void WaterTankApp::init()
     config.heartbeat_interval = 0;
     config.max_packet_size    = 250;
 
-    if (!comm_.init(config)) {
+    if (!comm_.init(config, common::NodeType::WATER_TANK)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
     }
     else {
