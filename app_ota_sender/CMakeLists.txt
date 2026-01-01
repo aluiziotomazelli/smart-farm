@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Define o nome do projeto
-set(PROJECT_NAME "water_tank")
+set(PROJECT_NAME "ota_sender")
 
 # Adiciona caminhos para componentes compartilhados
 list(APPEND EXTRA_COMPONENT_DIRS

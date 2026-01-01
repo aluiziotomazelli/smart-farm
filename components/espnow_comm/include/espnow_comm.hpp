@@ -26,14 +26,12 @@ public:
     void deinit();
     uint8_t get_id() const;
 
-    void pauseForOta();
-    void resumeAfterOta();
-
     bool send(uint8_t node_id,
               const uint8_t *data,
               size_t length,
               bool require_ack = true);
     bool broadcast(const uint8_t *data, size_t length);
+    bool sendOtaCommand(uint8_t node_id, const OtaCommand &command);
 
     bool addPeer(uint8_t node_id,
                  const uint8_t *mac,
@@ -54,12 +52,15 @@ public:
     using OnPeerEventCallback  = std::function<void(const PeerInfo &peer, bool added)>;
     using OnAckSuccessCallback = std::function<void(uint8_t node_id)>;
     using OnAckTimeoutCallback = std::function<void(uint8_t node_id)>;
+    using OnOtaCommandCallback =
+        std::function<void(uint8_t node_id, const OtaCommand &command)>;
 
     void setReceiveCallback(OnReceiveCallback callback);
     void setSendCallback(OnSendCallback callback);
     void setPeerEventCallback(OnPeerEventCallback callback);
     void setAckSuccessCallback(OnAckSuccessCallback callback);
     void setAckTimeoutCallback(OnAckTimeoutCallback callback);
+    void setOtaCommandCallback(OnOtaCommandCallback callback);
 
     size_t getPeerCount() const;
     const char *getLastError() const;
@@ -110,6 +111,7 @@ private:
     OnPeerEventCallback on_peer_event_;
     OnAckSuccessCallback on_ack_success_;
     OnAckTimeoutCallback on_ack_timeout_;
+    OnOtaCommandCallback on_ota_command_;
 
     AcknowledgmentManager ack_manager_;
 

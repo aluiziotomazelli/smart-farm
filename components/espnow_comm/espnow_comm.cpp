@@ -53,16 +53,7 @@ bool EspNowComm::init(const ESPNOWConfig &config)
 
     config_ = config;
 
-    ESP_LOGI(TAG, "Initializing ESP-NOW...");
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init_config_t wifi_init_cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&wifi_init_cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    esp_wifi_set_max_tx_power(84);
-
+    ESP_LOGI(TAG, "Initializing ESP-NOW service...");
     ESP_ERROR_CHECK(esp_now_init());
 
     ESP_ERROR_CHECK(esp_now_register_recv_cb(espNowRecvCb));
@@ -103,78 +94,12 @@ void EspNowComm::deinit()
     esp_now_unregister_send_cb();
     esp_now_deinit();
 
-    esp_wifi_stop();
-    esp_wifi_deinit();
-
     initialized_ = false;
     instance_    = nullptr;
 
     xSemaphoreGive(mutex_);
 
     ESP_LOGI(TAG, "ESP-NOW deinitialized");
-}
-
-void EspNowComm::pauseForOta()
-{
-    if (!initialized_)
-        return;
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    ESP_LOGI(TAG, "Pausing ESP-NOW for OTA");
-    stopDiscovery();
-    esp_now_deinit();
-    esp_wifi_stop();
-    initialized_ = false; // The component is no longer in an operational state
-    xSemaphoreGive(mutex_);
-}
-
-void EspNowComm::resumeAfterOta()
-{
-    if (initialized_)
-        return;
-
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-
-    ESP_LOGI(TAG, "Resuming ESP-NOW after OTA");
-
-    // Re-initialize WiFi and ESP-NOW
-    ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_now_init());
-
-    // Restore PMK if encryption is enabled
-    if (config_.enable_encryption) {
-        ESP_ERROR_CHECK(esp_now_set_pmk(config_.pmk.data()));
-    }
-
-    // Re-register callbacks
-    ESP_ERROR_CHECK(esp_now_register_recv_cb(espNowRecvCb));
-    ESP_ERROR_CHECK(esp_now_register_send_cb(espNowSendCb));
-
-    // Re-add peers
-    ESP_LOGI(TAG, "Re-adding %d peers...", peers_.size());
-    for (const auto &peer : peers_) {
-        esp_now_peer_info_t esp_peer = {};
-        memcpy(esp_peer.peer_addr, peer.mac_address.data(), ESP_NOW_ETH_ALEN);
-        esp_peer.channel = config_.wifi_channel;
-        esp_peer.ifidx   = WIFI_IF_STA;
-        esp_peer.encrypt = config_.enable_encryption;
-
-        if (esp_peer.encrypt) {
-            memcpy(esp_peer.lmk, config_.lmk.data(), ESP_NOW_KEY_LEN);
-        }
-
-        esp_err_t add_err = esp_now_add_peer(&esp_peer);
-        if (add_err == ESP_ERR_ESPNOW_EXIST) {
-            ESP_LOGW(TAG, "Peer " MACSTR " already exists, ignoring.",
-                     MAC2STR(peer.mac_address.data()));
-        }
-        else if (add_err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to re-add peer " MACSTR ", error: %s",
-                     MAC2STR(peer.mac_address.data()), esp_err_to_name(add_err));
-        }
-    }
-
-    initialized_ = true;
-    xSemaphoreGive(mutex_);
 }
 
 uint8_t EspNowComm::get_id() const
@@ -339,6 +264,7 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
 
     if (on_peer_event_) {
         on_peer_event_(new_peer, true);
+        ESP_LOGI(TAG, "Firing on_peer_event callback for node_id: %u", new_peer.node_id);
     }
 
     if (persistence_enabled_) {
@@ -424,14 +350,20 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
                                const uint8_t *data,
                                int len)
 {
-    if (len < sizeof(MessageHeader) + 1)
+    if (len < sizeof(MessageHeader) + 1) {
+        ESP_LOGW(TAG, "Packet too short for header.");
         return;
+    }
 
-    if (esp_rom_crc8_le(0, data, len - 1) != data[len - 1])
+    if (esp_rom_crc8_le(0, data, len - 1) != data[len - 1]) {
+        ESP_LOGE(TAG, "CRC check failed.");
         return;
+    }
 
     const MessageHeader *header = reinterpret_cast<const MessageHeader *>(data);
-    const uint8_t *mac          = recv_info->src_addr;
+    // ESP_LOGI(TAG, "Packet source_id: %u, type: 0x%02X", header->source_id,
+    //  (uint8_t)header->type);
+    const uint8_t *mac = recv_info->src_addr;
 
     xSemaphoreTake(mutex_, portMAX_DELAY);
 
@@ -474,6 +406,25 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
     }
     case MessageType::PAIR_RESPONSE:
         addPeerInternal(header->source_id, mac, 0, false);
+        break;
+
+    case MessageType::OTA:
+        if (on_ota_command_) {
+            const size_t expected_len = sizeof(MessageHeader) + sizeof(OtaCommand) + 1;
+            ESP_LOGD(TAG, "OTA message: received len=%d, expected len=%d", len,
+                     expected_len);
+            if (len == expected_len) {
+                const OtaCommand *command =
+                    reinterpret_cast<const OtaCommand *>(data + sizeof(MessageHeader));
+                on_ota_command_(header->source_id, *command);
+            }
+            else {
+                ESP_LOGW(TAG,
+                         "Received OTA command with incorrect size. Got %d, "
+                         "expected %d",
+                         len, expected_len);
+            }
+        }
         break;
     default:
         break;
@@ -752,6 +703,11 @@ void EspNowComm::setAckTimeoutCallback(OnAckTimeoutCallback callback)
     on_ack_timeout_ = callback;
 }
 
+void EspNowComm::setOtaCommandCallback(OnOtaCommandCallback callback)
+{
+    on_ota_command_ = callback;
+}
+
 size_t EspNowComm::getPeerCount() const
 {
     return peers_.size();
@@ -770,6 +726,53 @@ bool EspNowComm::startDiscovery(uint32_t timeout_ms)
     discovery_active_   = true;
     discovery_end_time_ = (esp_timer_get_time() / 1000) + timeout_ms;
     ESP_LOGI(TAG, "Discovery started for %u ms", timeout_ms);
+    return true;
+}
+
+bool EspNowComm::sendOtaCommand(uint8_t node_id, const OtaCommand &command)
+{
+    if (!initialized_) {
+        strncpy(last_error_, "Not initialized", sizeof(last_error_) - 1);
+        return false;
+    }
+
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    PeerInfo *peer = findPeerById(node_id);
+    if (!peer) {
+        xSemaphoreGive(mutex_);
+        snprintf(last_error_, sizeof(last_error_), "Peer %u not found", node_id);
+        return false;
+    }
+
+    MessageHeader header;
+    header.version   = 0x01;
+    header.type      = MessageType::OTA;
+    header.sequence  = ack_manager_.getNextSequence();
+    header.timestamp = esp_timer_get_time() / 1000;
+    header.source_id = node_id_;
+    header.dest_id   = node_id;
+    header.ttl       = 1;
+
+    uint8_t packet[sizeof(MessageHeader) + sizeof(OtaCommand) + 1];
+    size_t packet_len = 0;
+    memcpy(packet, &header, sizeof(header));
+    packet_len += sizeof(header);
+    memcpy(packet + packet_len, &command, sizeof(command));
+    packet_len += sizeof(command);
+    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
+    packet[packet_len] = crc;
+    packet_len++;
+
+    xSemaphoreGive(mutex_);
+
+    esp_err_t err = esp_now_send(peer->mac_address.data(), packet, packet_len);
+    if (err != ESP_OK) {
+        snprintf(last_error_, sizeof(last_error_), "OTA command send failed: %s",
+                 esp_err_to_name(err));
+        return false;
+    }
+
     return true;
 }
 
