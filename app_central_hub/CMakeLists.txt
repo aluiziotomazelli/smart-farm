@@ -5,9 +5,9 @@ set(PROJECT_NAME "central_hub")
 
 # Adiciona caminhos para componentes compartilhados
 list(APPEND EXTRA_COMPONENT_DIRS
-    ${CMAKE_CURRENT_LIST_DIR}/main
+    # ${CMAKE_CURRENT_LIST_DIR}/main
     ${CMAKE_CURRENT_LIST_DIR}/../components
-    ${CMAKE_CURRENT_LIST_DIR}/../managed_components
+    # ${CMAKE_CURRENT_LIST_DIR}/../managed_components
 )
 
 # Inclui o framework ESP-IDF

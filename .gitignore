@@ -16,7 +16,7 @@
 Thumbs.db
 
 # ESP-IDF specific
-#**/managed_components/
+**/managed_components/
 **/dependencies.lock
 **/flash_app_args
 **/flash_project_args

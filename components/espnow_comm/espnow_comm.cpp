@@ -404,19 +404,18 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
         bool should_pair              = false;
 
         // Regra: Hub aceita qualquer um.
-        if (node_type_ == common::NodeType::HUB) {
+        if (node_type_ == NodeType::HUB) {
             should_pair = true;
             ESP_LOGI(TAG, "Hub accepting pair request from node type %d",
                      (int)pair_header->node_type);
         }
         // Regra: Não-Hub só aceita Hub.
-        else if (pair_header->node_type == common::NodeType::HUB) {
+        else if (pair_header->node_type == NodeType::HUB) {
             should_pair = true;
             ESP_LOGI(TAG, "Device accepting pair request from Hub.");
         }
         else {
-            ESP_LOGW(TAG,
-                     "Device of type %d rejecting pair request from node type %d",
+            ESP_LOGW(TAG, "Device of type %d rejecting pair request from node type %d",
                      (int)node_type_, (int)pair_header->node_type);
         }
 

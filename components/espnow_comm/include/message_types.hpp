@@ -96,9 +96,9 @@ struct AckHeader : public MessageHeader
  */
 struct PairHeader : public MessageHeader
 {
-    char device_name[16];       ///< A human-readable name for the device.
-    common::NodeType node_type; ///< The type of the node sending the request.
-    uint8_t auth_token[8];      ///< An authentication token, if required.
+    char device_name[16];  ///< A human-readable name for the device.
+    NodeType node_type;    ///< The type of the node sending the request.
+    uint8_t auth_token[8]; ///< An authentication token, if required.
 };
 
 /**
@@ -180,8 +180,8 @@ struct PeerInfo
 struct ESPNOWConfig
 {
     // Identity parameters
-    uint8_t node_id;            ///< The unique ID of this node.
-    common::NodeType node_type; ///< The type of this node (e.g., HUB, SENSOR).
+    uint8_t node_id;    ///< The unique ID of this node.
+    NodeType node_type; ///< The type of this node (e.g., HUB, SENSOR).
 
     // Network parameters
     uint8_t wifi_channel;   ///< WiFi channel to operate on (1-13). 0 for current.
@@ -212,7 +212,7 @@ struct ESPNOWConfig
      */
     ESPNOWConfig()
         : node_id(0)
-        , node_type(common::NodeType::UNKNOWN)
+        , node_type(NodeType::UNKNOWN)
         , wifi_channel(0)
         , enable_long_range(false)
         , max_packet_size(250)

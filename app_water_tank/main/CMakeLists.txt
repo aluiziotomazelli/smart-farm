@@ -12,6 +12,6 @@ idf_component_register(
         core
         power_control
         espnow_comm
-        ota_manager
+        # ota_manager
         common_types
 )

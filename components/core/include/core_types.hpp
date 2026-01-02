@@ -1,8 +1,8 @@
 #pragma once
 
+#include "common_types.hpp"
 #include <stdbool.h>
 #include <stdint.h>
-#include "common_types.hpp"
 
 /* =========================
  *  Versão do schema
@@ -12,7 +12,6 @@ static constexpr uint32_t CORE_SCHEMA_VERSION = 1;
 /* =========================
  *  Identidade do nó
  * ========================= */
-using common::NodeType;
 
 /* =========================
  *  Perfil de energia

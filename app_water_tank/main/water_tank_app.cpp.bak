@@ -297,7 +297,7 @@ void WaterTankApp::init()
     // Initialize ESP-NOW communication
     ESPNOWConfig config;
     config.node_id            = core.node_id;
-    config.node_type          = NodeType::WATER_TANK;
+    config.node_type          = common::NodeType::WATER_TANK;
     config.wifi_channel       = 0;
     config.max_peers          = 10;
     config.ack_timeout        = 100;

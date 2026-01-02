@@ -3,14 +3,17 @@ idf_component_register(
         "espnow_comm.cpp"
         "acknowledgment_manager.cpp"
         "persistence.cpp"
+    
     INCLUDE_DIRS
         "include"
-       REQUIRES
+    
+    REQUIRES
         esp_wifi
         esp_timer
         nvs_flash
         driver
         common_types
+    
     PRIV_REQUIRES
         esp_common
 )

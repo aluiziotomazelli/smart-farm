@@ -102,7 +102,7 @@ private:
 
     ESPNOWConfig config_;
     uint8_t node_id_;
-    common::NodeType node_type_;
+    NodeType node_type_;
     std::vector<PeerInfo> peers_;
     bool initialized_;
     bool persistence_enabled_;
