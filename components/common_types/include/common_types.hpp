@@ -1,35 +1,47 @@
 #pragma once
 
 #include <cstdint>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
-/* =========================================================
- * System Event Group (singleton)
- * ========================================================= */
-extern EventGroupHandle_t sys_events;
+#include "esp_event.h"
 
-/* =========================================================
- * Event bits – SEMÂNTICA FIXA
- * ========================================================= */
+/* Bases */
+ESP_EVENT_DECLARE_BASE(APP_WIFI_EVENT);
+ESP_EVENT_DECLARE_BASE(APP_ESPNOW_EVENT);
+ESP_EVENT_DECLARE_BASE(APP_OTA_EVENT);
 
-/* ----- Requests (edge-triggered) ----- */
-constexpr EventBits_t REQ_OTA_START = BIT0;
-constexpr EventBits_t REQ_OTA_ABORT = BIT1;
+enum
+{
+    WIFI_CMD_START,
+    WIFI_CMD_CONNECT,
+    WIFI_CMD_DISCONNECT,
+    WIFI_CMD_STOP,
 
-/* ----- ESPNOW lifecycle ----- */
-constexpr EventBits_t ESPNOW_ACTIVE  = BIT2;
-constexpr EventBits_t ESPNOW_STOPPED = BIT3;
+    WIFI_EVT_INITIALIZED,
+    WIFI_EVT_STARTED,
+    WIFI_EVT_STOPPED,
+    WIFI_EVT_CONNECTED,
+    WIFI_EVT_GOT_IP,
+    WIFI_EVT_DISCONNECTED,
+};
 
-/* ----- Wi-Fi lifecycle ----- */
-constexpr EventBits_t WIFI_STA_ACTIVE = BIT4;
-constexpr EventBits_t WIFI_GOT_IP     = BIT5;
-constexpr EventBits_t WIFI_STOPPED    = BIT6;
+enum
+{
+    ESPNOW_CMD_START,
+    ESPNOW_CMD_STOP,
 
-/* ----- OTA lifecycle ----- */
-constexpr EventBits_t OTA_IN_PROGRESS = BIT7;
-constexpr EventBits_t OTA_FAILED      = BIT8;
-constexpr EventBits_t OTA_FINISHED    = BIT9;
+    ESPNOW_EVT_STARTED,
+    ESPNOW_EVT_STOPPED,
+};
+
+enum
+{
+    OTA_CMD_START,
+    OTA_CMD_STOP,
+
+    OTA_EVT_STARTED,
+    OTA_EVT_FAILED,
+    OTA_EVT_FINISHED,
+};
 
 enum class NodeType : uint8_t
 {

@@ -13,5 +13,3 @@ uint8_t generate_node_id()
 }
 
 } // namespace common
-
-xEventGroup_t event_group;

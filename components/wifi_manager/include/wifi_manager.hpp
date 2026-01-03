@@ -1,107 +1,137 @@
 #pragma once
 
-#include "esp_err.h"
-#include <cstdint>
-#include <string>
+#include "esp_event.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 /**
- * @class WiFiManager
- * @brief A singleton component to manage the ESP32's Wi-Fi lifecycle.
+ * @class WifiManager
+ * @brief Manages WiFi connectivity for ESP32 applications
  *
- * This class handles the low-level initialization, starting/stopping of the Wi-Fi radio,
- * connecting to an access point, and managing credentials in NVS. It ensures that
- * initialization routines that should only run once are properly handled.
+ * This class provides an abstraction layer for initializing and managing
+ * WiFi connections on ESP32 devices. It handles connection events,
+ * IP address acquisition, and provides a task-based architecture for
+ * asynchronous WiFi management.
  */
-class WiFiManager
+class WifiManager
 {
 public:
     /**
-     * @brief Get the singleton instance of the WiFiManager.
-     * @return A pointer to the WiFiManager instance.
+     * @brief Get the singleton instance of WifiManager
+     *
+     * Provides access to the single, globally available instance
+     * of the WifiManager class. Implements the singleton pattern
+     * to ensure only one WiFi manager exists in the application.
+     *
+     * @return WifiManager& Reference to the singleton instance
+     *
+     * @note The first call to this function will construct the instance.
+     *       Subsequent calls will return the same instance.
+     * @warning This is not thread-safe on first initialization.
+     *          Consider calling this early in the main thread if
+     *          multi-threaded access is possible during startup.
      */
-    static WiFiManager *getInstance();
-
-    // Delete copy constructor and assignment operator for singleton pattern.
-    WiFiManager(const WiFiManager &)            = delete;
-    WiFiManager &operator=(const WiFiManager &) = delete;
+    static WifiManager &instance();
 
     /**
-     * @brief Performs one-time initialization of the underlying network stack.
-     * This includes esp_netif_init, esp_event_loop_create_default, and esp_wifi_init.
-     * This method is safe to call multiple times.
-     * @return ESP_OK on success, or an error code from the underlying ESP-IDF functions.
+     * @brief Initialize the WiFi manager
+     *
+     * Sets up necessary data structures and prepares the WiFi manager
+     * for operation. Must be called before start().
+     *
+     * @return esp_err_t ESP_OK on success, error code on failure
+     *
+     * @note This function does not actually start WiFi connection,
+     *       use start() after successful initialization.
      */
     esp_err_t init();
 
     /**
-     * @brief Starts the Wi-Fi driver and radio.
-     * Must be called after init().
-     * @return ESP_OK on success, or an error code from esp_wifi_start.
+     * @brief Start the WiFi manager
+     *
+     * Creates the WiFi management task and begins the connection process.
+     * The WiFi manager will attempt to connect to configured networks
+     * and handle connection events asynchronously.
+     *
+     * @pre init() must be called successfully before calling this function
      */
-    esp_err_t start();
-
-    /**
-     * @brief Stops the Wi-Fi driver and radio.
-     * @return ESP_OK on success, or an error code from esp_wifi_stop.
-     */
-    esp_err_t stop();
-
-    /**
-     * @brief Connects to a Wi-Fi access point with the given credentials.
-     * The Wi-Fi driver must be started before calling this method.
-     * @param ssid The SSID of the access point.
-     * @param password The password for the access point.
-     * @param timeout_ms Timeout in milliseconds to wait for an IP address.
-     * @return ESP_OK on successful connection, ESP_ERR_TIMEOUT on timeout, or another error code on failure.
-     */
-    esp_err_t connect(const std::string &ssid,
-                      const std::string &password,
-                      uint32_t timeout_ms = 15000);
-
-    /**
-     * @brief Disconnects from the currently connected Wi-Fi access point.
-     * @return ESP_OK on success, or an error code from esp_wifi_disconnect.
-     */
-    esp_err_t disconnect();
-
-    /**
-     * @brief Stores Wi-Fi credentials in NVS.
-     * @param ssid The SSID to store.
-     * @param password The password to store.
-     * @return ESP_OK on success, or an NVS error code on failure.
-     */
-    esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
-
-    /**
-     * @brief Loads Wi-Fi credentials from NVS.
-     * @param[out] ssid The loaded SSID.
-     * @param[out] password The loaded password.
-     * @return ESP_OK on success, or an NVS error code if not found or on failure.
-     */
-    esp_err_t loadCredentials(std::string &ssid, std::string &password);
-
-    /**
-     * @brief Checks if any credentials are stored in NVS.
-     * @return True if credentials exist, false otherwise.
-     */
-    bool hasCredentials();
+    void start();
 
 private:
-    WiFiManager();
-    ~WiFiManager();
+    /**
+     * @brief Default constructor (private for singleton pattern)
+     *
+     * The constructor is private and defaulted to enforce the singleton
+     * pattern. This ensures that the class can only be instantiated
+     * through the instance() method, preventing multiple instances.
+     *
+     * The default constructor initializes all member variables to
+     * their default values (nullptr for pointers/Handles).
+     *
+     * @note Using `= default` allows the compiler to generate the
+     *       trivial constructor while keeping it private.
+     */
+    WifiManager() = default;
 
-    bool waitForIp(uint32_t timeout_ms);
+    /**
+     * @brief WiFi management task function
+     *
+     * Static task function that handles WiFi connection management.
+     * This task runs independently and processes WiFi commands and events.
+     *
+     * @param arg Pointer to WifiManager instance (passed as this pointer)
+     */
+    static void task(void *arg);
 
-    // Singleton instance
-    static WiFiManager *instance_;
-    static SemaphoreHandle_t instance_mutex_;
+    /**
+     * @brief WiFi command event handler
+     *
+     * Handles WiFi command events such as connection requests,
+     * disconnection requests, and other WiFi control commands.
+     *
+     * @param arg User argument (typically WifiManager instance)
+     * @param base Event base identifier
+     * @param id Event ID
+     * @param data Event-specific data
+     */
+    static void cmd_event_handler(void *arg,
+                                  esp_event_base_t base,
+                                  int32_t id,
+                                  void *data);
 
-    // State flags
-    bool initialized_;
-    bool started_;
-    bool connected_;
+    /**
+     * @brief IP event handler
+     *
+     * Handles IP-related events including IP address acquisition,
+     * DHCP events, and network interface changes.
+     *
+     * @param arg User argument (typically WifiManager instance)
+     * @param base Event base identifier
+     * @param id Event ID
+     * @param data Event-specific data
+     */
+    static void ip_event_handler(void *arg,
+                                 esp_event_base_t base,
+                                 int32_t id,
+                                 void *data);
 
-    static const char *TAG;
+    /**
+     * @brief General WiFi event handler
+     *
+     * Handles general WiFi events including connection status changes,
+     * authentication events, and scan results.
+     *
+     * @param arg User argument (typically WifiManager instance)
+     * @param base Event base identifier
+     * @param id Event ID
+     * @param data Event-specific data
+     */
+    static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data);
+
+    TaskHandle_t task_handle_{nullptr};     /**< Handle to the WiFi management task */
+    QueueHandle_t cmd_queue_{nullptr};      /**< Queue for WiFi command messages */
+    SemaphoreHandle_t init_mutex_{nullptr}; /**< Mutex for thread-safe initialization */
+    bool initialized_{false};               /**< Flag indicating initialization status */
 };
