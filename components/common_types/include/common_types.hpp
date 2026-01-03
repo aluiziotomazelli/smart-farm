@@ -1,6 +1,35 @@
 #pragma once
 
 #include <cstdint>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+/* =========================================================
+ * System Event Group (singleton)
+ * ========================================================= */
+extern EventGroupHandle_t sys_events;
+
+/* =========================================================
+ * Event bits – SEMÂNTICA FIXA
+ * ========================================================= */
+
+/* ----- Requests (edge-triggered) ----- */
+constexpr EventBits_t REQ_OTA_START = BIT0;
+constexpr EventBits_t REQ_OTA_ABORT = BIT1;
+
+/* ----- ESPNOW lifecycle ----- */
+constexpr EventBits_t ESPNOW_ACTIVE  = BIT2;
+constexpr EventBits_t ESPNOW_STOPPED = BIT3;
+
+/* ----- Wi-Fi lifecycle ----- */
+constexpr EventBits_t WIFI_STA_ACTIVE = BIT4;
+constexpr EventBits_t WIFI_GOT_IP     = BIT5;
+constexpr EventBits_t WIFI_STOPPED    = BIT6;
+
+/* ----- OTA lifecycle ----- */
+constexpr EventBits_t OTA_IN_PROGRESS = BIT7;
+constexpr EventBits_t OTA_FAILED      = BIT8;
+constexpr EventBits_t OTA_FINISHED    = BIT9;
 
 enum class NodeType : uint8_t
 {
@@ -10,6 +39,7 @@ enum class NodeType : uint8_t
     LOAD_CONTROLLER,
     WEATHER,
     HUB,
+
 };
 
 /**

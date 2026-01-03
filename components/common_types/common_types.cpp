@@ -1,8 +1,9 @@
 #include "common_types.hpp"
 #include "esp_mac.h"
 
-namespace common
-{
+EventGroupHandle_t sys_events = nullptr;
+
+namespace common {
 
 uint8_t generate_node_id()
 {
@@ -12,3 +13,5 @@ uint8_t generate_node_id()
 }
 
 } // namespace common
+
+xEventGroup_t event_group;
