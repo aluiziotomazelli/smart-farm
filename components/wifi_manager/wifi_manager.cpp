@@ -1,245 +1,138 @@
 #include "wifi_manager.hpp"
-#include "common_types.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
-
-#include "esp_check.h"
-#include "esp_err.h"
 #include "esp_wifi.h"
+#include "nvs_flash.h"
 #include <cstring>
 
-const char *TAG = "WifiManager";
+static const char *TAG = "WiFiManager";
 
-// Internal WiFi command queue commands
-enum class WifiCmd : uint8_t
+WiFiManager::WiFiManager()
+    : initialized_(false)
+    , started_(false)
+    , connected_(false)
 {
-    START,
-    CONNECT,
-    DISCONNECT,
-    STOP,
-};
-
-// Singleton implementation - Meyer's pattern (thread-safe in C++11+)
-WifiManager &WifiManager::instance()
-{
-    static WifiManager inst;
-    return inst;
+    state_mutex_ = xSemaphoreCreateMutex();
+    if (state_mutex_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create state mutex");
+    }
+    ip_got_sem_ = xSemaphoreCreateBinary();
+    if (ip_got_sem_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create IP semaphore");
+    }
+    else {
+        xSemaphoreTake(ip_got_sem_, 0);
+    }
 }
 
-// Initialize WiFi stack and event system
-esp_err_t WifiManager::init()
+WiFiManager::~WiFiManager()
 {
-    // ⚡ THREAD SAFETY: Create mutex first to protect initialization
-    init_mutex_ = xSemaphoreCreateMutex();
-    if (init_mutex_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to create mutex");
-        return ESP_ERR_NO_MEM;
+    if (state_mutex_ != nullptr) {
+        vSemaphoreDelete(state_mutex_);
     }
-
-    // Acquire mutex to prevent concurrent initialization
-    if (xSemaphoreTake(init_mutex_, portMAX_DELAY) != pdTRUE) {
-        return ESP_FAIL;
+    if (ip_got_sem_ != nullptr) {
+        vSemaphoreDelete(ip_got_sem_);
     }
+}
 
-    // Check if already initialized (idempotent operation)
+WiFiManager &WiFiManager::instance()
+{
+    static WiFiManager instance;
+    return instance;
+}
+
+esp_err_t WiFiManager::init()
+{
     if (initialized_) {
-        xSemaphoreGive(init_mutex_);
-        ESP_LOGW(TAG, "Already initialized");
+        ESP_LOGI(TAG, "Already initialized.");
         return ESP_OK;
     }
-
     ESP_LOGI(TAG, "Initializing network stack...");
+    esp_err_t err = esp_netif_init();
+    if (err != ESP_OK)
+        return err;
 
-    // Initialize network stack
-    ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "Failed to initialize TCP/IP stack");
-    ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG,
-                        "Failed to create event loop");
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK)
+        return err;
+
     if (esp_netif_create_default_wifi_sta() == nullptr) {
-        xSemaphoreGive(init_mutex_); // Remember to release mutex on error!
         return ESP_FAIL;
     }
 
-    // Register event handlers
-    ESP_RETURN_ON_ERROR(esp_event_handler_register(APP_WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                   &WifiManager::cmd_event_handler, this),
-                        TAG, "Failed to register event handler");
-    ESP_RETURN_ON_ERROR(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                   &WifiManager::event_handler, this),
-                        TAG, "Failed to register event handler");
-    ESP_RETURN_ON_ERROR(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                                   ip_event_handler, nullptr),
-                        TAG, "Failed to register IP event handler");
-
-    // Initialize WiFi with default config
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "Failed to initialize WiFi stack");
+    err                    = esp_wifi_init(&cfg);
+    if (err != ESP_OK)
+        return err;
 
-    // Create command queue (critical resource for task communication)
-    cmd_queue_ = xQueueCreate(8, sizeof(WifiCmd));
-    if (cmd_queue_ == nullptr) {
-        xSemaphoreGive(init_mutex_);
-        return ESP_ERR_NO_MEM;
+    err = esp_event_handler_instance_register(
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiManager::wifiEventHandler, this, nullptr);
+    if (err == ESP_OK) {
+        err = esp_event_handler_instance_register(
+            IP_EVENT, IP_EVENT_STA_GOT_IP, &WiFiManager::ipEventHandler, this, nullptr);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register event handlers");
+        return err;
     }
 
     initialized_ = true;
-    xSemaphoreGive(init_mutex_); // Release mutex after successful initialization
-    ESP_LOGI(TAG, "WiFi stack initialized");
     return ESP_OK;
 }
 
-// Start WiFi manager task
-void WifiManager::start()
-{
-    // Pre-check: Ensure init() was called first
-    if (!initialized_) {
-        ESP_LOGE(TAG, "WiFi not initialized. Call init() first.");
-        return;
-    }
-
-    // Try to acquire mutex with timeout (avoid deadlock)
-    if (xSemaphoreTake(init_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
-        ESP_LOGE(TAG, "Could not acquire mutex");
-        return;
-    }
-
-    // Check if task is already running (prevent duplicate tasks)
-    if (task_handle_ != nullptr) {
-        ESP_LOGW(TAG, "WiFi task already running");
-        xSemaphoreGive(init_mutex_);
-        return;
-    }
-
-    // Create FreeRTOS task for WiFi management
-    BaseType_t result =
-        xTaskCreate(&WifiManager::task, "wifi_manager", 4096, this, 5, &task_handle_);
-
-    if (result != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create WiFi task");
-        task_handle_ = nullptr;
-    }
-    else {
-        ESP_LOGI(TAG, "WiFi task started (ID: %p)", task_handle_);
-    }
-
-    xSemaphoreGive(init_mutex_); // Always release mutex
-}
-
-// Handle WiFi events and translate to app events
-void WifiManager::event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
-{
-    // Translate ESP-IDF WiFi events to application-specific events
-    switch (id) {
-    case WIFI_EVENT_STA_START:
-        esp_event_post(APP_WIFI_EVENT, WIFI_EVT_STARTED, nullptr, 0, portMAX_DELAY);
-        ESP_LOGI(TAG, "WiFi started");
-        break;
-    case WIFI_EVENT_STA_CONNECTED:
-        esp_event_post(APP_WIFI_EVENT, WIFI_EVT_CONNECTED, nullptr, 0, portMAX_DELAY);
-        ESP_LOGI(TAG, "WiFi connected");
-        break;
-    case WIFI_EVENT_STA_DISCONNECTED:
-        esp_event_post(APP_WIFI_EVENT, WIFI_EVT_DISCONNECTED, nullptr, 0, portMAX_DELAY);
-        ESP_LOGI(TAG, "WiFi disconnected");
-        break;
-    case WIFI_EVENT_STA_STOP:
-        esp_event_post(APP_WIFI_EVENT, WIFI_EVT_STOPPED, nullptr, 0, portMAX_DELAY);
-        ESP_LOGI(TAG, "WiFi stopped");
-        break;
-    default:
-        break;
-    }
-}
-
-// Convert app commands to internal queue commands
-void WifiManager::cmd_event_handler(void *arg,
-                                    esp_event_base_t base,
-                                    int32_t id,
-                                    void *data)
-{
-    auto *self = static_cast<WifiManager *>(arg);
-
-    // SAFETY CHECK: Verify queue exists before using it
-    if (self->cmd_queue_ == nullptr) {
-        ESP_LOGW(TAG, "Command queue not initialized");
-        return;
-    }
-
-    WifiCmd cmd;
-
-    // Map application commands to internal commands
-    switch (id) {
-    case WIFI_CMD_START:
-        cmd = WifiCmd::START;
-        break;
-    case WIFI_CMD_CONNECT:
-        cmd = WifiCmd::CONNECT;
-        break;
-    case WIFI_CMD_DISCONNECT:
-        cmd = WifiCmd::DISCONNECT;
-        break;
-    case WIFI_CMD_STOP:
-        cmd = WifiCmd::STOP;
-        break;
-    default:
-        return; // Unknown command (silently ignore)
-    }
-
-    // Send command to task via queue (thread-safe communication)
-    xQueueSend(self->cmd_queue_, &cmd, portMAX_DELAY);
-}
-
-// WiFi management task - processes commands from queue
-void WifiManager::task(void *arg)
-{
-    auto *self = static_cast<WifiManager *>(arg);
-
-    // CRITICAL: Check if queue was created before using it
-    // This prevents crashes if task starts before init() completes
-    if (self->cmd_queue_ == nullptr) {
-        ESP_LOGE(TAG, "Task started before queue creation");
-        vTaskDelete(nullptr); // Self-destruct if queue doesn't exist
-        return;
-    }
-
-    WifiCmd cmd;
-
-    // Main task loop - runs forever (or until deleted)
-    while (true) {
-        // Block indefinitely waiting for commands (0% CPU when idle)
-        if (xQueueReceive(self->cmd_queue_, &cmd, portMAX_DELAY)) {
-            // Execute WiFi commands based on queue message
-            switch (cmd) {
-            case WifiCmd::START:
-                esp_wifi_set_mode(WIFI_MODE_STA);
-                esp_wifi_start();
-                break;
-            case WifiCmd::CONNECT:
-                esp_wifi_connect();
-                break;
-            case WifiCmd::DISCONNECT:
-                esp_wifi_disconnect();
-                break;
-            case WifiCmd::STOP:
-                esp_wifi_stop();
-                break;
-            default:
-                break;
-            }
-        }
-        // Note: No timeout used - task sleeps indefinitely when queue empty
-        // Consider adding timeout for periodic maintenance/heartbeat
-    }
-}
-
-// Handle IP events (when station gets IP)
-void WifiManager::ip_event_handler(void *arg,
+void WiFiManager::wifiEventHandler(void *arg,
                                    esp_event_base_t base,
                                    int32_t id,
                                    void *data)
 {
-    if (id == IP_EVENT_STA_GOT_IP) {
-        // Extract and log IP information from event data
+    WiFiManager *self = static_cast<WiFiManager *>(arg);
+
+    if (self->state_mutex_ == nullptr) {
+        return; // Mutex não criado ainda
+    }
+
+    if (xSemaphoreTake(self->state_mutex_, portMAX_DELAY) != pdTRUE) {
+        return; // Não conseguiu pegar mutex
+    }
+
+    switch (id) {
+    case WIFI_EVENT_STA_START:
+        self->started_ = true;
+        ESP_LOGI(TAG, "WiFi started (event)");
+        break;
+
+    case WIFI_EVENT_STA_CONNECTED:
+        self->connected_ = true;
+        ESP_LOGI(TAG, "WiFi connected (event)");
+        break;
+
+    case WIFI_EVENT_STA_DISCONNECTED:
+        self->connected_ = false;
+        ESP_LOGI(TAG, "WiFi disconnected (event)");
+        // Limpar semáforo de IP (se estava esperando)
+        xSemaphoreTake(self->ip_got_sem_, 0);
+        break;
+
+    case WIFI_EVENT_STA_STOP:
+        self->started_   = false;
+        self->connected_ = false;
+        ESP_LOGI(TAG, "WiFi stopped (event)");
+        xSemaphoreTake(self->ip_got_sem_, 0); // Limpar semáforo
+        break;
+
+    default:
+        break;
+    }
+
+    xSemaphoreGive(self->state_mutex_);
+}
+
+void WiFiManager::ipEventHandler(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    WiFiManager *self = static_cast<WiFiManager *>(arg);
+
+    if (id == IP_EVENT_STA_GOT_IP && self->ip_got_sem_ != nullptr) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         char ip_str[16];
 
@@ -251,7 +144,255 @@ void WifiManager::ip_event_handler(void *arg,
         esp_ip4addr_ntoa(&event->ip_info.gw, ip_str, sizeof(ip_str));
         ESP_LOGI(TAG, "Gateway: %s", ip_str);
 
-        // Notify application that IP was acquired
-        esp_event_post(APP_WIFI_EVENT, WIFI_EVT_GOT_IP, nullptr, 0, portMAX_DELAY);
+        xSemaphoreGive(self->ip_got_sem_); // Sinaliza que tem IP
     }
+}
+
+esp_err_t WiFiManager::start()
+{
+    if (!initialized_) {
+        ESP_LOGE(TAG, "Must call init() before start().");
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool already_started = started_;
+    xSemaphoreGive(state_mutex_);
+    if (already_started) {
+        ESP_LOGI(TAG, "Already started.");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Starting Wi-Fi...");
+    esp_err_t err = (esp_wifi_set_mode(WIFI_MODE_STA));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set mode: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    TickType_t start = xTaskGetTickCount();
+    while (xTaskGetTickCount() - start < pdMS_TO_TICKS(5000)) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        bool started_received = started_;
+        xSemaphoreGive(state_mutex_);
+        if (started_received) {
+            ESP_LOGI(TAG, "WiFi confirmed started");
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    ESP_LOGW(TAG, "WiFi start command sent, but no START event received");
+    return ESP_OK;
+}
+
+esp_err_t WiFiManager::stop()
+{
+    ESP_LOGI(TAG, "Stopping Wi-Fi...");
+
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool already_stopped = !started_;
+    xSemaphoreGive(state_mutex_);
+    if (already_stopped) {
+        ESP_LOGI(TAG, "Already stopped.");
+        return ESP_OK;
+    }
+
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    TickType_t start = xTaskGetTickCount();
+    while (xTaskGetTickCount() - start < pdMS_TO_TICKS(5000)) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        bool stopped_received = !started_;
+        xSemaphoreGive(state_mutex_);
+        if (stopped_received) {
+            ESP_LOGI(TAG, "WiFi confirmed stopped");
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    ESP_LOGW(TAG, "WiFi stop command sent, but no STOP event received");
+    return ESP_OK;
+}
+
+esp_err_t WiFiManager::connect(const std::string &ssid,
+                               const std::string &password,
+                               uint32_t timeout_ms)
+{
+    ESP_LOGI(TAG, "Connecting Wi-Fi...");
+
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool not_started       = !started_;
+    bool already_connected = connected_;
+    xSemaphoreGive(state_mutex_);
+    if (not_started) {
+        ESP_LOGI(TAG, "Must call start() before connect().");
+        return ESP_OK;
+    }
+    if (already_connected) {
+        ESP_LOGI(TAG, "Already connected, disconnecting first...");
+        esp_err_t err = disconnect();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to disconnect: %s", esp_err_to_name(err));
+            return err;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    ESP_LOGI(TAG, "Connecting to SSID: %s", ssid.c_str());
+
+    wifi_config_t wifi_config = {};
+    strncpy((char *)wifi_config.sta.ssid, ssid.c_str(), sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, password.c_str(),
+            sizeof(wifi_config.sta.password) - 1);
+
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_config() failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (ip_got_sem_ != nullptr) {
+        xSemaphoreTake(ip_got_sem_, 0);
+    }
+    err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_connect() failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (waitForIp(timeout_ms)) {
+        return ESP_OK;
+    }
+
+    ESP_LOGE(TAG, "Failed to connect after %lu ms.", timeout_ms);
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t WiFiManager::disconnect()
+{
+    ESP_LOGI(TAG, "Disconnecting Wi-Fi...");
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool already_disconnected = !connected_;
+    xSemaphoreGive(state_mutex_);
+    if (already_disconnected) {
+        ESP_LOGI(TAG, "Already disconnected.");
+        return ESP_OK;
+    }
+
+    esp_err_t err = esp_wifi_disconnect();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    TickType_t start = xTaskGetTickCount();
+    while (xTaskGetTickCount() - start < pdMS_TO_TICKS(5000)) {
+        xSemaphoreTake(state_mutex_, portMAX_DELAY);
+        bool disconnected_received = !connected_;
+        xSemaphoreGive(state_mutex_);
+        if (disconnected_received) {
+            ESP_LOGI(TAG, "WiFi confirmed stopped");
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    ESP_LOGW(TAG, "WiFi stop command sent, but no STOP event received");
+    return ESP_OK;
+}
+
+bool WiFiManager::waitForIp(uint32_t timeout_ms)
+{
+    if (ip_got_sem_ == nullptr) {
+        return false;
+    }
+
+    // Aguardar semáforo (IP_EVENT_STA_GOT_IP dará xSemaphoreGive)
+    bool got_ip = (xSemaphoreTake(ip_got_sem_, pdMS_TO_TICKS(timeout_ms)) == pdTRUE);
+
+    // Se não conseguiu IP em timeout_ms, limpa semáforo
+    if (got_ip) {
+        ESP_LOGI(TAG, "Got IP confirmed");
+    }
+    else {
+        ESP_LOGW(TAG, "IP timeout after %lu ms", timeout_ms);
+        xSemaphoreTake(ip_got_sem_, 0);
+    }
+
+    return got_ip;
+}
+
+esp_err_t WiFiManager::storeCredentials(const std::string &ssid,
+                                        const std::string &password)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open("wifi_manager", NVS_READWRITE, &h);
+    if (err != ESP_OK)
+        return err;
+
+    err = nvs_set_str(h, "ssid", ssid.c_str());
+    if (err == ESP_OK) {
+        err = nvs_set_str(h, "pass", password.c_str());
+    }
+
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t WiFiManager::loadCredentials(std::string &ssid, std::string &password)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open("wifi_manager", NVS_READONLY, &h);
+    if (err != ESP_OK)
+        return err;
+
+    char ssid_buf[32] = {0};
+    char pass_buf[64] = {0};
+    size_t ssid_len   = sizeof(ssid_buf);
+    size_t pass_len   = sizeof(pass_buf);
+
+    err = nvs_get_str(h, "ssid", ssid_buf, &ssid_len);
+    if (err == ESP_OK) {
+        err = nvs_get_str(h, "pass", pass_buf, &pass_len);
+    }
+    nvs_close(h);
+
+    if (err == ESP_OK) {
+        ssid     = ssid_buf;
+        password = pass_buf;
+    }
+    return err;
+}
+
+bool WiFiManager::hasCredentials()
+{
+    std::string ssid, pass;
+    return loadCredentials(ssid, pass) == ESP_OK && !ssid.empty();
+}
+
+bool WiFiManager::isConnected() const
+{
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool connected = connected_;
+    xSemaphoreGive(state_mutex_);
+    return connected;
+}
+
+bool WiFiManager::isStarted() const
+{
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    bool started = started_;
+    xSemaphoreGive(state_mutex_);
+    return started;
 }

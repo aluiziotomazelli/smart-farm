@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "esp_event.h"
 #include <cstdint>
 #include <string>
 #include "freertos/FreeRTOS.h"
@@ -9,34 +10,66 @@
 class OtaManager
 {
 public:
-    // Singleton
-    static OtaManager *getInstance();
+    // Singleton with reference (safer, cleaner syntax)
+    static OtaManager &instance();
 
     // Prevent copying
     OtaManager(const OtaManager &)            = delete;
     OtaManager &operator=(const OtaManager &) = delete;
 
-    // OTA
-    esp_err_t performOta(const std::string &url);
-    esp_err_t performOtaWithMdns(const std::string &hostname);
+    // Initialize OTA manager and register event handler
+    esp_err_t init();
 
-    // Configuração
+    // OTA operations
+    esp_err_t startOta(const std::string &url);
+    esp_err_t startOtaWithMdns(const std::string &hostname);
+
+    // Status queries (thread-safe)
+    bool isOtaInProgress() const;
+
+    // Configuration
     void setDeviceType(const std::string &device_type);
     std::string getDeviceType() const;
+
+    // Cleanup (optional, for completeness)
+    void deinit();
 
 private:
     OtaManager();
     ~OtaManager();
 
-    // Singleton
-    static OtaManager *instance_;
-    static SemaphoreHandle_t instance_mutex_;
+    // Task parameters structure (passed to task, dynamically allocated)
+    struct OtaTaskParams
+    {
+        std::string url;
+        bool use_mdns;
+        OtaManager *manager;
 
-    // Estado
-    std::string device_type_;
+        OtaTaskParams(const std::string &u, bool mdns, OtaManager *m)
+            : url(u)
+            , use_mdns(mdns)
+            , manager(m)
+        {
+        }
+    };
 
-    // Helpers internos
+    // Internal helpers
+    esp_err_t startOtaFromEvent(const std::string &url_or_hostname, bool use_mdns);
     esp_err_t resolveServerMdns(const std::string &hostname, std::string &url);
+    void cleanupOtaTask(OtaTaskParams *params);
+    esp_err_t performOtaDownload(const std::string &url);
 
-    static const char *TAG;
+    // Task function (created on demand)
+    static void otaTask(void *pvParameters);
+
+    // Event handler (static)
+    static void eventHandler(void *arg, esp_event_base_t base, int32_t id, void *data);
+
+    // State management (thread-safe)
+    void setOtaInProgress(bool in_progress);
+
+    // Internal state
+    std::string device_type_;
+    SemaphoreHandle_t state_mutex_;
+    bool ota_in_progress_;
 };

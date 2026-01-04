@@ -1,137 +1,156 @@
 #pragma once
 
+#include "esp_err.h"
 #include "esp_event.h"
+#include <cstdint>
+#include <string>
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
 
 /**
- * @class WifiManager
- * @brief Manages WiFi connectivity for ESP32 applications
+ * @class WiFiManager
+ * @brief Singleton class for managing WiFi connections on ESP32.
  *
- * This class provides an abstraction layer for initializing and managing
- * WiFi connections on ESP32 devices. It handles connection events,
- * IP address acquisition, and provides a task-based architecture for
- * asynchronous WiFi management.
+ * This class provides a synchronous interface for WiFi operations while
+ * internally using event-driven architecture for state management.
+ * It handles connection, disconnection, and credential storage.
  */
-class WifiManager
+class WiFiManager
 {
 public:
     /**
-     * @brief Get the singleton instance of WifiManager
-     *
-     * Provides access to the single, globally available instance
-     * of the WifiManager class. Implements the singleton pattern
-     * to ensure only one WiFi manager exists in the application.
-     *
-     * @return WifiManager& Reference to the singleton instance
-     *
-     * @note The first call to this function will construct the instance.
-     *       Subsequent calls will return the same instance.
-     * @warning This is not thread-safe on first initialization.
-     *          Consider calling this early in the main thread if
-     *          multi-threaded access is possible during startup.
+     * @brief Get the singleton instance of WiFiManager.
+     * @return Reference to the WiFiManager instance.
      */
-    static WifiManager &instance();
+    static WiFiManager &instance();
+
+    // Prevent copying and assignment
+    WiFiManager(const WiFiManager &)            = delete;
+    WiFiManager &operator=(const WiFiManager &) = delete;
 
     /**
-     * @brief Initialize the WiFi manager
-     *
-     * Sets up necessary data structures and prepares the WiFi manager
-     * for operation. Must be called before start().
-     *
-     * @return esp_err_t ESP_OK on success, error code on failure
-     *
-     * @note This function does not actually start WiFi connection,
-     *       use start() after successful initialization.
+     * @brief Initialize the WiFi stack and event handlers.
+     * @return ESP_OK on success, error code on failure.
      */
     esp_err_t init();
 
     /**
-     * @brief Start the WiFi manager
-     *
-     * Creates the WiFi management task and begins the connection process.
-     * The WiFi manager will attempt to connect to configured networks
-     * and handle connection events asynchronously.
-     *
-     * @pre init() must be called successfully before calling this function
+     * @brief Start the WiFi station mode.
+     * @return ESP_OK on success, error code on failure.
+     * @note Waits for WIFI_EVENT_STA_START event confirmation.
      */
-    void start();
+    esp_err_t start();
+
+    /**
+     * @brief Stop the WiFi station mode.
+     * @return ESP_OK on success, error code on failure.
+     * @note Waits for WIFI_EVENT_STA_STOP event confirmation.
+     */
+    esp_err_t stop();
+
+    /**
+     * @brief Connect to a WiFi network.
+     * @param ssid The network SSID.
+     * @param password The network password.
+     * @param timeout_ms Maximum time to wait for connection (default: 15000ms).
+     * @return ESP_OK on success, error code on failure.
+     * @note If already connected, will disconnect first before reconnecting.
+     */
+    esp_err_t connect(const std::string &ssid,
+                      const std::string &password,
+                      uint32_t timeout_ms = 15000);
+
+    /**
+     * @brief Disconnect from the current WiFi network.
+     * @return ESP_OK on success, error code on failure.
+     * @note Waits for WIFI_EVENT_STA_DISCONNECTED event confirmation.
+     */
+    esp_err_t disconnect();
+
+    /**
+     * @brief Check if WiFi is currently connected to an access point.
+     * @return true if connected, false otherwise.
+     * @note Thread-safe. Reflects WIFI_EVENT_STA_CONNECTED/DISCONNECTED events.
+     */
+    bool isConnected() const;
+
+    /**
+     * @brief Check if WiFi station mode is started.
+     * @return true if started, false otherwise.
+     * @note Thread-safe. Reflects WIFI_EVENT_STA_START/STOP events.
+     */
+    bool isStarted() const;
+
+    /**
+     * @brief Store WiFi credentials in NVS.
+     * @param ssid The network SSID to store.
+     * @param password The network password to store.
+     * @return ESP_OK on success, error code on failure.
+     */
+    esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
+
+    /**
+     * @brief Load WiFi credentials from NVS.
+     * @param ssid Output parameter for the loaded SSID.
+     * @param password Output parameter for the loaded password.
+     * @return ESP_OK on success, error code on failure.
+     */
+    esp_err_t loadCredentials(std::string &ssid, std::string &password);
+
+    /**
+     * @brief Check if credentials are stored in NVS.
+     * @return true if credentials exist, false otherwise.
+     */
+    bool hasCredentials();
 
 private:
     /**
-     * @brief Default constructor (private for singleton pattern)
-     *
-     * The constructor is private and defaulted to enforce the singleton
-     * pattern. This ensures that the class can only be instantiated
-     * through the instance() method, preventing multiple instances.
-     *
-     * The default constructor initializes all member variables to
-     * their default values (nullptr for pointers/Handles).
-     *
-     * @note Using `= default` allows the compiler to generate the
-     *       trivial constructor while keeping it private.
+     * @brief Private constructor for singleton pattern.
      */
-    WifiManager() = default;
+    WiFiManager();
 
     /**
-     * @brief WiFi management task function
-     *
-     * Static task function that handles WiFi connection management.
-     * This task runs independently and processes WiFi commands and events.
-     *
-     * @param arg Pointer to WifiManager instance (passed as this pointer)
+     * @brief Destructor.
      */
-    static void task(void *arg);
+    ~WiFiManager();
 
     /**
-     * @brief WiFi command event handler
-     *
-     * Handles WiFi command events such as connection requests,
-     * disconnection requests, and other WiFi control commands.
-     *
-     * @param arg User argument (typically WifiManager instance)
-     * @param base Event base identifier
-     * @param id Event ID
-     * @param data Event-specific data
+     * @brief Wait for IP address assignment.
+     * @param timeout_ms Maximum time to wait.
+     * @return true if IP was obtained, false on timeout.
+     * @note Uses semaphore signaled by ipEventHandler on IP_EVENT_STA_GOT_IP.
      */
-    static void cmd_event_handler(void *arg,
-                                  esp_event_base_t base,
-                                  int32_t id,
-                                  void *data);
+    bool waitForIp(uint32_t timeout_ms);
 
     /**
-     * @brief IP event handler
-     *
-     * Handles IP-related events including IP address acquisition,
-     * DHCP events, and network interface changes.
-     *
-     * @param arg User argument (typically WifiManager instance)
-     * @param base Event base identifier
-     * @param id Event ID
-     * @param data Event-specific data
+     * @brief Static handler for WiFi events.
+     * @param arg Pointer to WiFiManager instance.
+     * @param base Event base.
+     * @param id Event ID.
+     * @param data Event data.
+     * @note Updates started_ and connected_ states based on events.
      */
-    static void ip_event_handler(void *arg,
+    static void wifiEventHandler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
                                  void *data);
 
     /**
-     * @brief General WiFi event handler
-     *
-     * Handles general WiFi events including connection status changes,
-     * authentication events, and scan results.
-     *
-     * @param arg User argument (typically WifiManager instance)
-     * @param base Event base identifier
-     * @param id Event ID
-     * @param data Event-specific data
+     * @brief Static handler for IP events.
+     * @param arg Pointer to WiFiManager instance.
+     * @param base Event base.
+     * @param id Event ID.
+     * @param data Event data.
+     * @note Signals ip_got_sem_ on IP_EVENT_STA_GOT_IP.
      */
-    static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data);
+    static void ipEventHandler(void *arg, esp_event_base_t base, int32_t id, void *data);
 
-    TaskHandle_t task_handle_{nullptr};     /**< Handle to the WiFi management task */
-    QueueHandle_t cmd_queue_{nullptr};      /**< Queue for WiFi command messages */
-    SemaphoreHandle_t init_mutex_{nullptr}; /**< Mutex for thread-safe initialization */
-    bool initialized_{false};               /**< Flag indicating initialization status */
+    // Synchronization primitives
+    SemaphoreHandle_t ip_got_sem_;  ///< Semaphore for IP acquisition synchronization
+    SemaphoreHandle_t state_mutex_; ///< Mutex for protecting state variables
+
+    // State variables (protected by state_mutex_)
+    bool initialized_; ///< Whether WiFi stack is initialized
+    bool started_;   ///< Whether WiFi station is started (WIFI_EVENT_STA_START received)
+    bool connected_; ///< Whether connected to AP (WIFI_EVENT_STA_CONNECTED received)
 };

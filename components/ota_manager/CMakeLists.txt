@@ -10,4 +10,5 @@ idf_component_register(
         esp_wifi
         nvs_flash
         mdns
+        common_types
 )

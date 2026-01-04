@@ -1,7 +1,10 @@
 #include "common_types.hpp"
 #include "esp_mac.h"
 
-EventGroupHandle_t sys_events = nullptr;
+// DEFINIÇÃO das bases (alocação real)
+ESP_EVENT_DEFINE_BASE(APP_WIFI_EVENT);
+ESP_EVENT_DEFINE_BASE(APP_ESPNOW_EVENT);
+ESP_EVENT_DEFINE_BASE(APP_OTA_EVENT);
 
 namespace common {
 
