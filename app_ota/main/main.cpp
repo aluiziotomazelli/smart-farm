@@ -1,5 +1,3 @@
-#include "common_types.hpp"
-#include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "ota_manager.hpp"
@@ -9,92 +7,116 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+// This event base is not used in this example, but defined in common_types for other apps
+#include "common_types.hpp"
+
 static const char *TAG = "OTA_TEST";
 
-// Configuração do botão
+// Button configuration
 #define BUTTON_GPIO GPIO_NUM_0
-#define BUTTON_ACTIVE 0 // 0 = botão pressionado (BOOT button é active low)
+#define BUTTON_ACTIVE 0 // 0 = pressed (BOOT button is active low)
+#define LED_GPIO GPIO_NUM_2
 
-// Variáveis globais
+// Globals
 static bool button_pressed        = false;
 static TickType_t last_press_time = 0;
 
 auto &wifi = WiFiManager::instance();
 auto &ota  = OtaManager::instance();
 
-// Handler de eventos do OTA
+// OTA Event handler to provide user feedback (e.g., turn on LED)
 static void ota_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     switch (id) {
     case OTA_EVT_STARTED:
-        ESP_LOGI(TAG, "OTA started!");
-        gpio_set_level(GPIO_NUM_2, 1); // LED ON
+        ESP_LOGI(TAG, "OTA event: Download started!");
+        gpio_set_level(LED_GPIO, 1); // LED ON
         break;
 
     case OTA_EVT_FAILED:
-        ESP_LOGI(TAG, "OTA failed!");
-        gpio_set_level(GPIO_NUM_2, 0); // LED OFF
+        ESP_LOGE(TAG, "OTA event: Download failed!");
+        gpio_set_level(LED_GPIO, 0); // LED OFF
+        // After failure, WiFi should be reset for ESP-NOW
+        ESP_LOGI(TAG, "Resetting WiFi for ESP-NOW operation after OTA failure.");
+        wifi.stop();
+        wifi.start();
         break;
 
     case OTA_EVT_FINISHED:
-        ESP_LOGI(TAG, "OTA finished - device will restart");
+        ESP_LOGI(TAG, "OTA event: Finished! Device will restart.");
+        // LED will stay on until reboot
         break;
     }
 }
 
-// Task para debounce do botão
+// Task to handle button press for starting OTA
 static void button_task(void *arg)
 {
-    // Configurar GPIO do botão
+    // Configure button GPIO
     gpio_config_t io_conf = {.pin_bit_mask = (1ULL << BUTTON_GPIO),
                              .mode         = GPIO_MODE_INPUT,
-                             .pull_up_en =
-                                 GPIO_PULLUP_ENABLE, // Botão BOOT já tem pullup externo
+                             .pull_up_en   = GPIO_PULLUP_ENABLE,
                              .pull_down_en = GPIO_PULLDOWN_DISABLE,
                              .intr_type    = GPIO_INTR_DISABLE};
     gpio_config(&io_conf);
 
-    // Configurar LED (GPIO 2 - LED onboard em muitas placas)
-    gpio_reset_pin(GPIO_NUM_2);
-    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_2, 0);
+    // Configure LED (GPIO 2 - onboard LED on many boards)
+    gpio_reset_pin(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED_GPIO, 0);
 
     ESP_LOGI(TAG, "Button task started. Press BOOT button to start OTA.");
     ESP_LOGI(TAG, "OTA server hostname: ota-server.local:8070");
 
     while (1) {
-        // Ler estado do botão
         int level = gpio_get_level(BUTTON_GPIO);
 
-        // Detectar pressionamento (active low)
         if (level == BUTTON_ACTIVE && !button_pressed) {
             TickType_t now = xTaskGetTickCount();
 
-            // Debounce: 50ms
+            // Debounce: 150ms
             if ((now - last_press_time) > pdMS_TO_TICKS(150)) {
                 button_pressed  = true;
                 last_press_time = now;
 
-                ESP_LOGI(TAG, "Button pressed! Starting OTA...");
-                wifi.stop();
-                wifi.start();
+                ESP_LOGI(TAG, "Button pressed! Starting OTA sequence...");
+
+                // The flow for OTA is: stop wifi (to clear esp-now channel), start, connect.
+                ESP_LOGI(TAG, "Stopping WiFi...");
+                if (wifi.stop(5000) != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to stop WiFi. Aborting OTA.");
+                    continue;
+                }
+
+                ESP_LOGI(TAG, "Starting WiFi...");
+                if (wifi.start(5000) != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to start WiFi. Aborting OTA.");
+                    continue;
+                }
+
                 std::string ssid, password;
                 esp_err_t err = wifi.loadCredentials(ssid, password);
 
-                if (err == ESP_OK) {
-                    printf("Credenciais carregadas do NVS: SSID=%s\n", ssid.c_str());
+                if (err != ESP_OK) {
+                    ESP_LOGE(TAG, "No credentials found. Aborting OTA.");
+                    continue;
                 }
-                wifi.connect(ssid, password, 10000);
 
-                // Postar evento para iniciar OTA
-                const char *hostname = "ota-server"; // Altere para seu servidor
+                ESP_LOGI(TAG, "Credentials loaded. Connecting to '%s'...", ssid.c_str());
+                err = wifi.connect(ssid, password, 15000); // 15 sec timeout
 
-                ota.startOtaWithMdns(hostname);
-                // esp_event_post(APP_OTA_EVENT, OTA_CMD_START, (void *)hostname,
-                //                strlen(hostname) + 1, 0);
+                if (err == ESP_OK) {
+                    ESP_LOGI(TAG, "WiFi connected successfully. Starting OTA download.");
+                    const char *hostname = "ota-server";
+                    ota.startOtaWithMdns(hostname);
+                }
+                else {
+                    ESP_LOGE(TAG, "Failed to connect to WiFi: %s. Aborting OTA.",
+                             esp_err_to_name(err));
+                    // The ota_event_handler will handle the failure and restart wifi
+                }
             }
         }
-        // Detectar soltura do botão
         else if (level != BUTTON_ACTIVE && button_pressed) {
             button_pressed = false;
         }
@@ -103,32 +125,11 @@ static void button_task(void *arg)
     }
 }
 
-// Task para simular WiFi (para teste sem WiFi real)
-// static void fake_wifi_task(void *arg)
-// {
-//     // Simular que WiFi está conectado após 3 segundos
-//     vTaskDelay(pdMS_TO_TICKS(3000));
-
-//     ESP_LOGI(TAG, "Simulating WiFi connected with IP...");
-
-//     // Postar eventos como se WiFi estivesse conectado
-//     esp_event_post(APP_WIFI_EVENT, WIFI_EVT_CONNECTED, nullptr, 0, 0);
-//     vTaskDelay(pdMS_TO_TICKS(100));
-
-//     // Simular que tem IP
-//     char ip[] = "192.168.1.100";
-//     esp_event_post(APP_WIFI_EVENT, WIFI_EVT_GOT_IP, ip, sizeof(ip), 0);
-
-//     ESP_LOGI(TAG, "WiFi simulation complete. Ready for OTA.");
-
-//     vTaskDelete(nullptr); // Auto-delete
-// }
-
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "Starting OTA Test Application");
 
-    // Inicializar NVS
+    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -136,70 +137,62 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    auto &wifi = WiFiManager::instance();
+    // Initialize WiFi and OTA Managers
     wifi.init();
-    wifi.start();
+    ota.init();
+    ota.setDeviceType("test_device"); // Must match the name on the server
+
+    // Register our custom handler to give feedback on OTA events
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        APP_OTA_EVENT, ESP_EVENT_ANY_ID, &ota_event_handler, nullptr, nullptr));
+
+    // Start WiFi in STA mode for ESP-NOW. This test app will also connect.
+    ESP_LOGI(TAG, "Starting WiFi in STA mode...");
+    if (wifi.start() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WiFi. Halting.");
+        return;
+    }
+
+    // Load credentials from NVS or menuconfig
     std::string config_ssid     = CONFIG_WIFI_SSID;
     std::string config_password = CONFIG_WIFI_PASSWORD;
 
-    // Se as credenciais foram fornecidas via menuconfig, armazena-as
-    if (!config_ssid.empty() && !config_password.empty()) {
-        printf("Armazenando credenciais do menuconfig no NVS...\n");
-        printf("SSID: %s\n", config_ssid.c_str());
+    if (!config_ssid.empty()) {
+        printf("Storing credentials from menuconfig into NVS...\n");
         esp_err_t err = wifi.storeCredentials(config_ssid, config_password);
         if (err != ESP_OK) {
-            printf("Erro ao armazenar credenciais: %s\n", esp_err_to_name(err));
+            printf("Error storing credentials: %s\n", esp_err_to_name(err));
         }
     }
 
     std::string ssid, password;
-    esp_err_t err = wifi.loadCredentials(ssid, password);
-
-    if (err == ESP_OK) {
-        printf("Credenciais carregadas do NVS: SSID=%s\n", ssid.c_str());
-    }
-    else {
-        printf("Nenhuma credencial encontrada no NVS\n");
-
-        // Se não tem no NVS mas tem no menuconfig, usa do menuconfig
-        if (!config_ssid.empty() && !config_password.empty()) {
-            ssid     = config_ssid;
-            password = config_password;
-            printf("Usando credenciais do menuconfig\n");
+    if (wifi.loadCredentials(ssid, password) == ESP_OK) {
+        printf("Credentials loaded from NVS: SSID=%s\n", ssid.c_str());
+        // Attempt to connect
+        if (wifi.connect(ssid, password, 10000) == ESP_OK) {
+            ESP_LOGI(TAG, "Initial WiFi connection successful.");
         }
         else {
-            printf("Erro: Nenhuma credencial disponível!\n");
-            return;
+            ESP_LOGW(TAG, "Initial WiFi connection failed. WiFi remains started for ESP-NOW.");
         }
     }
-
-    wifi.connect(ssid, password, 10000);
-
-    // Inicializar OTA Manager
-
-    ESP_ERROR_CHECK(ota.init());
-    ota.setDeviceType("test_device"); // Deve corresponder ao nome no servidor
+    else {
+        ESP_LOGW(TAG,
+                 "No WiFi credentials found in NVS. WiFi remains started for ESP-NOW.");
+    }
 
     ESP_LOGI(TAG, "==========================================");
     ESP_LOGI(TAG, "OTA TEST READY");
     ESP_LOGI(TAG, "1. Server must be running on: ota-server.local:8070");
     ESP_LOGI(TAG, "2. Firmware path: /test_device/test_device.bin");
     ESP_LOGI(TAG, "3. Press BOOT button (GPIO0) to start OTA");
-    ESP_LOGI(TAG, "4. LED GPIO2 will light during OTA");
+    ESP_LOGI(TAG, "4. LED (GPIO%d) will light up during OTA", LED_GPIO);
     ESP_LOGI(TAG, "==========================================");
 
-    // IMPORTANTE: Para teste REAL, comente a task fake e use WiFi real
-    // Criar task fake WiFi (comente para teste com WiFi real)
-    // xTaskCreate(fake_wifi_task, "fake_wifi", 4096, NULL, 1, NULL);
+    xTaskCreate(button_task, "button_task", 4096, NULL, 5, NULL);
 
-    // Para teste REAL com WiFi, descomente:
-
-    // Criar task do botão
-    xTaskCreate(button_task, "button_task", 4096, NULL, 2, NULL);
-
-    // Manter task principal viva
     while (1) {
-        ESP_LOGI(TAG, "Main task alive...");
+        ESP_LOGI(TAG, "Main task alive... Current WiFi State: %d", (int)wifi.getState());
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }

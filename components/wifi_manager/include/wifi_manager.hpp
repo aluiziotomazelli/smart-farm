@@ -1,23 +1,43 @@
 #pragma once
 
 #include "esp_err.h"
-#include "esp_event.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_group.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include <cstdint>
 #include <string>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
 
 /**
  * @class WiFiManager
  * @brief Singleton class for managing WiFi connections on ESP32.
  *
- * This class provides a synchronous interface for WiFi operations while
- * internally using event-driven architecture for state management.
- * It handles connection, disconnection, and credential storage.
+ * This class uses a dedicated FreeRTOS task to handle all WiFi operations,
+ * ensuring thread safety and a non-blocking internal architecture.
+ * It provides both synchronous and asynchronous methods for ease of use.
  */
 class WiFiManager
 {
 public:
+    /**
+     * @brief Publicly accessible states of the WiFi manager.
+     */
+    enum class State
+    {
+        UNINITIALIZED,
+        INITIALIZED,
+        STARTING,
+        STARTED,
+        STOPPING,
+        STOPPED,
+        CONNECTING,
+        CONNECTED_NO_IP,
+        CONNECTED_GOT_IP,
+        DISCONNECTING,
+        DISCONNECTED,
+    };
+
     /**
      * @brief Get the singleton instance of WiFiManager.
      * @return Reference to the WiFiManager instance.
@@ -29,57 +49,55 @@ public:
     WiFiManager &operator=(const WiFiManager &) = delete;
 
     /**
-     * @brief Initialize the WiFi stack and event handlers.
+     * @brief Initialize the WiFi stack, creates the event queue and the manager task.
      * @return ESP_OK on success, error code on failure.
      */
     esp_err_t init();
 
     /**
-     * @brief Start the WiFi station mode.
-     * @return ESP_OK on success, error code on failure.
-     * @note Waits for WIFI_EVENT_STA_START event confirmation.
+     * @brief Start the WiFi station mode (synchronous).
+     * @param timeout_ms Maximum time to wait for the operation to complete.
+     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
-    esp_err_t start();
+    esp_err_t start(uint32_t timeout_ms = 5000);
 
     /**
-     * @brief Stop the WiFi station mode.
-     * @return ESP_OK on success, error code on failure.
-     * @note Waits for WIFI_EVENT_STA_STOP event confirmation.
+     * @brief Stop the WiFi station mode (synchronous).
+     * @param timeout_ms Maximum time to wait for the operation to complete.
+     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
-    esp_err_t stop();
+    esp_err_t stop(uint32_t timeout_ms = 5000);
 
     /**
-     * @brief Connect to a WiFi network.
+     * @brief Connect to a WiFi network (synchronous).
      * @param ssid The network SSID.
      * @param password The network password.
-     * @param timeout_ms Maximum time to wait for connection (default: 15000ms).
-     * @return ESP_OK on success, error code on failure.
-     * @note If already connected, will disconnect first before reconnecting.
+     * @param timeout_ms Maximum time to wait for connection and IP.
+     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
-    esp_err_t connect(const std::string &ssid,
-                      const std::string &password,
-                      uint32_t timeout_ms = 15000);
+    esp_err_t
+    connect(const std::string &ssid, const std::string &password, uint32_t timeout_ms);
 
     /**
-     * @brief Disconnect from the current WiFi network.
-     * @return ESP_OK on success, error code on failure.
-     * @note Waits for WIFI_EVENT_STA_DISCONNECTED event confirmation.
+     * @brief Connect to a WiFi network (asynchronous).
+     * @param ssid The network SSID.
+     * @param password The network password.
+     * @return ESP_OK if the command was sent successfully, error code otherwise.
      */
-    esp_err_t disconnect();
+    esp_err_t connect_async(const std::string &ssid, const std::string &password);
 
     /**
-     * @brief Check if WiFi is currently connected to an access point.
-     * @return true if connected, false otherwise.
-     * @note Thread-safe. Reflects WIFI_EVENT_STA_CONNECTED/DISCONNECTED events.
+     * @brief Disconnect from the current WiFi network (synchronous).
+     * @param timeout_ms Maximum time to wait for the operation to complete.
+     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
-    bool isConnected() const;
+    esp_err_t disconnect(uint32_t timeout_ms = 5000);
 
     /**
-     * @brief Check if WiFi station mode is started.
-     * @return true if started, false otherwise.
-     * @note Thread-safe. Reflects WIFI_EVENT_STA_START/STOP events.
+     * @brief Get the current state of the WiFi manager.
+     * @return The current State enum value.
      */
-    bool isStarted() const;
+    State getState() const;
 
     /**
      * @brief Store WiFi credentials in NVS.
@@ -104,53 +122,58 @@ public:
     bool hasCredentials();
 
 private:
-    /**
-     * @brief Private constructor for singleton pattern.
-     */
     WiFiManager();
-
-    /**
-     * @brief Destructor.
-     */
     ~WiFiManager();
 
-    /**
-     * @brief Wait for IP address assignment.
-     * @param timeout_ms Maximum time to wait.
-     * @return true if IP was obtained, false on timeout.
-     * @note Uses semaphore signaled by ipEventHandler on IP_EVENT_STA_GOT_IP.
-     */
-    bool waitForIp(uint32_t timeout_ms);
+    // --- Internal Machinery ---
 
-    /**
-     * @brief Static handler for WiFi events.
-     * @param arg Pointer to WiFiManager instance.
-     * @param base Event base.
-     * @param id Event ID.
-     * @param data Event data.
-     * @note Updates started_ and connected_ states based on events.
-     */
+    // Command structure for the queue
+    enum class CommandId
+    {
+        START,
+        STOP,
+        CONNECT,
+        DISCONNECT,
+        HANDLE_EVENT_WIFI,
+        HANDLE_EVENT_IP,
+    };
+
+    struct Command
+    {
+        CommandId id;
+        // For CONNECT
+        std::string ssid;
+        std::string password;
+        // For event handling
+        int32_t event_id;
+    };
+
+    // Event bits for synchronization
+    static constexpr EventBits_t STARTED_BIT         = BIT0;
+    static constexpr EventBits_t STOPPED_BIT         = BIT1;
+    static constexpr EventBits_t CONNECTED_BIT       = BIT2;
+    static constexpr EventBits_t DISCONNECTED_BIT    = BIT3;
+    static constexpr EventBits_t CONNECT_FAILED_BIT  = BIT4;
+    static constexpr EventBits_t ALL_SYNC_BITS =
+        STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT | CONNECT_FAILED_BIT;
+
+    // Task and event handlers
+    static void wifiTask(void *pvParameters);
     static void wifiEventHandler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
                                  void *data);
-
-    /**
-     * @brief Static handler for IP events.
-     * @param arg Pointer to WiFiManager instance.
-     * @param base Event base.
-     * @param id Event ID.
-     * @param data Event data.
-     * @note Signals ip_got_sem_ on IP_EVENT_STA_GOT_IP.
-     */
     static void ipEventHandler(void *arg, esp_event_base_t base, int32_t id, void *data);
 
-    // Synchronization primitives
-    SemaphoreHandle_t ip_got_sem_;  ///< Semaphore for IP acquisition synchronization
-    SemaphoreHandle_t state_mutex_; ///< Mutex for protecting state variables
+    // Helper to send a command to the queue
+    esp_err_t sendCommand(const Command &cmd, bool is_async);
 
-    // State variables (protected by state_mutex_)
-    bool initialized_; ///< Whether WiFi stack is initialized
-    bool started_;   ///< Whether WiFi station is started (WIFI_EVENT_STA_START received)
-    bool connected_; ///< Whether connected to AP (WIFI_EVENT_STA_CONNECTED received)
+    // RTOS objects
+    TaskHandle_t task_handle_;
+    QueueHandle_t command_queue_;
+    EventGroupHandle_t wifi_event_group_;
+    mutable SemaphoreHandle_t state_mutex_; // Protects current_state_
+
+    // State variable
+    State current_state_;
 };
