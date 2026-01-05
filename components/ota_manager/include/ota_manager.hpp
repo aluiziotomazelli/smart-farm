@@ -6,7 +6,7 @@
 #include <string>
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include "freertos/semphr.hh"
 
 /**
  * @struct OtaManagerCallbacks
@@ -65,21 +65,16 @@ public:
     /**
      * @brief Start an OTA update by resolving a server via mDNS (synchronous).
      *
-     * This function blocks until the OTA process completes, fails, or times out.
      * It constructs the final URL based on the resolved IP and device type.
      *
      * @param hostname The mDNS hostname (without .local).
      * @param timeout_ms Timeout for the entire operation.
+     * @param port The server port.
      * @return ESP_OK on success, or an error code on failure.
      */
     esp_err_t startOtaWithMdns(const std::string &hostname,
-                               uint32_t timeout_ms = 120000);
-
-    /**
-     * @brief Check if an OTA update is currently in progress.
-     * @return True if an OTA task is running, false otherwise.
-     */
-    bool isOtaInProgress() const;
+                               uint32_t timeout_ms = 120000,
+                               uint16_t port       = 8070);
 
     /**
      * @brief Set the device type for constructing the firmware URL with mDNS.
@@ -102,17 +97,20 @@ private:
     {
         std::string url_or_hostname;
         bool use_mdns;
+        uint16_t port; // Port for mDNS OTA
         OtaManager *manager;
-        SemaphoreHandle_t completion_semaphore; // Signals task completion
-        esp_err_t *result_ptr;                  // To store the final result
+        SemaphoreHandle_t completion_semaphore;
+        esp_err_t *result_ptr;
 
         OtaTaskParams(const std::string &u,
                       bool mdns,
+                      uint16_t p,
                       OtaManager *m,
                       SemaphoreHandle_t sem,
                       esp_err_t *res)
             : url_or_hostname(u)
             , use_mdns(mdns)
+            , port(p)
             , manager(m)
             , completion_semaphore(sem)
             , result_ptr(res)
@@ -123,7 +121,8 @@ private:
     // Internal helpers
     esp_err_t startOtaProcess(const std::string &url_or_hostname,
                               bool use_mdns,
-                              uint32_t timeout_ms);
+                              uint32_t timeout_ms,
+                              uint16_t port);
     esp_err_t resolveServerMdns(const std::string &hostname, std::string &out_ip);
     void cleanupOtaTask(OtaTaskParams *params, esp_err_t result);
     esp_err_t performOtaDownload(const std::string &url);

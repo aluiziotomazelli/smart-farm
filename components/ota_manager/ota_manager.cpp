@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "mdns.h"
 #include <cstring>
+#include <string>
 
 static const char *TAG = "OTA";
 
@@ -41,7 +42,7 @@ OtaManager::~OtaManager()
 esp_err_t OtaManager::init()
 {
     ESP_LOGI(TAG, "OTA Manager initialized");
-    return ESP_OK; // Initialization is now minimal
+    return ESP_OK;
 }
 
 void OtaManager::registerCallbacks(const OtaManagerCallbacks &callbacks)
@@ -51,12 +52,15 @@ void OtaManager::registerCallbacks(const OtaManagerCallbacks &callbacks)
 
 esp_err_t OtaManager::startOta(const std::string &url, uint32_t timeout_ms)
 {
-    return startOtaProcess(url, false, timeout_ms);
+    // Port is not used for direct URL OTA, so pass 0.
+    return startOtaProcess(url, false, timeout_ms, 0);
 }
 
-esp_err_t OtaManager::startOtaWithMdns(const std::string &hostname, uint32_t timeout_ms)
+esp_err_t OtaManager::startOtaWithMdns(const std::string &hostname,
+                                       uint32_t timeout_ms,
+                                       uint16_t port)
 {
-    return startOtaProcess(hostname, true, timeout_ms);
+    return startOtaProcess(hostname, true, timeout_ms, port);
 }
 
 // =================================================================================================
@@ -65,25 +69,34 @@ esp_err_t OtaManager::startOtaWithMdns(const std::string &hostname, uint32_t tim
 
 esp_err_t OtaManager::startOtaProcess(const std::string &url_or_hostname,
                                       bool use_mdns,
-                                      uint32_t timeout_ms)
+                                      uint32_t timeout_ms,
+                                      uint16_t port)
 {
-    if (isOtaInProgress()) {
+    // Thread-safe check to prevent concurrent OTA operations
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    if (ota_in_progress_) {
+        xSemaphoreGive(state_mutex_);
         ESP_LOGW(TAG, "OTA already in progress");
         return ESP_ERR_INVALID_STATE;
     }
+    // Mark as in progress inside the lock
+    ota_in_progress_ = true;
+    xSemaphoreGive(state_mutex_);
 
-    esp_err_t result = ESP_FAIL;
+    esp_err_t result                     = ESP_FAIL;
     SemaphoreHandle_t completion_semaphore = xSemaphoreCreateBinary();
     if (completion_semaphore == nullptr) {
         ESP_LOGE(TAG, "Failed to create completion semaphore");
+        setOtaInProgress(false); // Reset state
         return ESP_ERR_NO_MEM;
     }
 
-    OtaTaskParams *params =
-        new OtaTaskParams(url_or_hostname, use_mdns, this, completion_semaphore, &result);
+    OtaTaskParams *params = new OtaTaskParams(
+        url_or_hostname, use_mdns, port, this, completion_semaphore, &result);
     if (params == nullptr) {
         ESP_LOGE(TAG, "Failed to allocate task parameters");
         vSemaphoreDelete(completion_semaphore);
+        setOtaInProgress(false); // Reset state
         return ESP_ERR_NO_MEM;
     }
 
@@ -92,6 +105,7 @@ esp_err_t OtaManager::startOtaProcess(const std::string &url_or_hostname,
         ESP_LOGE(TAG, "Failed to create OTA task");
         delete params;
         vSemaphoreDelete(completion_semaphore);
+        setOtaInProgress(false); // Reset state
         return ESP_FAIL;
     }
 
@@ -103,10 +117,10 @@ esp_err_t OtaManager::startOtaProcess(const std::string &url_or_hostname,
     else {
         ESP_LOGE(TAG, "OTA process timed out after %lums", timeout_ms);
         result = ESP_ERR_TIMEOUT;
-        // The task will eventually finish and clean itself up, but we stop waiting.
     }
 
     vSemaphoreDelete(completion_semaphore);
+    // The task itself is responsible for calling setOtaInProgress(false)
     return result;
 }
 
@@ -115,7 +129,7 @@ void OtaManager::otaTask(void *pvParameters)
     OtaTaskParams *params = static_cast<OtaTaskParams *>(pvParameters);
     OtaManager *manager   = params->manager;
 
-    manager->setOtaInProgress(true);
+    // No need to set ota_in_progress here, it's done in startOtaProcess
 
     if (manager->callbacks_.onOtaStarted) {
         manager->callbacks_.onOtaStarted();
@@ -128,8 +142,9 @@ void OtaManager::otaTask(void *pvParameters)
         std::string ip;
         err = manager->resolveServerMdns(params->url_or_hostname, ip);
         if (err == ESP_OK) {
-            url = "http://" + ip + ":8070/" + manager->getDeviceType() + "/" +
-                  manager->getDeviceType() + ".bin";
+            // Build URL with dynamic port
+            url = "http://" + ip + ":" + std::to_string(params->port) + "/" +
+                  manager->getDeviceType() + "/" + manager->getDeviceType() + ".bin";
         }
     }
     else {
@@ -161,25 +176,20 @@ void OtaManager::otaTask(void *pvParameters)
 
 void OtaManager::cleanupOtaTask(OtaTaskParams *params, esp_err_t result)
 {
-    // Store result for the waiting function
     if (params->result_ptr != nullptr) {
         *params->result_ptr = result;
     }
 
-    // Invoke the failure callback if it exists
     if (result != ESP_OK && callbacks_.onOtaFailed) {
         callbacks_.onOtaFailed(result);
     }
 
-    // Signal completion to the waiting function
     if (params->completion_semaphore != nullptr) {
         xSemaphoreGive(params->completion_semaphore);
     }
 
-    // Mark OTA as no longer in progress
     setOtaInProgress(false);
 
-    // Free resources and delete the task
     if (params != nullptr) {
         delete params;
     }
@@ -189,24 +199,21 @@ void OtaManager::cleanupOtaTask(OtaTaskParams *params, esp_err_t result)
 esp_err_t OtaManager::resolveServerMdns(const std::string &hostname, std::string &out_ip)
 {
     ESP_LOGI(TAG, "Resolving %s.local via mDNS...", hostname.c_str());
-    mdns_init(); // Safe to call multiple times
+    mdns_init();
 
-    esp_ip4_addr_t addr;
-    addr.addr = 0;
-
-    esp_err_t err = mdns_query_a(hostname.c_str(), 5000, &addr);
+    esp_ip4_addr_t addr = {};
+    esp_err_t err       = mdns_query_a(hostname.c_str(), 5000, &addr);
 
     if (err == ESP_OK) {
         if (addr.addr != 0) {
             char ip_str[16];
             snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&addr));
             out_ip = ip_str;
-            ESP_LOGI(TAG, "Server '%s.local' found at %s", hostname.c_str(),
-                     out_ip.c_str());
+            ESP_LOGI(TAG, "Server '%s.local' found at %s", hostname.c_str(), out_ip.c_str());
             mdns_free();
             return ESP_OK;
         }
-        err = ESP_ERR_NOT_FOUND; // Query OK, but no address found
+        err = ESP_ERR_NOT_FOUND;
     }
 
     ESP_LOGE(TAG, "Failed to resolve mDNS hostname '%s.local': %s", hostname.c_str(),
@@ -245,14 +252,6 @@ void OtaManager::setDeviceType(const std::string &device_type)
 std::string OtaManager::getDeviceType() const
 {
     return device_type_;
-}
-
-bool OtaManager::isOtaInProgress() const
-{
-    xSemaphoreTake(state_mutex_, portMAX_DELAY);
-    bool in_progress = ota_in_progress_;
-    xSemaphoreGive(state_mutex_);
-    return in_progress;
 }
 
 void OtaManager::setOtaInProgress(bool in_progress)
