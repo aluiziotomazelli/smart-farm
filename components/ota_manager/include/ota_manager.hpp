@@ -6,7 +6,7 @@
 #include <string>
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/semphr.hh"
+#include "freertos/semphr.h"
 
 /**
  * @struct OtaManagerCallbacks
@@ -16,8 +16,8 @@
  */
 struct OtaManagerCallbacks
 {
-    std::function<void()> onOtaStarted;      /**< Called when the OTA download begins. */
-    std::function<void()> onOtaFinished;     /**< Called on success, just before restart. */
+    std::function<void()> onOtaStarted;  /**< Called when the OTA download begins. */
+    std::function<void()> onOtaFinished; /**< Called on success, just before restart. */
     std::function<void(esp_err_t)> onOtaFailed; /**< Called on any failure. */
 };
 
