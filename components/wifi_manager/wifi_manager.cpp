@@ -76,8 +76,8 @@ esp_err_t WiFiManager::init()
         return ESP_ERR_NO_MEM;
     }
 
-    BaseType_t task_created = xTaskCreate(
-        wifiTask, "wifi_task", 4096, this, 5, &task_handle_);
+    BaseType_t task_created =
+        xTaskCreate(wifiTask, "wifi_task", 4096, this, 5, &task_handle_);
     if (task_created != pdPASS) {
         ESP_LOGE(TAG, "Failed to create wifi task");
         return ESP_ERR_NO_MEM;
@@ -131,9 +131,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
                                uint32_t timeout_ms)
 {
     ESP_LOGI(TAG, "API: Requesting to connect (sync)...");
-    Command cmd   = {.id       = CommandId::CONNECT,
-                   .ssid     = ssid,
-                   .password = password};
+    Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
 
     xEventGroupClearBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT);
     if (sendCommand(cmd, false) != ESP_OK) {
@@ -141,8 +139,8 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
     }
 
     EventBits_t bits =
-        xEventGroupWaitBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT,
-                            pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+        xEventGroupWaitBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT, pdTRUE,
+                            pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & CONNECTED_BIT) {
         return ESP_OK;
@@ -158,9 +156,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
 esp_err_t WiFiManager::connect_async(const std::string &ssid, const std::string &password)
 {
     ESP_LOGI(TAG, "API: Requesting to connect (async)...");
-    Command cmd   = {.id       = CommandId::CONNECT,
-                   .ssid     = ssid,
-                   .password = password};
+    Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
     return sendCommand(cmd, true);
 }
 
@@ -174,8 +170,8 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
         return ESP_FAIL;
     }
 
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT,
-                                           pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT, pdTRUE,
+                                           pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & DISCONNECTED_BIT) {
         return ESP_OK;
@@ -267,6 +263,7 @@ void WiFiManager::wifiEventHandler(void *arg,
                                    esp_event_base_t base,
                                    int32_t id,
                                    void *data)
+
 {
     WiFiManager *self = static_cast<WiFiManager *>(arg);
     Command cmd       = {.id = CommandId::HANDLE_EVENT_WIFI, .event_id = id};
@@ -305,8 +302,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                     wifi_config_t wifi_config = {};
                     strncpy((char *)wifi_config.sta.ssid, cmd.ssid.c_str(),
                             sizeof(wifi_config.sta.ssid) - 1);
-                    strncpy((char *)wifi_config.sta.password,
-                            cmd.password.c_str(),
+                    strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
                             sizeof(wifi_config.sta.password) - 1);
                     esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
                     esp_wifi_connect();

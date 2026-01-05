@@ -1,14 +1,14 @@
 #pragma once
 
 #include "esp_err.h"
+#include "esp_event.h"
+#include <cstdint>
+#include <string>
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_group.h"
+#include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include <cstdint>
-#include <string>
-
 /**
  * @class WiFiManager
  * @brief Singleton class for managing WiFi connections on ESP32.
@@ -75,8 +75,9 @@ public:
      * @param timeout_ms Maximum time to wait for connection and IP.
      * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
-    esp_err_t
-    connect(const std::string &ssid, const std::string &password, uint32_t timeout_ms);
+    esp_err_t connect(const std::string &ssid,
+                      const std::string &password,
+                      uint32_t timeout_ms);
 
     /**
      * @brief Connect to a WiFi network (asynchronous).
@@ -149,11 +150,11 @@ private:
     };
 
     // Event bits for synchronization
-    static constexpr EventBits_t STARTED_BIT         = BIT0;
-    static constexpr EventBits_t STOPPED_BIT         = BIT1;
-    static constexpr EventBits_t CONNECTED_BIT       = BIT2;
-    static constexpr EventBits_t DISCONNECTED_BIT    = BIT3;
-    static constexpr EventBits_t CONNECT_FAILED_BIT  = BIT4;
+    static constexpr EventBits_t STARTED_BIT        = BIT0;
+    static constexpr EventBits_t STOPPED_BIT        = BIT1;
+    static constexpr EventBits_t CONNECTED_BIT      = BIT2;
+    static constexpr EventBits_t DISCONNECTED_BIT   = BIT3;
+    static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4;
     static constexpr EventBits_t ALL_SYNC_BITS =
         STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT | CONNECT_FAILED_BIT;
 

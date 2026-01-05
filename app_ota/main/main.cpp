@@ -21,8 +21,8 @@ static const char *TAG = "OTA_TEST";
 static bool button_pressed        = false;
 static TickType_t last_press_time = 0;
 
-auto &wifi = WiFiManager::instance();
-auto &ota  = OtaManager::instance();
+WiFiManager &wifi = WiFiManager::instance();
+auto &ota         = OtaManager::instance();
 
 // OTA Event handler to provide user feedback (e.g., turn on LED)
 static void ota_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -81,7 +81,8 @@ static void button_task(void *arg)
 
                 ESP_LOGI(TAG, "Button pressed! Starting OTA sequence...");
 
-                // The flow for OTA is: stop wifi (to clear esp-now channel), start, connect.
+                // The flow for OTA is: stop wifi (to clear esp-now channel), start,
+                // connect.
                 ESP_LOGI(TAG, "Stopping WiFi...");
                 if (wifi.stop(5000) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to stop WiFi. Aborting OTA.");
@@ -140,7 +141,7 @@ extern "C" void app_main(void)
     // Initialize WiFi and OTA Managers
     wifi.init();
     ota.init();
-    ota.setDeviceType("test_device"); // Must match the name on the server
+    ota.setDeviceType("ota_test"); // Must match the name on the server
 
     // Register our custom handler to give feedback on OTA events
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
@@ -173,7 +174,8 @@ extern "C" void app_main(void)
             ESP_LOGI(TAG, "Initial WiFi connection successful.");
         }
         else {
-            ESP_LOGW(TAG, "Initial WiFi connection failed. WiFi remains started for ESP-NOW.");
+            ESP_LOGW(TAG,
+                     "Initial WiFi connection failed. WiFi remains started for ESP-NOW.");
         }
     }
     else {
@@ -184,7 +186,7 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "==========================================");
     ESP_LOGI(TAG, "OTA TEST READY");
     ESP_LOGI(TAG, "1. Server must be running on: ota-server.local:8070");
-    ESP_LOGI(TAG, "2. Firmware path: /test_device/test_device.bin");
+    ESP_LOGI(TAG, "2. Firmware path: /ota_test/ota_test.bin");
     ESP_LOGI(TAG, "3. Press BOOT button (GPIO0) to start OTA");
     ESP_LOGI(TAG, "4. LED (GPIO%d) will light up during OTA", LED_GPIO);
     ESP_LOGI(TAG, "==========================================");

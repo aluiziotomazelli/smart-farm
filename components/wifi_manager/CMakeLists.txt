@@ -8,7 +8,7 @@ idf_component_register(
     PRIV_REQUIRES 
         nvs_flash 
         esp_wifi 
-        esp_event 
+        # esp_event 
         esp_netif 
         freertos
         common_types
