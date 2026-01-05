@@ -20,14 +20,7 @@ static bool button_pressed        = false;
 static TickType_t last_press_time = 0;
 
 auto &wifi = WiFiManager::instance();
-
-static SemaphoreHandle_t wifi_started;
-static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
-{
-    if (id == WIFI_EVT_STARTED) {
-        xSemaphoreGive(wifi_started); // Sinaliza
-    }
-}
+auto &ota  = OtaManager::instance();
 
 // Handler de eventos do OTA
 static void ota_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -85,12 +78,20 @@ static void button_task(void *arg)
                 ESP_LOGI(TAG, "Button pressed! Starting OTA...");
                 wifi.stop();
                 wifi.start();
-                wifi.connect("SSID", "senha", 10000);
+                std::string ssid, password;
+                esp_err_t err = wifi.loadCredentials(ssid, password);
+
+                if (err == ESP_OK) {
+                    printf("Credenciais carregadas do NVS: SSID=%s\n", ssid.c_str());
+                }
+                wifi.connect(ssid, password, 10000);
 
                 // Postar evento para iniciar OTA
                 const char *hostname = "ota-server"; // Altere para seu servidor
-                esp_event_post(APP_OTA_EVENT, OTA_CMD_START, (void *)hostname,
-                               strlen(hostname) + 1, 0);
+
+                ota.startOtaWithMdns(hostname);
+                // esp_event_post(APP_OTA_EVENT, OTA_CMD_START, (void *)hostname,
+                //                strlen(hostname) + 1, 0);
             }
         }
         // Detectar soltura do botão
@@ -138,10 +139,44 @@ extern "C" void app_main(void)
     auto &wifi = WiFiManager::instance();
     wifi.init();
     wifi.start();
-    // wifi.connect("TIGOR", "nqsdnumn007", 10000);
+    std::string config_ssid     = CONFIG_WIFI_SSID;
+    std::string config_password = CONFIG_WIFI_PASSWORD;
+
+    // Se as credenciais foram fornecidas via menuconfig, armazena-as
+    if (!config_ssid.empty() && !config_password.empty()) {
+        printf("Armazenando credenciais do menuconfig no NVS...\n");
+        printf("SSID: %s\n", config_ssid.c_str());
+        esp_err_t err = wifi.storeCredentials(config_ssid, config_password);
+        if (err != ESP_OK) {
+            printf("Erro ao armazenar credenciais: %s\n", esp_err_to_name(err));
+        }
+    }
+
+    std::string ssid, password;
+    esp_err_t err = wifi.loadCredentials(ssid, password);
+
+    if (err == ESP_OK) {
+        printf("Credenciais carregadas do NVS: SSID=%s\n", ssid.c_str());
+    }
+    else {
+        printf("Nenhuma credencial encontrada no NVS\n");
+
+        // Se não tem no NVS mas tem no menuconfig, usa do menuconfig
+        if (!config_ssid.empty() && !config_password.empty()) {
+            ssid     = config_ssid;
+            password = config_password;
+            printf("Usando credenciais do menuconfig\n");
+        }
+        else {
+            printf("Erro: Nenhuma credencial disponível!\n");
+            return;
+        }
+    }
+
+    wifi.connect(ssid, password, 10000);
 
     // Inicializar OTA Manager
-    auto &ota = OtaManager::instance();
+
     ESP_ERROR_CHECK(ota.init());
     ota.setDeviceType("test_device"); // Deve corresponder ao nome no servidor
 
