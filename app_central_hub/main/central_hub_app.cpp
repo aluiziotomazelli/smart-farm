@@ -22,6 +22,8 @@ CentralHubApp::CentralHubApp()
     // Constructor is intentionally empty.
 }
 
+EspNowComm comm;
+
 void CentralHubApp::on_espnow_receive(uint8_t node_id,
                                       const uint8_t *data,
                                       int len,
@@ -35,13 +37,13 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
             WaterLevelReport report;
             if (len == sizeof(report)) {
                 memcpy(&report, data, sizeof(report));
-                ESP_LOGI(TAG,
-                         "WaterLevelReport from node %u: Level=%u‰, Dist=%.2fcm, V=%.2fV, "
-                         "Q=%d, F=%d, Full=%d, Backup=%d",
-                         node_id, report.level_permille, report.distance_cm,
-                         report.battery_mv / 1000.0f, (int)report.quality,
-                         (int)report.failure, (int)report.float_switch_is_full,
-                         (int)report.backup_mode_active);
+                ESP_LOGI(
+                    TAG,
+                    "WaterLevelReport from node %u: Level=%u‰, Dist=%.2fcm, V=%.2fV, "
+                    "Q=%d, F=%d, Full=%d, Backup=%d",
+                    node_id, report.level_permille, report.distance_cm,
+                    report.battery_mv / 1000.0f, (int)report.quality, (int)report.failure,
+                    (int)report.float_switch_is_full, (int)report.backup_mode_active);
             }
             else {
                 ESP_LOGW(TAG, "Received DATA packet with unexpected size: %d bytes", len);
@@ -55,7 +57,6 @@ void CentralHubApp::on_espnow_receive(uint8_t node_id,
 
 void CentralHubApp::registerEspNowCallbacks()
 {
-    auto &comm = EspNowComm::instance();
     comm.setReceiveCallback(
         [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
             this->on_espnow_receive(node_id, data, len, rssi);
@@ -80,8 +81,8 @@ void CentralHubApp::button_task()
 
     ESP_LOGI(TAG, "Button task started. Press BOOT button to send OTA command.");
 
-    bool button_pressed         = false;
-    TickType_t last_press_time  = 0;
+    bool button_pressed          = false;
+    TickType_t last_press_time   = 0;
     const TickType_t debounce_ms = 150;
 
     while (true) {
@@ -95,16 +96,13 @@ void CentralHubApp::button_task()
 
                 ESP_LOGI(TAG, "Button pressed! Sending OTA command...");
 
-                auto &comm          = EspNowComm::instance();
-                auto peer_map       = comm.getPeerMap();
+                auto peers          = comm.getPeers();
                 uint8_t target_node = 0;
 
                 // Find the first non-hub peer
-                for (const auto &pair : peer_map) {
-                    if (pair.second.node_type != NodeType::HUB) {
-                        target_node = pair.second.node_id;
-                        break;
-                    }
+                for (const auto &peer : peers) {
+                    target_node = peer.node_id;
+                    break;
                 }
 
                 if (target_node != 0) {
@@ -115,11 +113,11 @@ void CentralHubApp::button_task()
                              "http://ota-server.local:8070/ota_test.bin");
 
                     // Sending empty credentials will make the target use its stored ones.
-                    command.ssid[0] = '\0';
+                    command.ssid[0]     = '\0';
                     command.password[0] = '\0';
 
-                    if (comm.send(target_node, MessageType::OTA_COMMAND,
-                                  (uint8_t *)&command, sizeof(command)) == ESP_OK) {
+                    if (comm.send(target_node, MessageType::OTA, (uint8_t *)&command,
+                                  sizeof(command)) == ESP_OK) {
                         ESP_LOGI(TAG, "OTA command sent to node %u.", target_node);
                     }
                     else {
@@ -146,7 +144,6 @@ void CentralHubApp::init()
 
     auto &wifi = WiFiManager::instance();
     auto &ota  = OtaManager::instance();
-    auto &comm = EspNowComm::instance();
 
     if (wifi.init() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFiManager");
@@ -171,7 +168,7 @@ void CentralHubApp::init()
 
     registerEspNowCallbacks();
 
-    comm.startDiscovery(0); // Infinite discovery
+    comm.startDiscovery(50000); // Infinite discovery
 
     ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u", espnow_config.node_id);
 
