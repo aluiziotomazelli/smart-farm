@@ -513,7 +513,7 @@ void EspNowComm::handleStopDiscoveryCommand()
 void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceived &evt)
 {
     // This now runs in the context of our task
-    handleReceive(evt.recv_info, evt.data, evt.len);
+    handleReceive(&evt.recv_info, evt.data, evt.len);
 }
 
 void EspNowComm::handleSendStatusEvent(const EspNowQueue::EventSendStatus &evt)
