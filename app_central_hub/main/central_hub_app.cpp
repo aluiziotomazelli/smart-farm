@@ -96,13 +96,13 @@ void CentralHubApp::button_task()
                 ESP_LOGI(TAG, "Button pressed! Sending OTA command...");
 
                 auto &comm          = EspNowComm::instance();
-                auto peer_map       = comm.getPeerMap();
+                auto peers          = comm.getPeers();
                 uint8_t target_node = 0;
 
                 // Find the first non-hub peer
-                for (const auto &pair : peer_map) {
-                    if (pair.second.node_type != NodeType::HUB) {
-                        target_node = pair.second.node_id;
+                for (const auto &peer : peers) {
+                    if (peer.node_type != NodeType::HUB) {
+                        target_node = peer.node_id;
                         break;
                     }
                 }
