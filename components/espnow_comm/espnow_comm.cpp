@@ -143,7 +143,7 @@ bool EspNowComm::send(uint8_t node_id,
                       MessageType message_type,
                       const uint8_t *data,
                       size_t length,
-                                 bool require_ack)
+                      bool require_ack)
 {
     if (!initialized_ || !event_queue_) {
         return false;
@@ -155,11 +155,11 @@ bool EspNowComm::send(uint8_t node_id,
     }
 
     EspNowQueue::Event event;
-    event.type                            = EspNowQueue::EventType::CMD_SEND_PACKET;
-    event.data.cmd_send_packet.node_id    = node_id;
-    event.data.cmd_send_packet.require_ack = require_ack;
+    event.type                              = EspNowQueue::EventType::CMD_SEND_PACKET;
+    event.data.cmd_send_packet.node_id      = node_id;
+    event.data.cmd_send_packet.require_ack  = require_ack;
     event.data.cmd_send_packet.message_type = message_type;
-    event.data.cmd_send_packet.payload_len = length;
+    event.data.cmd_send_packet.payload_len  = length;
     memcpy(event.data.cmd_send_packet.payload, data, length);
 
     if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
@@ -179,10 +179,10 @@ bool EspNowComm::addPeer(uint8_t node_id,
     }
 
     EspNowQueue::Event event;
-    event.type                         = EspNowQueue::EventType::CMD_ADD_PEER;
-    event.data.cmd_add_peer.node_id    = node_id;
-    event.data.cmd_add_peer.channel    = channel;
-    event.data.cmd_add_peer.encrypt    = encrypt;
+    event.type                      = EspNowQueue::EventType::CMD_ADD_PEER;
+    event.data.cmd_add_peer.node_id = node_id;
+    event.data.cmd_add_peer.channel = channel;
+    event.data.cmd_add_peer.encrypt = encrypt;
     memcpy(event.data.cmd_add_peer.mac_addr, mac, 6);
 
     if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
@@ -246,7 +246,7 @@ bool EspNowComm::removePeer(uint8_t node_id)
         return false;
     }
     EspNowQueue::Event event;
-    event.type                              = EspNowQueue::EventType::CMD_REMOVE_PEER;
+    event.type                         = EspNowQueue::EventType::CMD_REMOVE_PEER;
     event.data.cmd_remove_peer_node_id = node_id;
 
     if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
@@ -304,16 +304,16 @@ void EspNowComm::run()
                 break;
             case EspNowQueue::EventType::CMD_TASK_TERMINATE:
                 ESP_LOGI(TAG, "Task terminating...");
-                instance_ = nullptr; // Clear static instance
+                instance_    = nullptr; // Clear static instance
                 task_handle_ = nullptr; // Signal that task is cleaning up
-                vTaskDelete(NULL);   // Self-delete
-                return;              // Should not be reached
+                vTaskDelete(NULL);      // Self-delete
+                return;                 // Should not be reached
             default:
-                ESP_LOGW(TAG, "Unknown event type received in task: %d",
-                         (int)event.type);
+                ESP_LOGW(TAG, "Unknown event type received in task: %d", (int)event.type);
                 break;
             }
-        } else {
+        }
+        else {
             // Queue receive timed out, perform periodic tasks
             handlePeriodicTasks();
         }
@@ -388,7 +388,7 @@ void EspNowComm::handleSendPacketCommand(const EspNowQueue::CommandSendPacket &c
     }
     // Note: Other message types like OTA would be handled here
     else {
-         // Generic header for other types
+        // Generic header for other types
         MessageHeader header;
         header.version   = 0x01;
         header.type      = cmd.message_type;
@@ -411,8 +411,7 @@ void EspNowComm::handleSendPacketCommand(const EspNowQueue::CommandSendPacket &c
     packet[packet_len] = crc;
     packet_len++;
 
-
-    if (cmd.node_id == 0xFF) { // Broadcast logic
+    if (cmd.node_id == 0xFF) {  // Broadcast logic
         xSemaphoreGive(mutex_); // Release mutex before sending
 
         uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -429,7 +428,8 @@ void EspNowComm::handleSendPacketCommand(const EspNowQueue::CommandSendPacket &c
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Broadcast send failed: %s", esp_err_to_name(err));
         }
-    } else { // Unicast logic
+    }
+    else { // Unicast logic
         PeerInfo *peer = findPeerById(cmd.node_id);
         if (!peer) {
             xSemaphoreGive(mutex_);
@@ -463,7 +463,6 @@ void EspNowComm::handleSendPacketCommand(const EspNowQueue::CommandSendPacket &c
         }
     }
 }
-
 
 void EspNowComm::handleAddPeerCommand(const EspNowQueue::CommandAddPeer &cmd)
 {
@@ -512,11 +511,14 @@ void EspNowComm::handleStopDiscoveryCommand()
 
 void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceived &evt)
 {
-    esp_now_recv_info_t recv_info_stack;
+    // TODO: Verificar se inicializacao = {} é correta, erro de compilacao
+    //  recv_info_stack.esp_now_recv_info::src_addr' is used uninitialized
+    //  [-Werror=uninitialized]
+    esp_now_recv_info_t recv_info_stack = {};
     memcpy(recv_info_stack.src_addr, evt.src_mac, 6);
 
     wifi_pkt_rx_ctrl_t rx_ctrl;
-    rx_ctrl.rssi = evt.rssi;
+    rx_ctrl.rssi            = evt.rssi;
     recv_info_stack.rx_ctrl = &rx_ctrl;
 
     handleReceive(&recv_info_stack, evt.data, evt.len);
@@ -953,7 +955,7 @@ bool EspNowComm::startDiscovery(uint32_t timeout_ms)
         return false;
     }
     EspNowQueue::Event event;
-    event.type                                  = EspNowQueue::EventType::CMD_START_DISCOVERY;
+    event.type = EspNowQueue::EventType::CMD_START_DISCOVERY;
     event.data.cmd_start_discovery_timeout_ms = timeout_ms;
     if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
         ESP_LOGE(TAG, "Failed to send CMD_START_DISCOVERY to event queue");

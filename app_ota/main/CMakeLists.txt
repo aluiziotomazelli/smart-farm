@@ -9,5 +9,6 @@ idf_component_register(
         nvs_flash
         wifi_manager
         driver
+        espnow_comm
 
 )

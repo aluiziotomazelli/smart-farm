@@ -1,8 +1,8 @@
 #include "esp_log.h"
+#include "espnow_comm.hpp"
 #include "nvs_flash.h"
 #include "ota_manager.hpp"
 #include "wifi_manager.hpp"
-#include "espnow_comm.hpp"
 #include <stdio.h>
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -21,9 +21,8 @@ static const char *TAG = "OTA_TEST";
 // Globals
 static bool button_pressed        = false;
 static TickType_t last_press_time = 0;
-static bool ota_command_received = false;
+static bool ota_command_received  = false;
 static OtaCommand received_ota_command;
-
 
 WiFiManager &wifi = WiFiManager::instance();
 auto &ota         = OtaManager::instance();
@@ -91,17 +90,19 @@ static void button_task(void *arg)
 
                 if (peer_node_id != 0) {
                     WaterLevelReport report;
-                    report.level_permille = 500;
-                    report.distance_cm = 123.45f;
-                    report.battery_mv = 3300;
-                    report.quality = UsQuality::OK;
-                    report.failure = UsFailure::NONE;
+                    report.level_permille       = 500;
+                    report.distance_cm          = 123.45f;
+                    report.battery_mv           = 3300;
+                    report.quality              = UsQuality::OK;
+                    report.failure              = UsFailure::NONE;
                     report.float_switch_is_full = false;
-                    report.backup_mode_active = false;
+                    report.backup_mode_active   = false;
 
-                    comm.send(peer_node_id, MessageType::DATA, (uint8_t *)&report, sizeof(report));
+                    comm.send(peer_node_id, MessageType::DATA, (uint8_t *)&report,
+                              sizeof(report));
                     ESP_LOGI(TAG, "WaterLevelReport sent to node %u", peer_node_id);
-                } else {
+                }
+                else {
                     ESP_LOGW(TAG, "No peer found to send message to.");
                 }
             }
@@ -145,7 +146,8 @@ extern "C" void app_main(void)
     // Initialize ESP-NOW
     ESPNOWConfig espnow_config;
     espnow_config.node_id = common::generate_node_id();
-    espnow_config.node_type = NodeType::WATER_TANK; // Pretend to be a water tank for this test
+    espnow_config.node_type =
+        NodeType::WATER_TANK; // Pretend to be a water tank for this test
     if (!comm.init(espnow_config)) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW. Halting.");
         return;
@@ -156,7 +158,8 @@ extern "C" void app_main(void)
         if (added) {
             ESP_LOGI(TAG, "Peer added: Node ID %u", peer.node_id);
             peer_node_id = peer.node_id; // Store peer id to send messages
-        } else {
+        }
+        else {
             ESP_LOGI(TAG, "Peer removed: Node ID %u", peer.node_id);
             if (peer.node_id == peer_node_id) {
                 peer_node_id = 0;
@@ -172,7 +175,8 @@ extern "C" void app_main(void)
 
     // Start discovery
     comm.startDiscovery(0); // Infinite discovery
-    ESP_LOGI(TAG, "ESP-NOW Initialized with Node ID: %u. Discovery started.", espnow_config.node_id);
+    ESP_LOGI(TAG, "ESP-NOW Initialized with Node ID: %u. Discovery started.",
+             espnow_config.node_id);
 
     // Load credentials from NVS or menuconfig
     std::string config_ssid     = CONFIG_WIFI_SSID;
@@ -222,7 +226,8 @@ extern "C" void app_main(void)
     }
 }
 
-void process_ota_command() {
+void process_ota_command()
+{
     ESP_LOGI(TAG, "Processing OTA command...");
 
     // Stop ESP-NOW communication
@@ -260,7 +265,8 @@ void process_ota_command() {
         ota.startOtaWithMdns(received_ota_command.url);
     }
     else {
-        ESP_LOGE(TAG, "Failed to connect to WiFi: %s. Aborting OTA.", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to connect to WiFi: %s. Aborting OTA.",
+                 esp_err_to_name(err));
         // The ota_event_handler will handle the failure and restart wifi
     }
 

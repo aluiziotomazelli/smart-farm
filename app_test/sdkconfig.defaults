@@ -1,0 +1,11 @@
+# This file was generated using idf.py save-defconfig. It can be edited manually.
+# Espressif IoT Development Framework (ESP-IDF) 5.5.1 Project Minimal Configuration
+#
+
+CONFIG_OTA_SENDER_ENABLE=y
+CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
+CONFIG_ESPTOOLPY_FLASHSIZE_DETECT=y
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+
+
+

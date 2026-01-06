@@ -95,8 +95,7 @@ void CentralHubApp::processOtaCommand()
         }
         else {
             ESP_LOGI(TAG, "Performing OTA...");
-            esp_err_t ota_err =
-                ota_manager_->performOtaWithMdns(received_ota_command_.url);
+            esp_err_t ota_err = ota_manager_->startOtaWithMdns(received_ota_command_.url);
             // ota_manager_->performOta(received_ota_command_.url);
             if (ota_err != ESP_OK) {
                 ESP_LOGE(TAG, "OTA failed. Cleaning up and resuming ESP-NOW.");
