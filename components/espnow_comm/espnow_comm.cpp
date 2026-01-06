@@ -512,14 +512,19 @@ void EspNowComm::handleStopDiscoveryCommand()
 
 void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceived &evt)
 {
-    // This now runs in the context of our task
-    handleReceive(&evt.recv_info, evt.data, evt.len);
+    esp_now_recv_info_t recv_info_stack;
+    memcpy(recv_info_stack.src_addr, evt.src_mac, 6);
+
+    wifi_pkt_rx_ctrl_t rx_ctrl;
+    rx_ctrl.rssi = evt.rssi;
+    recv_info_stack.rx_ctrl = &rx_ctrl;
+
+    handleReceive(&recv_info_stack, evt.data, evt.len);
 }
 
 void EspNowComm::handleSendStatusEvent(const EspNowQueue::EventSendStatus &evt)
 {
-    // This now runs in the context of our task, operating on a safe copy of tx_info
-    handleSend(&evt.tx_info, evt.status);
+    handleSend(evt.mac_addr, evt.status);
 }
 
 void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
@@ -632,11 +637,10 @@ void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
     xSemaphoreGive(mutex_);
 }
 
-void EspNowComm::handleSend(const esp_now_send_info_t *tx_info,
-                            esp_now_send_status_t status)
+void EspNowComm::handleSend(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    PeerInfo *peer = findPeerByMac(tx_info->des_addr);
+    PeerInfo *peer = findPeerByMac(mac_addr);
     if (peer) {
         if (status == ESP_NOW_SEND_SUCCESS) {
             peer->link_quality = std::min(100, peer->link_quality + 1);
@@ -657,7 +661,7 @@ void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
                               const uint8_t *data,
                               int len)
 {
-    if (!instance_ || !instance_->event_queue_) {
+    if (!instance_ || !instance_->event_queue_ || !recv_info || !data) {
         return;
     }
     if (len > sizeof(EspNowQueue::EventPacketReceived::data)) {
@@ -666,8 +670,8 @@ void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
 
     EspNowQueue::Event event;
     event.type = EspNowQueue::EventType::EVT_PACKET_RECEIVED;
-    memcpy(&event.data.evt_packet_received.recv_info, recv_info,
-           sizeof(esp_now_recv_info_t));
+    memcpy(event.data.evt_packet_received.src_mac, recv_info->src_addr, 6);
+    event.data.evt_packet_received.rssi = recv_info->rx_ctrl->rssi;
     memcpy(event.data.evt_packet_received.data, data, len);
     event.data.evt_packet_received.len = len;
 
@@ -688,7 +692,7 @@ void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
 
     EspNowQueue::Event event;
     event.type = EspNowQueue::EventType::EVT_SEND_STATUS;
-    memcpy(&event.data.evt_send_status.tx_info, tx_info, sizeof(esp_now_send_info_t));
+    memcpy(event.data.evt_send_status.mac_addr, tx_info->des_addr, 6);
     event.data.evt_send_status.status = status;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;

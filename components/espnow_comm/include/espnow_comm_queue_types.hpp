@@ -65,7 +65,8 @@ struct CommandAddPeer
  */
 struct EventPacketReceived
 {
-    esp_now_recv_info_t recv_info; // Contains source MAC, RSSI etc.
+    uint8_t src_mac[6];
+    int8_t rssi;
     uint8_t data[ESP_NOW_MAX_DATA_LEN];
     int len;
 };
@@ -75,7 +76,7 @@ struct EventPacketReceived
  */
 struct EventSendStatus
 {
-    esp_now_send_info_t tx_info;
+    uint8_t mac_addr[6];
     esp_now_send_status_t status;
 };
 

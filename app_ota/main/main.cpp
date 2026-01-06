@@ -2,6 +2,7 @@
 #include "nvs_flash.h"
 #include "ota_manager.hpp"
 #include "wifi_manager.hpp"
+#include "espnow_comm.hpp"
 #include <stdio.h>
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -20,9 +21,16 @@ static const char *TAG = "OTA_TEST";
 // Globals
 static bool button_pressed        = false;
 static TickType_t last_press_time = 0;
+static bool ota_command_received = false;
+static OtaCommand received_ota_command;
+
 
 WiFiManager &wifi = WiFiManager::instance();
 auto &ota         = OtaManager::instance();
+EspNowComm comm;
+uint8_t peer_node_id = 0; // Will be updated on pairing
+
+void process_ota_command(); // Forward declaration
 
 // OTA Event handler to provide user feedback (e.g., turn on LED)
 static void ota_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -79,42 +87,22 @@ static void button_task(void *arg)
                 button_pressed  = true;
                 last_press_time = now;
 
-                ESP_LOGI(TAG, "Button pressed! Starting OTA sequence...");
+                ESP_LOGI(TAG, "Button pressed! Sending WaterLevelReport...");
 
-                // The flow for OTA is: stop wifi (to clear esp-now channel), start,
-                // connect.
-                ESP_LOGI(TAG, "Stopping WiFi...");
-                if (wifi.stop(5000) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to stop WiFi. Aborting OTA.");
-                    continue;
-                }
+                if (peer_node_id != 0) {
+                    WaterLevelReport report;
+                    report.level_permille = 500;
+                    report.distance_cm = 123.45f;
+                    report.battery_mv = 3300;
+                    report.quality = UsQuality::OK;
+                    report.failure = UsFailure::NONE;
+                    report.float_switch_is_full = false;
+                    report.backup_mode_active = false;
 
-                ESP_LOGI(TAG, "Starting WiFi...");
-                if (wifi.start(5000) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to start WiFi. Aborting OTA.");
-                    continue;
-                }
-
-                std::string ssid, password;
-                esp_err_t err = wifi.loadCredentials(ssid, password);
-
-                if (err != ESP_OK) {
-                    ESP_LOGE(TAG, "No credentials found. Aborting OTA.");
-                    continue;
-                }
-
-                ESP_LOGI(TAG, "Credentials loaded. Connecting to '%s'...", ssid.c_str());
-                err = wifi.connect(ssid, password, 15000); // 15 sec timeout
-
-                if (err == ESP_OK) {
-                    ESP_LOGI(TAG, "WiFi connected successfully. Starting OTA download.");
-                    const char *hostname = "ota-server";
-                    ota.startOtaWithMdns(hostname);
-                }
-                else {
-                    ESP_LOGE(TAG, "Failed to connect to WiFi: %s. Aborting OTA.",
-                             esp_err_to_name(err));
-                    // The ota_event_handler will handle the failure and restart wifi
+                    comm.send(peer_node_id, MessageType::DATA, (uint8_t *)&report, sizeof(report));
+                    ESP_LOGI(TAG, "WaterLevelReport sent to node %u", peer_node_id);
+                } else {
+                    ESP_LOGW(TAG, "No peer found to send message to.");
                 }
             }
         }
@@ -147,12 +135,44 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         APP_OTA_EVENT, ESP_EVENT_ANY_ID, &ota_event_handler, nullptr, nullptr));
 
-    // Start WiFi in STA mode for ESP-NOW. This test app will also connect.
+    // Start WiFi in STA mode for ESP-NOW.
     ESP_LOGI(TAG, "Starting WiFi in STA mode...");
     if (wifi.start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start WiFi. Halting.");
         return;
     }
+
+    // Initialize ESP-NOW
+    ESPNOWConfig espnow_config;
+    espnow_config.node_id = common::generate_node_id();
+    espnow_config.node_type = NodeType::WATER_TANK; // Pretend to be a water tank for this test
+    if (!comm.init(espnow_config)) {
+        ESP_LOGE(TAG, "Failed to initialize ESP-NOW. Halting.");
+        return;
+    }
+
+    // Register callbacks for ESP-NOW
+    comm.setPeerEventCallback([](const PeerInfo &peer, bool added) {
+        if (added) {
+            ESP_LOGI(TAG, "Peer added: Node ID %u", peer.node_id);
+            peer_node_id = peer.node_id; // Store peer id to send messages
+        } else {
+            ESP_LOGI(TAG, "Peer removed: Node ID %u", peer.node_id);
+            if (peer.node_id == peer_node_id) {
+                peer_node_id = 0;
+            }
+        }
+    });
+
+    comm.setOtaCommandCallback([](uint8_t node_id, const OtaCommand &command) {
+        ESP_LOGI(TAG, "Received OTA command from node %u", node_id);
+        ota_command_received = true;
+        received_ota_command = command;
+    });
+
+    // Start discovery
+    comm.startDiscovery(0); // Infinite discovery
+    ESP_LOGI(TAG, "ESP-NOW Initialized with Node ID: %u. Discovery started.", espnow_config.node_id);
 
     // Load credentials from NVS or menuconfig
     std::string config_ssid     = CONFIG_WIFI_SSID;
@@ -194,7 +214,55 @@ extern "C" void app_main(void)
     xTaskCreate(button_task, "button_task", 4096, NULL, 5, NULL);
 
     while (1) {
+        if (ota_command_received) {
+            process_ota_command();
+        }
         ESP_LOGI(TAG, "Main task alive... Current WiFi State: %d", (int)wifi.getState());
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
+}
+
+void process_ota_command() {
+    ESP_LOGI(TAG, "Processing OTA command...");
+
+    // Stop ESP-NOW communication
+    comm.deinit();
+
+    // The flow for OTA is: stop wifi (to clear esp-now channel), start, connect.
+    ESP_LOGI(TAG, "Stopping WiFi...");
+    if (wifi.stop(5000) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop WiFi. Aborting OTA.");
+        ota_command_received = false;
+        return;
+    }
+
+    ESP_LOGI(TAG, "Starting WiFi...");
+    if (wifi.start(5000) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WiFi. Aborting OTA.");
+        ota_command_received = false;
+        return;
+    }
+
+    std::string ssid, password;
+    esp_err_t err = wifi.loadCredentials(ssid, password);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "No credentials found. Aborting OTA.");
+        ota_command_received = false;
+        return;
+    }
+
+    ESP_LOGI(TAG, "Credentials loaded. Connecting to '%s'...", ssid.c_str());
+    err = wifi.connect(ssid, password, 15000); // 15 sec timeout
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi connected successfully. Starting OTA download.");
+        ota.startOtaWithMdns(received_ota_command.url);
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to connect to WiFi: %s. Aborting OTA.", esp_err_to_name(err));
+        // The ota_event_handler will handle the failure and restart wifi
+    }
+
+    ota_command_received = false; // Reset flag
 }
