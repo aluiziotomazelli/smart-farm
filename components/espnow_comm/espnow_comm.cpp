@@ -22,6 +22,8 @@ EspNowComm::EspNowComm(bool enable_persistence)
     , discovery_active_(false)
     , discovery_end_time_(0)
     , mutex_(nullptr)
+    , task_handle_(nullptr)
+    , event_queue_(nullptr)
 {
     memset(last_error_, 0, sizeof(last_error_));
 
@@ -34,7 +36,7 @@ EspNowComm::EspNowComm(bool enable_persistence)
 
 EspNowComm::~EspNowComm()
 {
-    deinit();
+    deinit(); // deinit already handles task and queue deletion
     if (mutex_ != nullptr) {
         vSemaphoreDelete(mutex_);
     }
@@ -67,7 +69,23 @@ bool EspNowComm::init(const ESPNOWConfig &config)
                                                    WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR));
     }
 
-    instance_    = this;
+    instance_ = this;
+
+    event_queue_ = xQueueCreate(config.event_queue_size, sizeof(EspNowQueue::Event));
+    if (!event_queue_) {
+        ESP_LOGE(TAG, "Failed to create event queue");
+        esp_now_deinit();
+        return false;
+    }
+
+    if (xTaskCreate(task_function, "espnow_comm_task", config.task_stack_size, this,
+                    config.task_priority, &task_handle_) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create task");
+        vQueueDelete(event_queue_);
+        esp_now_deinit();
+        return false;
+    }
+
     initialized_ = true;
 
     if (persistence_enabled_) {
@@ -80,12 +98,28 @@ bool EspNowComm::init(const ESPNOWConfig &config)
 
 void EspNowComm::deinit()
 {
-    if (!initialized_)
+    if (!initialized_ || task_handle_ == nullptr) {
         return;
+    }
+
+    // Signal the task to terminate
+    EspNowQueue::Event event;
+    event.type = EspNowQueue::EventType::CMD_TASK_TERMINATE;
+    xQueueSend(event_queue_, &event, 0);
+
+    // Wait for the task to confirm termination by setting its handle to NULL
+    while (task_handle_ != nullptr) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Now it's safe to delete the queue
+    if (event_queue_ != nullptr) {
+        vQueueDelete(event_queue_);
+        event_queue_ = nullptr;
+    }
 
     xSemaphoreTake(mutex_, portMAX_DELAY);
 
-    stopDiscovery();
     peers_.clear();
 
     esp_now_unregister_recv_cb();
@@ -106,109 +140,30 @@ uint8_t EspNowComm::get_id() const
 }
 
 bool EspNowComm::send(uint8_t node_id,
+                      MessageType message_type,
                       const uint8_t *data,
                       size_t length,
-                      bool require_ack)
+                                 bool require_ack)
 {
-    if (!initialized_) {
-        strncpy(last_error_, "Not initialized", sizeof(last_error_) - 1);
+    if (!initialized_ || !event_queue_) {
+        return false;
+    }
+    if (length > sizeof(EspNowQueue::CommandSendPacket::payload)) {
+        ESP_LOGE(TAG, "Payload size %d exceeds maximum %d", length,
+                 sizeof(EspNowQueue::CommandSendPacket::payload));
         return false;
     }
 
-    if (length > config_.max_packet_size - sizeof(DataHeader) - 1) {
-        snprintf(last_error_, sizeof(last_error_), "Data too large: %zu > %u", length,
-                 config_.max_packet_size - sizeof(DataHeader) - 1);
-        return false;
-    }
+    EspNowQueue::Event event;
+    event.type                            = EspNowQueue::EventType::CMD_SEND_PACKET;
+    event.data.cmd_send_packet.node_id    = node_id;
+    event.data.cmd_send_packet.require_ack = require_ack;
+    event.data.cmd_send_packet.message_type = message_type;
+    event.data.cmd_send_packet.payload_len = length;
+    memcpy(event.data.cmd_send_packet.payload, data, length);
 
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-
-    PeerInfo *peer = findPeerById(node_id);
-    if (!peer) {
-        xSemaphoreGive(mutex_);
-        snprintf(last_error_, sizeof(last_error_), "Peer %u not found", node_id);
-        return false;
-    }
-
-    DataHeader header;
-    header.version     = 0x01;
-    header.type        = MessageType::DATA;
-    header.sequence    = ack_manager_.getNextSequence();
-    header.timestamp   = esp_timer_get_time() / 1000;
-    header.source_id   = node_id_;
-    header.dest_id     = node_id;
-    header.ttl         = 1;
-    header.data_length = length;
-
-    uint8_t packet[config_.max_packet_size];
-    size_t packet_len = 0;
-    memcpy(packet, &header, sizeof(header));
-    packet_len += sizeof(header);
-    memcpy(packet + packet_len, data, length);
-    packet_len += length;
-    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
-    packet[packet_len] = crc;
-    packet_len++;
-
-    xSemaphoreGive(mutex_);
-
-    esp_err_t err = esp_now_send(peer->mac_address.data(), packet, packet_len);
-    if (err != ESP_OK) {
-        snprintf(last_error_, sizeof(last_error_), "Send failed: %s",
-                 esp_err_to_name(err));
-        return false;
-    }
-
-    if (require_ack && config_.ack_timeout > 0) {
-        xSemaphoreTake(mutex_, portMAX_DELAY);
-        ack_manager_.markAsSent(node_id, header.sequence);
-        peer->tx_count++;
-        xSemaphoreGive(mutex_);
-    }
-    return true;
-}
-
-bool EspNowComm::broadcast(const uint8_t *data, size_t length)
-{
-    const size_t max_payload = config_.max_packet_size - sizeof(DataHeader) - 1;
-    if (length > max_payload) {
-        snprintf(last_error_, sizeof(last_error_),
-                 "Packet too large for broadcast: %zu > %zu", length, max_payload);
-        return false;
-    }
-
-    uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    if (!esp_now_is_peer_exist(broadcast_mac)) {
-        esp_now_peer_info_t peer_info = {};
-        memcpy(peer_info.peer_addr, broadcast_mac, 6);
-        if (esp_now_add_peer(&peer_info) != ESP_OK) {
-            strncpy(last_error_, "Failed to add broadcast peer", sizeof(last_error_) - 1);
-            return false;
-        }
-    }
-
-    DataHeader header;
-    header.version     = 0x01;
-    header.type        = MessageType::DATA;
-    header.sequence    = ack_manager_.getNextSequence();
-    header.timestamp   = esp_timer_get_time() / 1000;
-    header.source_id   = node_id_;
-    header.dest_id     = 0xFF;
-    header.ttl         = 3;
-    header.data_length = length;
-
-    uint8_t packet[config_.max_packet_size];
-    size_t packet_len = 0;
-    memcpy(packet, &header, sizeof(header));
-    packet_len += sizeof(header);
-    memcpy(packet + packet_len, data, length);
-    packet_len += length;
-    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
-    packet[packet_len] = crc;
-    packet_len++;
-
-    if (esp_now_send(broadcast_mac, packet, packet_len) != ESP_OK) {
-        strncpy(last_error_, "Broadcast send failed", sizeof(last_error_) - 1);
+    if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send to event queue");
         return false;
     }
     return true;
@@ -219,10 +174,22 @@ bool EspNowComm::addPeer(uint8_t node_id,
                          uint8_t channel,
                          bool encrypt)
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    bool result = addPeerInternal(node_id, mac, channel, encrypt);
-    xSemaphoreGive(mutex_);
-    return result;
+    if (!initialized_ || !event_queue_) {
+        return false;
+    }
+
+    EspNowQueue::Event event;
+    event.type                         = EspNowQueue::EventType::CMD_ADD_PEER;
+    event.data.cmd_add_peer.node_id    = node_id;
+    event.data.cmd_add_peer.channel    = channel;
+    event.data.cmd_add_peer.encrypt    = encrypt;
+    memcpy(event.data.cmd_add_peer.mac_addr, mac, 6);
+
+    if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send CMD_ADD_PEER to event queue");
+        return false;
+    }
+    return true;
 }
 
 bool EspNowComm::addPeerInternal(uint8_t node_id,
@@ -275,24 +242,18 @@ bool EspNowComm::addPeerInternal(uint8_t node_id,
 
 bool EspNowComm::removePeer(uint8_t node_id)
 {
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    for (auto it = peers_.begin(); it != peers_.end(); ++it) {
-        if (it->node_id == node_id) {
-            esp_now_del_peer(it->mac_address.data());
-            if (on_peer_event_) {
-                on_peer_event_(*it, false);
-            }
-            peers_.erase(it);
-            xSemaphoreGive(mutex_);
-            if (persistence_enabled_) {
-                savePeersToRTCInternal();
-                savePeersToNVSInternal();
-            }
-            return true;
-        }
+    if (!initialized_ || !event_queue_) {
+        return false;
     }
-    xSemaphoreGive(mutex_);
-    return false;
+    EspNowQueue::Event event;
+    event.type                              = EspNowQueue::EventType::CMD_REMOVE_PEER;
+    event.data.cmd_remove_peer_node_id = node_id;
+
+    if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send CMD_REMOVE_PEER to event queue");
+        return false;
+    }
+    return true;
 }
 
 const PeerInfo *EspNowComm::getPeerInfo(uint8_t node_id) const
@@ -305,7 +266,61 @@ const PeerInfo *EspNowComm::getPeerInfo(uint8_t node_id) const
     return nullptr;
 }
 
-void EspNowComm::process()
+void EspNowComm::task_function(void *instance)
+{
+    static_cast<EspNowComm *>(instance)->run();
+}
+
+void EspNowComm::run()
+{
+    EspNowQueue::Event event;
+    // Main task loop
+    while (true) {
+        // Wait for an event, with a timeout for periodic tasks
+        if (xQueueReceive(event_queue_, &event,
+                          pdMS_TO_TICKS(config_.task_process_interval_ms))) {
+            // Process the event from the queue
+            switch (event.type) {
+            case EspNowQueue::EventType::CMD_SEND_PACKET:
+                handleSendPacketCommand(event.data.cmd_send_packet);
+                break;
+            case EspNowQueue::EventType::CMD_ADD_PEER:
+                handleAddPeerCommand(event.data.cmd_add_peer);
+                break;
+            case EspNowQueue::EventType::CMD_REMOVE_PEER:
+                handleRemovePeerCommand(event.data.cmd_remove_peer_node_id);
+                break;
+            case EspNowQueue::EventType::CMD_START_DISCOVERY:
+                handleStartDiscoveryCommand(event.data.cmd_start_discovery_timeout_ms);
+                break;
+            case EspNowQueue::EventType::CMD_STOP_DISCOVERY:
+                handleStopDiscoveryCommand();
+                break;
+            case EspNowQueue::EventType::EVT_PACKET_RECEIVED:
+                handlePacketReceivedEvent(event.data.evt_packet_received);
+                break;
+            case EspNowQueue::EventType::EVT_SEND_STATUS:
+                handleSendStatusEvent(event.data.evt_send_status);
+                break;
+            case EspNowQueue::EventType::CMD_TASK_TERMINATE:
+                ESP_LOGI(TAG, "Task terminating...");
+                instance_ = nullptr; // Clear static instance
+                task_handle_ = nullptr; // Signal that task is cleaning up
+                vTaskDelete(NULL);   // Self-delete
+                return;              // Should not be reached
+            default:
+                ESP_LOGW(TAG, "Unknown event type received in task: %d",
+                         (int)event.type);
+                break;
+            }
+        } else {
+            // Queue receive timed out, perform periodic tasks
+            handlePeriodicTasks();
+        }
+    }
+}
+
+void EspNowComm::handlePeriodicTasks()
 {
     if (!initialized_)
         return;
@@ -313,6 +328,7 @@ void EspNowComm::process()
     xSemaphoreTake(mutex_, portMAX_DELAY);
     uint32_t now = esp_timer_get_time() / 1000;
 
+    // Check for ACK timeouts
     auto timeouts = ack_manager_.checkTimeouts();
     if (!timeouts.empty() && on_ack_timeout_) {
         for (const auto &event : timeouts) {
@@ -320,16 +336,19 @@ void EspNowComm::process()
         }
     }
 
+    // Stop discovery if timeout is reached
     if (discovery_active_ && (now > discovery_end_time_)) {
         stopDiscovery();
     }
 
+    // Send periodic pair requests if discovery is active
     static uint32_t last_pair_request = 0;
     if (discovery_active_ && (now - last_pair_request > 2500)) {
         sendPairRequest();
         last_pair_request = now;
     }
 
+    // Send periodic heartbeats
     static uint32_t last_heartbeat = 0;
     if (config_.heartbeat_interval > 0 &&
         (now - last_heartbeat > config_.heartbeat_interval)) {
@@ -337,11 +356,172 @@ void EspNowComm::process()
         last_heartbeat = now;
     }
 
+    // Clean up inactive peers
     if (config_.peer_timeout > 0) {
         cleanupInactivePeersInternal();
     }
 
     xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::handleSendPacketCommand(const EspNowQueue::CommandSendPacket &cmd)
+{
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+
+    // Assemble the packet first, as it's the same for unicast and broadcast
+    size_t header_size = 0;
+    uint8_t header_buf[sizeof(DataHeader)]; // Max header size
+    uint16_t sequence = ack_manager_.getNextSequence();
+
+    if (cmd.message_type == MessageType::DATA) {
+        DataHeader header;
+        header.version     = 0x01;
+        header.type        = MessageType::DATA;
+        header.sequence    = sequence;
+        header.timestamp   = esp_timer_get_time() / 1000;
+        header.source_id   = node_id_;
+        header.dest_id     = cmd.node_id;
+        header.ttl         = 1;
+        header.data_length = cmd.payload_len;
+        memcpy(header_buf, &header, sizeof(header));
+        header_size = sizeof(header);
+    }
+    // Note: Other message types like OTA would be handled here
+    else {
+         // Generic header for other types
+        MessageHeader header;
+        header.version   = 0x01;
+        header.type      = cmd.message_type;
+        header.sequence  = sequence;
+        header.timestamp = esp_timer_get_time() / 1000;
+        header.source_id = node_id_;
+        header.dest_id   = cmd.node_id;
+        header.ttl       = 1;
+        memcpy(header_buf, &header, sizeof(header));
+        header_size = sizeof(header);
+    }
+
+    uint8_t packet[config_.max_packet_size];
+    size_t packet_len = 0;
+    memcpy(packet, header_buf, header_size);
+    packet_len += header_size;
+    memcpy(packet + packet_len, cmd.payload, cmd.payload_len);
+    packet_len += cmd.payload_len;
+    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
+    packet[packet_len] = crc;
+    packet_len++;
+
+
+    if (cmd.node_id == 0xFF) { // Broadcast logic
+        xSemaphoreGive(mutex_); // Release mutex before sending
+
+        uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+        if (!esp_now_is_peer_exist(broadcast_mac)) {
+            esp_now_peer_info_t peer_info = {};
+            memcpy(peer_info.peer_addr, broadcast_mac, 6);
+            if (esp_now_add_peer(&peer_info) != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to add broadcast peer");
+                return;
+            }
+        }
+
+        esp_err_t err = esp_now_send(broadcast_mac, packet, packet_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Broadcast send failed: %s", esp_err_to_name(err));
+        }
+    } else { // Unicast logic
+        PeerInfo *peer = findPeerById(cmd.node_id);
+        if (!peer) {
+            xSemaphoreGive(mutex_);
+            snprintf(last_error_, sizeof(last_error_), "Peer %u not found for sending",
+                     cmd.node_id);
+            ESP_LOGW(TAG, "%s", last_error_);
+            return;
+        }
+
+        uint8_t mac_addr[6];
+        memcpy(mac_addr, peer->mac_address.data(), 6);
+
+        xSemaphoreGive(mutex_); // Release mutex before sending
+
+        esp_err_t err = esp_now_send(mac_addr, packet, packet_len);
+        if (err != ESP_OK) {
+            snprintf(last_error_, sizeof(last_error_), "Send failed: %s",
+                     esp_err_to_name(err));
+            ESP_LOGE(TAG, "%s", last_error_);
+        }
+
+        if (cmd.require_ack && config_.ack_timeout > 0) {
+            xSemaphoreTake(mutex_, portMAX_DELAY);
+            // Re-find the peer after re-acquiring the mutex to ensure it's still valid
+            PeerInfo *peer_after_send = findPeerById(cmd.node_id);
+            if (peer_after_send) {
+                ack_manager_.markAsSent(cmd.node_id, sequence);
+                peer_after_send->tx_count++;
+            }
+            xSemaphoreGive(mutex_);
+        }
+    }
+}
+
+
+void EspNowComm::handleAddPeerCommand(const EspNowQueue::CommandAddPeer &cmd)
+{
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    addPeerInternal(cmd.node_id, cmd.mac_addr, cmd.channel, cmd.encrypt);
+    xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::handleRemovePeerCommand(uint8_t node_id)
+{
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    for (auto it = peers_.begin(); it != peers_.end(); ++it) {
+        if (it->node_id == node_id) {
+            esp_now_del_peer(it->mac_address.data());
+            if (on_peer_event_) {
+                on_peer_event_(*it, false);
+            }
+            peers_.erase(it);
+            if (persistence_enabled_) {
+                savePeersToRTCInternal();
+                savePeersToNVSInternal();
+            }
+            break; // Exit loop once peer is found and removed
+        }
+    }
+    xSemaphoreGive(mutex_);
+}
+
+void EspNowComm::handleStartDiscoveryCommand(uint32_t timeout_ms)
+{
+    if (discovery_active_) {
+        return;
+    }
+    discovery_active_   = true;
+    discovery_end_time_ = (esp_timer_get_time() / 1000) + timeout_ms;
+    ESP_LOGI(TAG, "Discovery started for %u ms", timeout_ms);
+}
+
+void EspNowComm::handleStopDiscoveryCommand()
+{
+    if (discovery_active_) {
+        discovery_active_ = false;
+        ESP_LOGI(TAG, "Discovery stopped");
+    }
+}
+
+void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceived &evt)
+{
+    // This now runs in the context of our task
+    handleReceive(evt.recv_info, evt.data, evt.len);
+}
+
+void EspNowComm::handleSendStatusEvent(const EspNowQueue::EventSendStatus &evt)
+{
+    // This now runs in the context of our task
+    esp_now_send_info_t tx_info;
+    memcpy(tx_info.des_addr, evt.mac_addr, 6);
+    handleSend(&tx_info, evt.status);
 }
 
 void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
@@ -479,15 +659,46 @@ void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
                               const uint8_t *data,
                               int len)
 {
-    if (instance_)
-        instance_->handleReceive(recv_info, data, len);
+    if (!instance_ || !instance_->event_queue_) {
+        return;
+    }
+    if (len > sizeof(EspNowQueue::EventPacketReceived::data)) {
+        return; // Packet too large for our buffer
+    }
+
+    EspNowQueue::Event event;
+    event.type = EspNowQueue::EventType::EVT_PACKET_RECEIVED;
+    memcpy(&event.data.evt_packet_received.recv_info, recv_info,
+           sizeof(esp_now_recv_info_t));
+    memcpy(event.data.evt_packet_received.data, data, len);
+    event.data.evt_packet_received.len = len;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(instance_->event_queue_, &event, &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
                               esp_now_send_status_t status)
 {
-    if (instance_)
-        instance_->handleSend(tx_info, status);
+    if (!instance_ || !instance_->event_queue_) {
+        return;
+    }
+
+    EspNowQueue::Event event;
+    event.type = EspNowQueue::EventType::EVT_SEND_STATUS;
+    memcpy(event.data.evt_send_status.mac_addr, tx_info->des_addr, 6);
+    event.data.evt_send_status.status = status;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(instance_->event_queue_, &event, &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 PeerInfo *EspNowComm::findPeerByMac(const uint8_t *mac)
@@ -589,13 +800,6 @@ void EspNowComm::sendHeartbeat()
             esp_now_send(peer.mac_address.data(), packet, sizeof(packet));
         }
     }
-}
-
-void EspNowComm::cleanupInactivePeers()
-{
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    cleanupInactivePeersInternal();
-    xSemaphoreGive(mutex_);
 }
 
 void EspNowComm::cleanupInactivePeersInternal()
@@ -743,66 +947,29 @@ const char *EspNowComm::getLastError() const
 
 bool EspNowComm::startDiscovery(uint32_t timeout_ms)
 {
-    if (discovery_active_) {
+    if (!initialized_ || !event_queue_) {
         return false;
     }
-    discovery_active_   = true;
-    discovery_end_time_ = (esp_timer_get_time() / 1000) + timeout_ms;
-    ESP_LOGI(TAG, "Discovery started for %u ms", timeout_ms);
+    EspNowQueue::Event event;
+    event.type                                  = EspNowQueue::EventType::CMD_START_DISCOVERY;
+    event.data.cmd_start_discovery_timeout_ms = timeout_ms;
+    if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send CMD_START_DISCOVERY to event queue");
+        return false;
+    }
     return true;
 }
 
-bool EspNowComm::sendOtaCommand(uint8_t node_id, const OtaCommand &command)
+bool EspNowComm::stopDiscovery()
 {
-    if (!initialized_) {
-        strncpy(last_error_, "Not initialized", sizeof(last_error_) - 1);
+    if (!initialized_ || !event_queue_) {
         return false;
     }
-
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-
-    PeerInfo *peer = findPeerById(node_id);
-    if (!peer) {
-        xSemaphoreGive(mutex_);
-        snprintf(last_error_, sizeof(last_error_), "Peer %u not found", node_id);
+    EspNowQueue::Event event;
+    event.type = EspNowQueue::EventType::CMD_STOP_DISCOVERY;
+    if (xQueueSend(event_queue_, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to send CMD_STOP_DISCOVERY to event queue");
         return false;
     }
-
-    MessageHeader header;
-    header.version   = 0x01;
-    header.type      = MessageType::OTA;
-    header.sequence  = ack_manager_.getNextSequence();
-    header.timestamp = esp_timer_get_time() / 1000;
-    header.source_id = node_id_;
-    header.dest_id   = node_id;
-    header.ttl       = 1;
-
-    uint8_t packet[sizeof(MessageHeader) + sizeof(OtaCommand) + 1];
-    size_t packet_len = 0;
-    memcpy(packet, &header, sizeof(header));
-    packet_len += sizeof(header);
-    memcpy(packet + packet_len, &command, sizeof(command));
-    packet_len += sizeof(command);
-    uint8_t crc        = esp_rom_crc8_le(0, packet, packet_len);
-    packet[packet_len] = crc;
-    packet_len++;
-
-    xSemaphoreGive(mutex_);
-
-    esp_err_t err = esp_now_send(peer->mac_address.data(), packet, packet_len);
-    if (err != ESP_OK) {
-        snprintf(last_error_, sizeof(last_error_), "OTA command send failed: %s",
-                 esp_err_to_name(err));
-        return false;
-    }
-
     return true;
-}
-
-void EspNowComm::stopDiscovery()
-{
-    if (discovery_active_) {
-        discovery_active_ = false;
-        ESP_LOGI(TAG, "Discovery stopped");
-    }
 }

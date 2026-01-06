@@ -10,8 +10,11 @@
 #include <vector>
 
 #include "esp_now.h"
+#include "espnow_comm_queue_types.hpp"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h" // Included for the mutex handle
+#include "freertos/task.h"
 
 class EspNowComm
 {
@@ -27,11 +30,10 @@ public:
     uint8_t get_id() const;
 
     bool send(uint8_t node_id,
+              MessageType message_type,
               const uint8_t *data,
               size_t length,
               bool require_ack = true);
-    bool broadcast(const uint8_t *data, size_t length);
-    bool sendOtaCommand(uint8_t node_id, const OtaCommand &command);
 
     bool addPeer(uint8_t node_id,
                  const uint8_t *mac,
@@ -42,8 +44,7 @@ public:
     std::vector<PeerPersistence::PersistentPeer> getPeers() const;
 
     bool startDiscovery(uint32_t timeout_ms = 10000);
-    void stopDiscovery();
-    void process();
+    bool stopDiscovery();
 
     using OnReceiveCallback =
         std::function<void(uint8_t node_id, const uint8_t *data, int len, int8_t rssi)>;
@@ -67,9 +68,22 @@ public:
 
     bool savePeersToNVS();
     bool savePeersToRTC();
-    void cleanupInactivePeers();
 
 private:
+    // Task-related
+    static void task_function(void *instance);
+    void run(); // Main loop for the task
+
+    // Event handlers running in the task context
+    void handleSendPacketCommand(const EspNowQueue::CommandSendPacket &cmd);
+    void handleAddPeerCommand(const EspNowQueue::CommandAddPeer &cmd);
+    void handleRemovePeerCommand(uint8_t node_id);
+    void handleStartDiscoveryCommand(uint32_t timeout_ms);
+    void handleStopDiscoveryCommand();
+    void handlePacketReceivedEvent(const EspNowQueue::EventPacketReceived &evt);
+    void handleSendStatusEvent(const EspNowQueue::EventSendStatus &evt);
+    void handlePeriodicTasks();
+
     void handleReceive(const esp_now_recv_info_t *recv_info,
                        const uint8_t *data,
                        int len);
@@ -122,6 +136,8 @@ private:
     char last_error_[64];
 
     SemaphoreHandle_t mutex_;
+    TaskHandle_t task_handle_;
+    QueueHandle_t event_queue_;
 
     static EspNowComm *instance_;
 };

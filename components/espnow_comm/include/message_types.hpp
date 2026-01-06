@@ -225,10 +225,20 @@ struct ESPNOWConfig
         , enable_encryption(false)
         , enable_discovery(true)
         , enable_statistics(true)
+        , task_stack_size(4096)
+        , task_priority(5)
+        , event_queue_size(20)
+        , task_process_interval_ms(100)
     {
         pmk.fill(0);
         lmk.fill(0);
     }
+
+    // Task configuration
+    uint32_t task_stack_size;
+    int task_priority;
+    uint32_t event_queue_size;
+    uint32_t task_process_interval_ms;
 };
 
 // ====================================================
