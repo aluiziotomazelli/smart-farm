@@ -42,7 +42,9 @@ struct CommandSendPacket
     MessageType message_type;  // Differentiates between DATA, OTA, etc.
     uint16_t payload_len;
     // The raw data to be sent.
-    uint8_t payload[ESP_NOW_MAX_DATA_LEN];
+    static constexpr size_t MAX_PAYLOAD_SIZE =
+        ESP_NOW_MAX_DATA_LEN - sizeof(DataHeader) - 1;
+    uint8_t payload[MAX_PAYLOAD_SIZE];
 };
 
 /**
@@ -73,7 +75,7 @@ struct EventPacketReceived
  */
 struct EventSendStatus
 {
-    uint8_t mac_addr[6];
+    esp_now_send_info_t tx_info;
     esp_now_send_status_t status;
 };
 

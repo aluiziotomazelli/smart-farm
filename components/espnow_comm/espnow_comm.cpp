@@ -148,9 +148,9 @@ bool EspNowComm::send(uint8_t node_id,
     if (!initialized_ || !event_queue_) {
         return false;
     }
-    if (length > sizeof(EspNowQueue::CommandSendPacket::payload)) {
+    if (length > EspNowQueue::CommandSendPacket::MAX_PAYLOAD_SIZE) {
         ESP_LOGE(TAG, "Payload size %d exceeds maximum %d", length,
-                 sizeof(EspNowQueue::CommandSendPacket::payload));
+                 EspNowQueue::CommandSendPacket::MAX_PAYLOAD_SIZE);
         return false;
     }
 
@@ -518,10 +518,8 @@ void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceive
 
 void EspNowComm::handleSendStatusEvent(const EspNowQueue::EventSendStatus &evt)
 {
-    // This now runs in the context of our task
-    esp_now_send_info_t tx_info;
-    memcpy(tx_info.des_addr, evt.mac_addr, 6);
-    handleSend(&tx_info, evt.status);
+    // This now runs in the context of our task, operating on a safe copy of tx_info
+    handleSend(&evt.tx_info, evt.status);
 }
 
 void EspNowComm::handleReceive(const esp_now_recv_info_t *recv_info,
@@ -684,13 +682,13 @@ void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
 void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
                               esp_now_send_status_t status)
 {
-    if (!instance_ || !instance_->event_queue_) {
+    if (!instance_ || !instance_->event_queue_ || tx_info == nullptr) {
         return;
     }
 
     EspNowQueue::Event event;
     event.type = EspNowQueue::EventType::EVT_SEND_STATUS;
-    memcpy(event.data.evt_send_status.mac_addr, tx_info->des_addr, 6);
+    memcpy(&event.data.evt_send_status.tx_info, tx_info, sizeof(esp_now_send_info_t));
     event.data.evt_send_status.status = status;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
