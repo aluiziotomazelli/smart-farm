@@ -90,19 +90,19 @@ struct OtaCommand
 
 #pragma pack(pop)
 
-union PayloadUnion
-{
-    WaterLevelReport water_level_report;
-    PairRequest pair_request;
-    PairResponse pair_response;
-    HeartbeatMessage heartbeat_message;
-    HeartbeatResponse heartbeat_response;
-    AckMessage ack_message;
-    SolarSensorReport solar_sensor_report;
-    OtaCommand ota_command;
-}
-
-// Validações de tamanho
-static_assert(sizeof(MessageHeader) == MESSAGE_HEADER_SIZE, "Header size mismatch");
-static_assert(sizeof(PayloadUnion) <= MAX_PAYLOAD_SIZE,
-              "WaterLevelReport payload too large");
+// Validações de tamanho para garantir que nenhum payload exceda o limite do ESP-NOW
+static_assert(sizeof(MessageHeader) == MESSAGE_HEADER_SIZE,
+              "MessageHeader size is incorrect");
+static_assert(sizeof(PairRequest) <= MAX_PAYLOAD_SIZE, "PairRequest payload is too large");
+static_assert(sizeof(PairResponse) <= MAX_PAYLOAD_SIZE,
+              "PairResponse payload is too large");
+static_assert(sizeof(HeartbeatMessage) <= MAX_PAYLOAD_SIZE,
+              "HeartbeatMessage payload is too large");
+static_assert(sizeof(HeartbeatResponse) <= MAX_PAYLOAD_SIZE,
+              "HeartbeatResponse payload is too large");
+static_assert(sizeof(AckMessage) <= MAX_PAYLOAD_SIZE, "AckMessage payload is too large");
+static_assert(sizeof(WaterLevelReport) <= MAX_PAYLOAD_SIZE,
+              "WaterLevelReport payload is too large");
+static_assert(sizeof(SolarSensorReport) <= MAX_PAYLOAD_SIZE,
+              "SolarSensorReport payload is too large");
+static_assert(sizeof(OtaCommand) <= MAX_PAYLOAD_SIZE, "OtaCommand payload is too large");

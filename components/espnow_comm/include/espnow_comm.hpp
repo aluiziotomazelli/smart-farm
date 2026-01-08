@@ -111,8 +111,7 @@ private:
     static void espNowRecvCb(const esp_now_recv_info_t *recv_info,
                              const uint8_t *data,
                              int len);
-    static void espNowSendCb(const esp_now_send_info_t *tx_info,
-                             esp_now_send_status_t status);
+    static void espNowSendCb(const uint8_t *mac_addr, esp_now_send_status_t status);
 
     ESPNOWConfig config_;
     uint8_t node_id_;

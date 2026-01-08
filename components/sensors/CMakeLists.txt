@@ -3,7 +3,6 @@ idf_component_register(
         "WaterLevelSensor.cpp"
     INCLUDE_DIRS
         "include"
-        "ultrasonic"
     REQUIRES
         driver
         esp_timer

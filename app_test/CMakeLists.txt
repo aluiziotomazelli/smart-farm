@@ -7,7 +7,6 @@ set(PROJECT_NAME "test")
 list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/main
     ${CMAKE_CURRENT_LIST_DIR}/../components
-    ${CMAKE_CURRENT_LIST_DIR}/../managed_components
 )
 
 # Inclui o framework ESP-IDF

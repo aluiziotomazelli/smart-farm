@@ -1,14 +1,16 @@
 #pragma once
 #include <cstdint>
+#include <cstddef> // Para size_t
 
 constexpr size_t ESP_NOW_MAX_DATA_LEN = 250;
 constexpr size_t MESSAGE_HEADER_SIZE  = 12;
 constexpr size_t CRC_SIZE             = 1;
+// O payload maximo e o tamanho total menos o cabecalho e o CRC
 constexpr size_t MAX_PAYLOAD_SIZE = ESP_NOW_MAX_DATA_LEN - MESSAGE_HEADER_SIZE - CRC_SIZE;
 
 constexpr size_t MAX_PEERS = 20;
 
-// Valores padrão (podem ser sobrescritos no config)
+// Valores padrao (podem ser sobrescritos no config)
 constexpr uint32_t DEFAULT_ACK_TIMEOUT_MS        = 500;
 constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 60000;
 constexpr uint8_t DEFAULT_WIFI_CHANNEL           = 1;

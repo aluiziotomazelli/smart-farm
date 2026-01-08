@@ -498,7 +498,8 @@ void EspNowComm::handleStartDiscoveryCommand(uint32_t timeout_ms)
     }
     discovery_active_   = true;
     discovery_end_time_ = (esp_timer_get_time() / 1000) + timeout_ms;
-    ESP_LOGI(TAG, "Discovery started for %u ms", timeout_ms);
+#include <inttypes.h>
+    ESP_LOGI(TAG, "Discovery started for %" PRIu32 " ms", timeout_ms);
 }
 
 void EspNowComm::handleStopDiscoveryCommand()
@@ -514,7 +515,8 @@ void EspNowComm::handlePacketReceivedEvent(const EspNowQueue::EventPacketReceive
     // TODO: Verificar se inicializacao = {} é correta, erro de compilacao
     //  recv_info_stack.esp_now_recv_info::src_addr' is used uninitialized
     //  [-Werror=uninitialized]
-    esp_now_recv_info_t recv_info_stack = {};
+    esp_now_recv_info_t recv_info_stack;
+    memset(&recv_info_stack, 0, sizeof(esp_now_recv_info_t));
     memcpy(recv_info_stack.src_addr, evt.src_mac, 6);
 
     wifi_pkt_rx_ctrl_t rx_ctrl;
@@ -685,16 +687,15 @@ void EspNowComm::espNowRecvCb(const esp_now_recv_info_t *recv_info,
     }
 }
 
-void EspNowComm::espNowSendCb(const esp_now_send_info_t *tx_info,
-                              esp_now_send_status_t status)
+void EspNowComm::espNowSendCb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
-    if (!instance_ || !instance_->event_queue_ || tx_info == nullptr) {
+    if (!instance_ || !instance_->event_queue_ || mac_addr == nullptr) {
         return;
     }
 
     EspNowQueue::Event event;
     event.type = EspNowQueue::EventType::EVT_SEND_STATUS;
-    memcpy(event.data.evt_send_status.mac_addr, tx_info->des_addr, 6);
+    memcpy(event.data.evt_send_status.mac_addr, mac_addr, 6);
     event.data.evt_send_status.status = status;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
