@@ -58,7 +58,7 @@ public:
     };
 
     // API publica
-    static constexpr int MAX_PEERS = 20;
+    static constexpr int MAX_PEERS = 19;
 
     esp_err_t init(const EspNowConfig &config);
     esp_err_t send(const uint8_t *dest_mac, const void *data, size_t len);

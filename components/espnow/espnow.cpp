@@ -110,6 +110,18 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_recv_cb));
 
+    // Registra o peer de broadcast para garantir que sempre possamos enviar
+    esp_now_peer_info_t broadcast_peer = {};
+    const uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
+    broadcast_peer.channel = config_.wifi_channel;
+    broadcast_peer.encrypt = false;
+
+    if (esp_now_add_peer(&broadcast_peer) != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao adicionar o peer de broadcast");
+        // Nao retornamos falha aqui, pois a comunicacao unicast ainda pode funcionar
+    }
+
     // Cria os mutexes
     peers_mutex_ = xSemaphoreCreateMutex();
     if (peers_mutex_ == nullptr)
