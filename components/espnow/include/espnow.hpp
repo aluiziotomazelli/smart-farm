@@ -61,12 +61,10 @@ public:
     static constexpr int MAX_PEERS = 19;
 
     esp_err_t init(const EspNowConfig &config);
-    esp_err_t send(const uint8_t *dest_mac, const void *data, size_t len);
+    esp_err_t send(uint8_t dest_node_id, const void *payload, size_t len, bool require_ack = false);
 
     // Funcoes de gerenciamento de peers
     esp_err_t add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type);
-    bool is_peer_online(const uint8_t *mac);
-    const uint8_t *find_peer_mac(NodeType type, uint8_t mode_id);
 
 private:
     // Construtor privado para o singleton

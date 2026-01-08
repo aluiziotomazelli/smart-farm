@@ -170,14 +170,73 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     return ESP_OK;
 }
 
-esp_err_t EspNow::send(const uint8_t *dest_mac, const void *data, size_t len)
+#include "esp_rom_crc.h"
+
+esp_err_t EspNow::send(uint8_t dest_node_id, const void *payload, size_t len, bool require_ack)
 {
     if (!is_initialized_)
     {
         return ESP_ERR_INVALID_STATE;
     }
-    // Placeholder para a logica de envio
-    return esp_now_send(dest_mac, static_cast<const uint8_t *>(data), len);
+
+    if (payload == nullptr || len == 0)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (len > MAX_PAYLOAD_SIZE)
+    {
+        ESP_LOGE(TAG, "Payload excede o tamanho maximo de %d bytes.", MAX_PAYLOAD_SIZE);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // 1. Encontra o MAC do peer de destino
+    uint8_t dest_mac[6];
+    bool peer_found = false;
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
+    {
+        for (const auto &peer : peers_)
+        {
+            if (peer.node_id == dest_node_id)
+            {
+                memcpy(dest_mac, peer.mac, 6);
+                peer_found = true;
+                break;
+            }
+        }
+        xSemaphoreGive(peers_mutex_);
+    }
+
+    if (!peer_found)
+    {
+        ESP_LOGE(TAG, "Nao foi possivel encontrar o peer com node_id: %d", dest_node_id);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    // 2. Monta o pacote completo
+    size_t packet_len = sizeof(MessageHeader) + len + sizeof(uint8_t); // Header + Payload + CRC
+    std::vector<uint8_t> packet_buffer(packet_len);
+
+    MessageHeader *header = reinterpret_cast<MessageHeader *>(packet_buffer.data());
+    header->msg_type = MessageType::DATA;
+    header->sender_id = config_.node_id;
+    header->requires_ack = require_ack;
+
+    // 3. Copia o payload
+    memcpy(packet_buffer.data() + sizeof(MessageHeader), payload, len);
+
+    // 4. Calcula e adiciona o CRC
+    uint8_t crc = esp_rom_crc8_le(0, packet_buffer.data(), sizeof(MessageHeader) + len);
+    packet_buffer[packet_len - 1] = crc;
+
+    // 5. Envia o pacote
+    esp_err_t result = esp_now_send(dest_mac, packet_buffer.data(), packet_len);
+    if (result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Falha ao enviar dados para o node_id %d: %s", dest_node_id, esp_err_to_name(result));
+    }
+
+    return result;
 }
 
 esp_err_t EspNow::add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type)
@@ -408,14 +467,3 @@ void EspNow::process_transport_message(const RxPacket &packet)
     ESP_LOGI(TAG, "Processando mensagem de transporte tipo %d", (int)header->msg_type);
 }
 
-bool EspNow::is_peer_online(const uint8_t *mac)
-{
-    // Placeholder
-    return false;
-}
-
-const uint8_t *EspNow::find_peer_mac(NodeType type, uint8_t id)
-{
-    // Placeholder
-    return nullptr;
-}
