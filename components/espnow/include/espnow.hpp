@@ -1,27 +1,27 @@
 #pragma once
 
+#include "esp_now.h"
 #include "protocol_types.hpp"
 #include <cstdint>
 #include <vector>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "esp_now.h"
 
 // Configuracao para inicializar o componente EspNow
 struct EspNowConfig
 {
-    uint8_t id;                       // ID unico deste no
-    NodeType node_type;               // Tipo deste no (Hub, WaterTank, etc)
-    QueueHandle_t app_rx_queue;       // Fila para onde as mensagens da aplicacao serao enviadas
-    uint8_t wifi_channel;             // Canal WiFi inicial
-    uint32_t ack_timeout_ms;          // Timeout para ACK logico
-    uint32_t heartbeat_interval_ms;   // Intervalo de heartbeat
-    bool is_master;                   // Se este no e o mestre da rede (Hub)
+    uint8_t node_id;            // ID unico deste no
+    NodeType node_type;         // Tipo deste no (Hub, WaterTank, etc)
+    QueueHandle_t app_rx_queue; // Fila para onde as mensagens da aplicacao serao enviadas
+    uint8_t wifi_channel;       // Canal WiFi inicial
+    uint32_t ack_timeout_ms;    // Timeout para ACK logico
+    uint32_t heartbeat_interval_ms; // Intervalo de heartbeat
+    bool is_master;                 // Se este no e o mestre da rede (Hub)
 
     // Construtor com valores padrao
     EspNowConfig()
-        : id(0)
+        : node_id(0)
         , node_type(NodeType::UNKNOWN)
         , app_rx_queue(nullptr)
         , wifi_channel(DEFAULT_WIFI_CHANNEL)
@@ -41,7 +41,7 @@ public:
     static EspNow &instance();
 
     // Impede copias
-    EspNow(const EspNow &) = delete;
+    EspNow(const EspNow &)            = delete;
     EspNow &operator=(const EspNow &) = delete;
 
     // Destrutor para liberar recursos
@@ -63,7 +63,7 @@ public:
 
     // Funcoes de gerenciamento de peers (a serem implementadas)
     bool is_peer_online(const uint8_t *mac);
-    const uint8_t *find_peer_mac(NodeType type, uint8_t id);
+    const uint8_t *find_peer_mac(NodeType type, uint8_t mode_id);
 
 private:
     // Construtor privado para o singleton
@@ -74,7 +74,7 @@ private:
     {
         uint8_t mac[6];
         NodeType type;
-        uint8_t id;
+        uint8_t node_id;
         uint32_t last_seen_ms;
         bool paired;
     };
