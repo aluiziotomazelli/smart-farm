@@ -72,10 +72,16 @@ public:
     static constexpr int MAX_PEERS = 19; // Reserve one slot for the broadcast address
 
     esp_err_t init(const EspNowConfig &config);
-    esp_err_t send(NodeId dest_node_id, const void *payload, size_t len, bool require_ack = false);
+    esp_err_t send(NodeId dest_node_id,
+                   const void *payload,
+                   size_t len,
+                   bool require_ack = false);
 
     // Peer Management Functions
-    esp_err_t add_peer(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
+    esp_err_t add_peer(NodeId node_id,
+                       const uint8_t *mac,
+                       uint8_t channel,
+                       NodeType type);
     std::vector<PeerInfo> get_peers();
 
 private:
@@ -86,7 +92,7 @@ private:
     EspNowConfig config_{};
     std::vector<PeerInfo> peers_;
     SemaphoreHandle_t peers_mutex_ = nullptr;
-    bool is_initialized_ = false;
+    bool is_initialized_           = false;
 
     // Queues for the Dispatcher-Worker architecture
     QueueHandle_t rx_dispatch_queue_      = nullptr; // Single queue for the ISR
@@ -101,7 +107,10 @@ private:
     static SemaphoreHandle_t singleton_mutex_;
 
     // --- Private Methods ---
-    esp_err_t add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
+    esp_err_t add_peer_internal(NodeId node_id,
+                                const uint8_t *mac,
+                                uint8_t channel,
+                                NodeType type);
 
     // Protocol Message Processing
     void process_transport_message(const RxPacket &packet);
@@ -116,5 +125,8 @@ private:
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                                 const uint8_t *data,
                                 int len);
-    static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
+    static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+                                esp_now_send_status_t status);
+
+    // const uint8_t *mac_addr, esp_now_send_status_t status);
 };
