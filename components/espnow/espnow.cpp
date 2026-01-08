@@ -200,17 +200,58 @@ esp_err_t EspNow::add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel,
 
 esp_err_t EspNow::add_peer_internal(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type)
 {
-    // 1. Verifica se o peer ja existe
-    for (const auto &peer : peers_)
+    // 1. Procura por um peer existente com o mesmo node_id
+    for (auto it = peers_.begin(); it != peers_.end(); ++it)
     {
-        if (memcmp(peer.mac, mac, 6) == 0)
+        if (it->node_id == node_id)
         {
-            ESP_LOGW(TAG, "Peer com MAC %02X:%02X:%02X:%02X:%02X:%02X ja existe.", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            return ESP_ERR_ESPNOW_EXIST;
+            ESP_LOGI(TAG, "Node ID %d ja existe. Atualizando informacoes do peer.", node_id);
+            PeerInfo updated_peer = *it; // Cria uma copia para evitar invalidacao do iterador
+
+            bool mac_changed = (memcmp(updated_peer.mac, mac, 6) != 0);
+
+            if (mac_changed)
+            {
+                // Remove o MAC antigo da camada ESP-IDF
+                esp_err_t del_result = esp_now_del_peer(updated_peer.mac);
+                if (del_result != ESP_OK && del_result != ESP_ERR_ESPNOW_NOT_FOUND)
+                {
+                    ESP_LOGE(TAG, "Falha ao remover o MAC antigo do peer %d: %s", node_id, esp_err_to_name(del_result));
+                    return del_result;
+                }
+
+                // Adiciona o novo MAC na camada ESP-IDF
+                esp_now_peer_info_t peer_info = {};
+                memcpy(peer_info.peer_addr, mac, 6);
+                peer_info.channel = channel;
+                peer_info.encrypt = false;
+                esp_err_t add_result = esp_now_add_peer(&peer_info);
+                if (add_result != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "Falha ao adicionar o novo MAC para o peer %d: %s", node_id, esp_err_to_name(add_result));
+                    return add_result;
+                }
+            }
+
+            // Atualiza a informacao do peer na nossa copia
+            memcpy(updated_peer.mac, mac, 6);
+            updated_peer.type = type;
+            updated_peer.channel = channel;
+            updated_peer.last_seen_ms = esp_timer_get_time() / 1000;
+
+            // Move o peer atualizado para o inicio da lista (mais recente)
+            peers_.erase(it);
+            peers_.insert(peers_.begin(), updated_peer);
+
+            ESP_LOGI(TAG, "Peer com Node ID %d atualizado para MAC %02X:%02X:%02X:%02X:%02X:%02X.", node_id, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            return ESP_OK;
         }
     }
 
-    // 2. Verifica se a lista de peers esta cheia
+    // --- Se o node_id nao foi encontrado, adiciona como um novo peer ---
+    ESP_LOGI(TAG, "Node ID %d nao encontrado. Adicionando como novo peer.", node_id);
+
+    // Verifica se a lista de peers esta cheia
     if (peers_.size() >= MAX_PEERS)
     {
         ESP_LOGW(TAG, "Lista de peers cheia. Removendo o mais antigo.");
@@ -219,36 +260,35 @@ esp_err_t EspNow::add_peer_internal(uint8_t node_id, const uint8_t *mac, uint8_t
         if (result != ESP_OK)
         {
             ESP_LOGE(TAG, "Falha ao remover o peer mais antigo do ESP-NOW: %s", esp_err_to_name(result));
-            // Continuamos mesmo em caso de falha, para tentar adicionar o novo
         }
         peers_.pop_back();
     }
 
-    // 3. Adiciona o peer no ESP-IDF
+    // Adiciona o novo peer na camada ESP-IDF
     esp_now_peer_info_t peer_info = {};
     memcpy(peer_info.peer_addr, mac, 6);
     peer_info.channel = channel;
-    peer_info.encrypt = false; // TODO: Adicionar suporte a criptografia
+    peer_info.encrypt = false;
     esp_err_t result = esp_now_add_peer(&peer_info);
 
     if (result != ESP_OK)
     {
-        ESP_LOGE(TAG, "Falha ao adicionar peer no ESP-NOW: %s", esp_err_to_name(result));
+        ESP_LOGE(TAG, "Falha ao adicionar novo peer no ESP-NOW: %s", esp_err_to_name(result));
         return result;
     }
 
-    // 4. Adiciona o peer na nossa lista interna
+    // Adiciona o novo peer na nossa lista interna (no inicio)
     PeerInfo new_peer;
     memcpy(new_peer.mac, mac, 6);
     new_peer.node_id = node_id;
     new_peer.type = type;
     new_peer.channel = channel;
     new_peer.last_seen_ms = esp_timer_get_time() / 1000;
-    new_peer.paired = true; // Assume-se que esta pareado ao adicionar
+    new_peer.paired = true;
 
     peers_.insert(peers_.begin(), new_peer);
 
-    ESP_LOGI(TAG, "Peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %d) adicionado no canal %d.", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], node_id, channel);
+    ESP_LOGI(TAG, "Novo peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %d) adicionado.", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], node_id);
 
     return ESP_OK;
 }
