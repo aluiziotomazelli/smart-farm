@@ -58,10 +58,13 @@ public:
     };
 
     // API publica
+    static constexpr int MAX_PEERS = 20;
+
     esp_err_t init(const EspNowConfig &config);
     esp_err_t send(const uint8_t *dest_mac, const void *data, size_t len);
 
-    // Funcoes de gerenciamento de peers (a serem implementadas)
+    // Funcoes de gerenciamento de peers
+    esp_err_t add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type);
     bool is_peer_online(const uint8_t *mac);
     const uint8_t *find_peer_mac(NodeType type, uint8_t mode_id);
 
@@ -75,6 +78,7 @@ private:
         uint8_t mac[6];
         NodeType type;
         uint8_t node_id;
+        uint8_t channel;
         uint32_t last_seen_ms;
         bool paired;
     };
@@ -82,6 +86,7 @@ private:
     // --- Membros Privados ---
     EspNowConfig config_{};
     std::vector<PeerInfo> peers_;
+    SemaphoreHandle_t peers_mutex_ = nullptr;
     bool is_initialized_ = false;
 
     // Filas para a arquitetura Dispatcher-Worker
@@ -97,6 +102,8 @@ private:
     static SemaphoreHandle_t singleton_mutex_;
 
     // --- Metodos Privados ---
+
+    esp_err_t add_peer_internal(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type);
 
     // Processa mensagens de protocolo (PAIR, HEARTBEAT)
     void process_transport_message(const RxPacket &packet);

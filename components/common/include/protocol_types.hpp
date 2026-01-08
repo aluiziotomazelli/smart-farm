@@ -1,8 +1,7 @@
 #pragma once
+#include "esp_now.h"
 #include <cstdint>
 #include <cstddef> // Para size_t
-
-constexpr size_t ESP_NOW_MAX_DATA_LEN = 250;
 constexpr size_t MESSAGE_HEADER_SIZE  = 12;
 constexpr size_t CRC_SIZE             = 1;
 // O payload maximo e o tamanho total menos o cabecalho e o CRC

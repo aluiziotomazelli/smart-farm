@@ -65,10 +65,11 @@ EspNow::~EspNow()
         vQueueDelete(transport_worker_queue_);
     }
 
-    // Desinicializa o ESP-NOW
-    if (is_initialized_)
+    // Deleta os mutexes
+    if (peers_mutex_ != nullptr)
     {
-        esp_now_deinit();
+        vSemaphoreDelete(peers_mutex_);
+        peers_mutex_ = nullptr;
     }
 
     // Deleta o mutex do singleton
@@ -76,6 +77,12 @@ EspNow::~EspNow()
     {
         vSemaphoreDelete(singleton_mutex_);
         singleton_mutex_ = nullptr;
+    }
+
+    // Desinicializa o ESP-NOW
+    if (is_initialized_)
+    {
+        esp_now_deinit();
     }
 
     ESP_LOGI(TAG, "Recursos liberados.");
@@ -102,6 +109,14 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     // Inicializa o ESP-NOW
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_recv_cb));
+
+    // Cria os mutexes
+    peers_mutex_ = xSemaphoreCreateMutex();
+    if (peers_mutex_ == nullptr)
+    {
+        ESP_LOGE(TAG, "Falha ao criar o mutex dos peers.");
+        return ESP_FAIL;
+    }
 
     // Cria as filas internas
     rx_dispatch_queue_ = xQueueCreate(20, sizeof(RxPacket));
@@ -151,6 +166,79 @@ esp_err_t EspNow::send(const uint8_t *dest_mac, const void *data, size_t len)
     }
     // Placeholder para a logica de envio
     return esp_now_send(dest_mac, static_cast<const uint8_t *>(data), len);
+}
+
+esp_err_t EspNow::add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type)
+{
+    if (mac == nullptr)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t result = ESP_FAIL;
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
+    {
+        result = add_peer_internal(node_id, mac, channel, type);
+        xSemaphoreGive(peers_mutex_);
+    }
+    return result;
+}
+
+// --- Metodos Privados ---
+
+esp_err_t EspNow::add_peer_internal(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type)
+{
+    // 1. Verifica se o peer ja existe
+    for (const auto &peer : peers_)
+    {
+        if (memcmp(peer.mac, mac, 6) == 0)
+        {
+            ESP_LOGW(TAG, "Peer com MAC %02X:%02X:%02X:%02X:%02X:%02X ja existe.", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            return ESP_ERR_ESPNOW_EXIST;
+        }
+    }
+
+    // 2. Verifica se a lista de peers esta cheia
+    if (peers_.size() >= MAX_PEERS)
+    {
+        ESP_LOGW(TAG, "Lista de peers cheia. Removendo o mais antigo.");
+        const PeerInfo &oldest_peer = peers_.back();
+        esp_err_t result = esp_now_del_peer(oldest_peer.mac);
+        if (result != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Falha ao remover o peer mais antigo do ESP-NOW: %s", esp_err_to_name(result));
+            // Continuamos mesmo em caso de falha, para tentar adicionar o novo
+        }
+        peers_.pop_back();
+    }
+
+    // 3. Adiciona o peer no ESP-IDF
+    esp_now_peer_info_t peer_info = {};
+    memcpy(peer_info.peer_addr, mac, 6);
+    peer_info.channel = channel;
+    peer_info.encrypt = false; // TODO: Adicionar suporte a criptografia
+    esp_err_t result = esp_now_add_peer(&peer_info);
+
+    if (result != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Falha ao adicionar peer no ESP-NOW: %s", esp_err_to_name(result));
+        return result;
+    }
+
+    // 4. Adiciona o peer na nossa lista interna
+    PeerInfo new_peer;
+    memcpy(new_peer.mac, mac, 6);
+    new_peer.node_id = node_id;
+    new_peer.type = type;
+    new_peer.channel = channel;
+    new_peer.last_seen_ms = esp_timer_get_time() / 1000;
+    new_peer.paired = true; // Assume-se que esta pareado ao adicionar
+
+    peers_.insert(peers_.begin(), new_peer);
+
+    ESP_LOGI(TAG, "Peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %d) adicionado no canal %d.", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], node_id, channel);
+
+    return ESP_OK;
 }
 
 // --- Callback do ESP-NOW (ISR) ---
