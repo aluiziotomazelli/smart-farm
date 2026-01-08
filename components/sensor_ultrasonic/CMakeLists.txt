@@ -7,5 +7,5 @@ idf_component_register(
     REQUIRES
         driver
         esp_timer
-        common_types
+        common
 )

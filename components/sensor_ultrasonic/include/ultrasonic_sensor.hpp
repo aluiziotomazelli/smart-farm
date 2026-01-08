@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common_types.hpp"
+#include "protocol_types.hpp"
 #include <cstddef>
 #include <cstdint>
 #include "driver/gpio.h"

@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "app_ota"
+		},
+		{
+			"path": "app_test"
 		}
 	],
 	"settings": {}

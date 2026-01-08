@@ -5,5 +5,5 @@ idf_component_register(
         "include"
     REQUIRES
         nvs_flash
-        common_types
+        common
 )

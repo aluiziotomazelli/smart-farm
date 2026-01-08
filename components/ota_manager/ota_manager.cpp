@@ -6,8 +6,8 @@
 #include "mdns.h"
 #include <cstring>
 
-#include "common_types.hpp"
 #include "esp_event.h"
+#include "protocol_types.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
