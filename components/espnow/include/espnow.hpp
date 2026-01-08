@@ -8,20 +8,20 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 
-// Configuracao para inicializar o componente EspNow
+// Configuration to initialize the EspNow component
 struct EspNowConfig
 {
-    uint8_t node_id;            // ID unico deste no
-    NodeType node_type;         // Tipo deste no (Hub, WaterTank, etc)
-    QueueHandle_t app_rx_queue; // Fila para onde as mensagens da aplicacao serao enviadas
-    uint8_t wifi_channel;       // Canal WiFi inicial
-    uint32_t ack_timeout_ms;    // Timeout para ACK logico
-    uint32_t heartbeat_interval_ms; // Intervalo de heartbeat
-    bool is_master;                 // Se este no e o mestre da rede (Hub)
+    NodeId node_id;
+    NodeType node_type;
+    QueueHandle_t app_rx_queue;
+    uint8_t wifi_channel;
+    uint32_t ack_timeout_ms;
+    uint32_t heartbeat_interval_ms;
+    bool is_master;
 
-    // Construtor com valores padrao
+    // Default constructor
     EspNowConfig()
-        : node_id(0)
+        : node_id(NodeId::HUB) // Default to HUB, should be overridden by the application
         , node_type(NodeType::UNKNOWN)
         , app_rx_queue(nullptr)
         , wifi_channel(DEFAULT_WIFI_CHANNEL)
@@ -32,22 +32,22 @@ struct EspNowConfig
     }
 };
 
-// Classe principal para comunicacao ESP-NOW
-// Gerencia pareamento, heartbeats e a troca de mensagens de forma assincrona.
+// Main class for ESP-NOW communication.
+// Manages pairing, heartbeats, and asynchronous message exchange.
 class EspNow
 {
 public:
     // Singleton
     static EspNow &instance();
 
-    // Impede copias
+    // Deleted copy constructor and assignment operator
     EspNow(const EspNow &)            = delete;
     EspNow &operator=(const EspNow &) = delete;
 
-    // Destrutor para liberar recursos
+    // Destructor to free resources
     ~EspNow();
 
-    // Pacote recebido (estrutura generica usada nas filas)
+    // Generic structure for received packets used in queues
     struct RxPacket
     {
         uint8_t src_mac[6];
@@ -57,63 +57,64 @@ public:
         int64_t timestamp_us;
     };
 
-    // API publica
-    static constexpr int MAX_PEERS = 19;
-
-    esp_err_t init(const EspNowConfig &config);
-    esp_err_t send(uint8_t dest_node_id, const void *payload, size_t len, bool require_ack = false);
-
-    // Funcoes de gerenciamento de peers
-    esp_err_t add_peer(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type);
-
-private:
-    // Construtor privado para o singleton
-    EspNow();
-
-    // Informacao interna de um peer
+    // Public information about a peer, safe to be used by the application
     struct PeerInfo
     {
         uint8_t mac[6];
         NodeType type;
-        uint8_t node_id;
+        NodeId node_id;
         uint8_t channel;
         uint32_t last_seen_ms;
         bool paired;
     };
 
-    // --- Membros Privados ---
+    // Public API
+    static constexpr int MAX_PEERS = 19; // Reserve one slot for the broadcast address
+
+    esp_err_t init(const EspNowConfig &config);
+    esp_err_t send(NodeId dest_node_id, const void *payload, size_t len, bool require_ack = false);
+
+    // Peer Management Functions
+    esp_err_t add_peer(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
+    std::vector<PeerInfo> get_peers();
+
+private:
+    // Private constructor for singleton pattern
+    EspNow();
+
+    // --- Private Members ---
     EspNowConfig config_{};
     std::vector<PeerInfo> peers_;
     SemaphoreHandle_t peers_mutex_ = nullptr;
     bool is_initialized_ = false;
 
-    // Filas para a arquitetura Dispatcher-Worker
-    QueueHandle_t rx_dispatch_queue_      = nullptr; // Fila unica para o ISR
-    QueueHandle_t transport_worker_queue_ = nullptr; // Fila para a task de protocolo
+    // Queues for the Dispatcher-Worker architecture
+    QueueHandle_t rx_dispatch_queue_      = nullptr; // Single queue for the ISR
+    QueueHandle_t transport_worker_queue_ = nullptr; // Queue for the protocol task
 
-    // Handles das tasks
+    // Task handles
     TaskHandle_t rx_dispatch_task_handle_      = nullptr;
     TaskHandle_t transport_worker_task_handle_ = nullptr;
 
-    // Singleton
+    // Singleton instance and mutex
     static EspNow *instance_ptr_;
     static SemaphoreHandle_t singleton_mutex_;
 
-    // --- Metodos Privados ---
+    // --- Private Methods ---
+    esp_err_t add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
 
-    esp_err_t add_peer_internal(uint8_t node_id, const uint8_t *mac, uint8_t channel, NodeType type);
-
-    // Processa mensagens de protocolo (PAIR, HEARTBEAT)
+    // Protocol Message Processing
     void process_transport_message(const RxPacket &packet);
     void handle_pair_request(const RxPacket &packet);
     void handle_heartbeat(const RxPacket &packet);
 
-    // Funcoes das tasks
+    // Task functions
     static void rx_dispatch_task(void *arg);
     static void transport_worker_task(void *arg);
 
-    // Callback estatico do ESP-NOW (contexto ISR)
+    // Static ESP-NOW callbacks (ISR context)
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                                 const uint8_t *data,
                                 int len);
+    static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
 };

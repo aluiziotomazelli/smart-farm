@@ -1,27 +1,36 @@
 #pragma once
 #include "esp_now.h"
 #include <cstdint>
-#include <cstddef> // Para size_t
+#include <cstddef>
+
+// Correct size of the universal message header
 constexpr size_t MESSAGE_HEADER_SIZE  = 12;
 constexpr size_t CRC_SIZE             = 1;
-// O payload maximo e o tamanho total menos o cabecalho e o CRC
+// The maximum payload size is the total ESP-NOW size minus the header and CRC
 constexpr size_t MAX_PAYLOAD_SIZE = ESP_NOW_MAX_DATA_LEN - MESSAGE_HEADER_SIZE - CRC_SIZE;
 
-constexpr size_t MAX_PEERS = 20;
-
-// Valores padrao (podem ser sobrescritos no config)
+// Default values (can be overridden in config)
 constexpr uint32_t DEFAULT_ACK_TIMEOUT_MS        = 500;
 constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 60000;
 constexpr uint8_t DEFAULT_WIFI_CHANNEL           = 1;
 
+// Defines the functional category of a node.
 enum class NodeType : uint8_t
 {
     UNKNOWN = 0,
     HUB,
-    WATER_TANK,
-    SOLAR_SENSOR,
-    LOAD_CONTROLLER,
-    WEATHER,
+    SENSOR,
+    ACTUATOR,
+};
+
+// Defines the unique, hardcoded identifier for a specific node.
+enum class NodeId : uint8_t
+{
+    HUB = 1,
+    WATER_TANK = 5,
+    SOLAR_SENSOR = 7,
+    PUMP_CONTROL = 10,
+    WEATHER = 12,
 };
 
 enum class MessageType : uint8_t

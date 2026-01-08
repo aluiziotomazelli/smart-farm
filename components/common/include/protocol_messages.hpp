@@ -9,10 +9,10 @@ struct MessageHeader
     MessageType msg_type;
     uint16_t sequence_number;
     NodeType sender_type;
-    uint8_t sender_id;
+    NodeId sender_node_id;
     PayloadType payload_type;
     bool requires_ack;
-    uint8_t reserved;
+    NodeId dest_node_id;
     uint32_t timestamp_ms;
 };
 
@@ -29,7 +29,7 @@ struct PairResponse
 {
     MessageHeader header;
     PairStatus status;
-    uint8_t assigned_id;
+    NodeId assigned_id;
     uint32_t heartbeat_interval_ms;
     uint32_t report_interval_ms;
     uint8_t wifi_channel;
