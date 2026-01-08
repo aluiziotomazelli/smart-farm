@@ -1,0 +1,17 @@
+# Script to set Jules environment with ESO_IDF v.5.5.2 
+# to build the project
+
+#update sources
+sudo apt update
+
+#install dependencies
+sudo apt-get install -y git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+
+#clone esp-idf
+mkdir -p ~/esp
+cd ~/esp
+git clone -b v5.5.2 --recursive https://github.com/espressif/esp-idf.git
+
+#Set up the Tools
+cd ~/esp/esp-idf
+./install.sh all

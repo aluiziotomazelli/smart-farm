@@ -5,6 +5,27 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+struct EspNowConfig
+{
+    uint8_t id;                     // ID único deste nó
+    NodeType node_type;             // Tipo deste nó
+    uint8_t wifi_channel;           // Canal WiFi inicial
+    uint32_t ack_timeout_ms;        // Timeout para ACK lógico
+    uint32_t heartbeat_interval_ms; // Intervalo de heartbeat
+    bool is_master;                 // Peer mestre
+
+    // Construtor com valores padrão
+    EspNowConfig()
+        : id(0)
+        , node_type(NodeType::UNKNOWN)
+        , wifi_channel(DEFAULT_WIFI_CHANNEL)
+        , ack_timeout_ms(DEFAULT_ACK_TIMEOUT_MS)
+        , heartbeat_interval_ms(DEFAULT_HEARTBEAT_INTERVAL_MS)
+        , enable_discovery(false)
+    {
+    }
+};
+
 class EspNow
 {
 public:
@@ -22,7 +43,13 @@ public:
     using RxCallback = std::function<void(const RxPacket &packet)>;
 
     // API pública
-    esp_err_t init();
+    esp_err_t init(const EspNowConfig &config);
+
+    esp_err_t start_discovery(
+        uint32_t timeout_ms = 10000); // Cria task, auto-deleta após timeout
+    void stop_discovery();            // Deleta task manualmente
+    bool is_discovery_running() const;
+
     esp_err_t send(const uint8_t *dest_mac, const void *data, size_t len);
     void register_rx_callback(RxCallback callback);
 
@@ -55,6 +82,7 @@ private:
     // Tasks
     static void transport_rx_task(void *arg);
     static void app_rx_task(void *arg);
+    static void discovery_task_func(void *arg);
 
     // Callback ESP-NOW
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
