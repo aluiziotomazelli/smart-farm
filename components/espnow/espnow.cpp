@@ -3,9 +3,12 @@
 #include "esp_rom_crc.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "protocol_types.hpp"
 #include "protocol_messages.hpp"
 #include <cstring>
 #include <inttypes.h>
+#include <algorithm>
+#include "freertos/timers.h"
 
 // Logging TAG
 static const char *TAG = "EspNow";
@@ -129,6 +132,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
 }
 
 esp_err_t EspNow::send(NodeId dest_node_id,
+                       PayloadType payload_type,
                        const void *payload,
                        size_t len,
                        bool require_ack)
@@ -163,26 +167,24 @@ esp_err_t EspNow::send(NodeId dest_node_id,
         return ESP_ERR_NOT_FOUND;
     }
 
-    size_t packet_len = sizeof(MessageHeader) + len + sizeof(uint8_t);
+    size_t packet_len = sizeof(MessageHeader) + len;
     std::vector<uint8_t> packet_buffer(packet_len);
 
-    MessageHeader *header  = reinterpret_cast<MessageHeader *>(packet_buffer.data());
-    header->msg_type       = MessageType::DATA;
-    header->sender_node_id = config_.node_id;
-    header->dest_node_id   = dest_node_id;
-    header->requires_ack   = require_ack;
+    // Header
+    MessageHeader *header    = reinterpret_cast<MessageHeader *>(packet_buffer.data());
+    header->msg_type         = MessageType::DATA;
+    header->sequence_number  = 0; // TODO: Implement sequence numbers
+    header->sender_type      = config_.node_type;
+    header->sender_node_id   = config_.node_id;
+    header->payload_type     = payload_type;
+    header->requires_ack     = require_ack;
+    header->dest_node_id     = dest_node_id;
+    header->timestamp_ms     = esp_timer_get_time() / 1000;
 
+    // Payload
     memcpy(packet_buffer.data() + sizeof(MessageHeader), payload, len);
 
-    uint8_t crc = esp_rom_crc8_le(0, packet_buffer.data(), sizeof(MessageHeader) + len);
-    packet_buffer[packet_len - 1] = crc;
-
-    esp_err_t result = esp_now_send(dest_mac, packet_buffer.data(), packet_len);
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send data to node_id %" PRIu8 ": %s",
-                 static_cast<uint8_t>(dest_node_id), esp_err_to_name(result));
-    }
-    return result;
+    return send_packet(dest_mac, packet_buffer.data(), packet_len);
 }
 
 std::vector<EspNow::PeerInfo> EspNow::get_peers()
@@ -212,7 +214,110 @@ esp_err_t EspNow::add_peer(NodeId node_id,
     return result;
 }
 
+esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
+{
+    if (is_pairing_active_) {
+        ESP_LOGW(TAG, "Pairing is already active.");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "Pairing started for %" PRIu32 " ms.", timeout_ms);
+
+    // Stop any running timers
+    if (pairing_timer_handle_ != nullptr) {
+        xTimerDelete(pairing_timer_handle_, portMAX_DELAY);
+        pairing_timer_handle_ = nullptr;
+    }
+    if (pairing_timeout_timer_handle_ != nullptr) {
+        xTimerDelete(pairing_timeout_timer_handle_, portMAX_DELAY);
+        pairing_timeout_timer_handle_ = nullptr;
+    }
+
+    if (config_.is_master) {
+        pairing_timeout_timer_handle_ = xTimerCreate(
+            "pairing_timeout", pdMS_TO_TICKS(timeout_ms), pdFALSE, this, pairing_timer_cb);
+        if (pairing_timeout_timer_handle_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to create pairing timeout timer.");
+            return ESP_FAIL;
+        }
+        xTimerStart(pairing_timeout_timer_handle_, 0);
+    }
+    else { // Slave
+        pairing_timer_handle_ = xTimerCreate("pairing_periodic", pdMS_TO_TICKS(5000),
+                                             pdTRUE, this, periodic_pairing_cb);
+        pairing_timeout_timer_handle_ = xTimerCreate(
+            "pairing_timeout", pdMS_TO_TICKS(timeout_ms), pdFALSE, this, pairing_timer_cb);
+
+        if (pairing_timer_handle_ == nullptr ||
+            pairing_timeout_timer_handle_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to create slave pairing timers.");
+            return ESP_FAIL;
+        }
+        xTimerStart(pairing_timer_handle_, 0);
+        xTimerStart(pairing_timeout_timer_handle_, 0);
+        send_pair_request(); // Send immediately
+    }
+
+    is_pairing_active_ = true;
+    return ESP_OK;
+}
+
+esp_err_t EspNow::remove_peer(NodeId node_id)
+{
+    esp_err_t result = ESP_FAIL;
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        result = remove_peer_internal(node_id);
+        xSemaphoreGive(peers_mutex_);
+    }
+    return result;
+}
+
 // --- Private Methods ---
+esp_err_t EspNow::send_packet(const uint8_t *mac_addr, const void *data, size_t len)
+{
+    if (len > ESP_NOW_MAX_DATA_LEN - 1) { // -1 for CRC
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    std::vector<uint8_t> buffer(len + 1);
+    memcpy(buffer.data(), data, len);
+    buffer.back() = esp_rom_crc8_le(0, buffer.data(), len);
+
+    esp_err_t result = esp_now_send(mac_addr, buffer.data(), buffer.size());
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to send packet to %02X:%02X:%02X:%02X:%02X:%02X: %s",
+                 mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4],
+                 mac_addr[5], esp_err_to_name(result));
+    }
+    return result;
+}
+
+esp_err_t EspNow::remove_peer_internal(NodeId node_id)
+{
+    auto it = std::find_if(peers_.begin(), peers_.end(),
+                           [node_id](const PeerInfo &p) { return p.node_id == node_id; });
+
+    if (it == peers_.end()) {
+        ESP_LOGW(TAG, "Could not find peer with node_id: %" PRIu8,
+                 static_cast<uint8_t>(node_id));
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    esp_err_t result = esp_now_del_peer(it->mac);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to remove peer from ESP-NOW: %s", esp_err_to_name(result));
+        // Continue anyway to remove from our internal list
+    }
+
+    ESP_LOGI(TAG, "Removed peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %" PRIu8 ")",
+             it->mac[0], it->mac[1], it->mac[2], it->mac[3], it->mac[4], it->mac[5],
+             static_cast<uint8_t>(node_id));
+
+    peers_.erase(it);
+
+    return ESP_OK;
+}
+
 esp_err_t EspNow::add_peer_internal(NodeId node_id,
                                     const uint8_t *mac,
                                     uint8_t channel,
@@ -336,9 +441,7 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
-                             esp_now_send_status_t status)
-
+void EspNow::esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
     // Placeholder for send callback logic. Can be used for ACK tracking.
 }
@@ -351,7 +454,25 @@ void EspNow::rx_dispatch_task(void *arg)
 
     for (;;) {
         if (xQueueReceive(self->rx_dispatch_queue_, &packet, portMAX_DELAY) == pdTRUE) {
-            if (packet.len < sizeof(MessageHeader)) {
+            // CRC Validation
+            if (packet.len < CRC_SIZE) {
+                continue; // Not long enough for CRC
+            }
+            uint8_t received_crc = packet.data[packet.len - 1];
+            uint8_t calculated_crc =
+                esp_rom_crc8_le(0, packet.data, packet.len - CRC_SIZE);
+
+            if (received_crc != calculated_crc) {
+                ESP_LOGW(TAG,
+                         "CRC mismatch from %02X:%02X:%02X:%02X:%02X:%02X. Got %02X, "
+                         "want %02X.",
+                         packet.src_mac[0], packet.src_mac[1], packet.src_mac[2],
+                         packet.src_mac[3], packet.src_mac[4], packet.src_mac[5],
+                         received_crc, calculated_crc);
+                continue;
+            }
+
+            if (packet.len < sizeof(MessageHeader) + CRC_SIZE) {
                 continue;
             }
             const MessageHeader *header =
@@ -384,6 +505,83 @@ void EspNow::rx_dispatch_task(void *arg)
     }
 }
 
+void EspNow::send_pair_request()
+{
+    PairRequest request;
+    request.header.msg_type       = MessageType::PAIR_REQUEST;
+    request.header.sender_node_id = config_.node_id;
+    request.header.sender_type    = config_.node_type;
+
+    // TODO: Populate other request fields like firmware version, etc.
+
+    const uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_err_t result = send_packet(broadcast_mac, &request, sizeof(request));
+    if (result == ESP_OK) {
+        ESP_LOGI(TAG, "Sent pairing request.");
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to send pairing request: %s", esp_err_to_name(result));
+    }
+}
+
+void EspNow::handle_pair_request(const RxPacket &packet)
+{
+    if (!config_.is_master || !is_pairing_active_) {
+        return;
+    }
+
+    const PairRequest *request = reinterpret_cast<const PairRequest *>(packet.data);
+
+    ESP_LOGI(TAG, "Received pair request from Node ID %" PRIu8,
+             static_cast<uint8_t>(request->header.sender_node_id));
+
+    // Add the peer
+    add_peer_internal(request->header.sender_node_id, packet.src_mac,
+                      config_.wifi_channel, request->header.sender_type);
+
+    // Send response
+    PairResponse response;
+    response.header.msg_type       = MessageType::PAIR_RESPONSE;
+    response.header.sender_node_id = config_.node_id;
+    response.header.sender_type    = config_.node_type;
+    response.header.dest_node_id   = request->header.sender_node_id;
+    response.status                = PairStatus::ACCEPTED;
+
+    send_packet(packet.src_mac, &response, sizeof(response));
+}
+
+void EspNow::handle_pair_response(const RxPacket &packet)
+{
+    if (config_.is_master || !is_pairing_active_) {
+        return;
+    }
+
+    const PairResponse *response = reinterpret_cast<const PairResponse *>(packet.data);
+
+    if (response->status == PairStatus::ACCEPTED) {
+        ESP_LOGI(TAG, "Pairing accepted by Hub (Node ID %" PRIu8 ")",
+                 static_cast<uint8_t>(response->header.sender_node_id));
+
+        add_peer_internal(response->header.sender_node_id, packet.src_mac,
+                          response->wifi_channel, response->header.sender_type);
+
+        // Stop sending requests
+        if (pairing_timer_handle_ != nullptr) {
+            xTimerDelete(pairing_timer_handle_, portMAX_DELAY);
+            pairing_timer_handle_ = nullptr;
+        }
+        if (pairing_timeout_timer_handle_ != nullptr) {
+            xTimerDelete(pairing_timeout_timer_handle_, portMAX_DELAY);
+            pairing_timeout_timer_handle_ = nullptr;
+        }
+        is_pairing_active_ = false;
+        ESP_LOGI(TAG, "Pairing successful.");
+    }
+    else {
+        ESP_LOGW(TAG, "Pairing rejected by Hub.");
+    }
+}
+
 void EspNow::transport_worker_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
@@ -392,17 +590,54 @@ void EspNow::transport_worker_task(void *arg)
     for (;;) {
         if (xQueueReceive(self->transport_worker_queue_, &packet, portMAX_DELAY) ==
             pdTRUE) {
-            self->process_transport_message(packet);
+            if (packet.len < sizeof(MessageHeader)) {
+                continue;
+            }
+            const MessageHeader *header =
+                reinterpret_cast<const MessageHeader *>(packet.data);
+
+            switch (header->msg_type) {
+            case MessageType::PAIR_REQUEST:
+                self->handle_pair_request(packet);
+                break;
+            case MessageType::PAIR_RESPONSE:
+                self->handle_pair_response(packet);
+                break;
+            case MessageType::HEARTBEAT:
+                // self->handle_heartbeat(packet); // TODO
+                break;
+            default:
+                break;
+            }
         }
     }
 }
 
-void EspNow::process_transport_message(const RxPacket &packet)
+void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
 {
-    if (packet.len < sizeof(MessageHeader)) {
+    EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
+    if (self == nullptr) {
         return;
     }
-    const MessageHeader *header = reinterpret_cast<const MessageHeader *>(packet.data);
-    ESP_LOGD(TAG, "Processing transport message type %d",
-             static_cast<int>(header->msg_type));
+
+    if (self->config_.is_master) {
+        self->is_pairing_active_ = false;
+        ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
+    }
+    else { // Slave timeout
+        ESP_LOGW(TAG, "Pairing attempt timed out.");
+        if (self->pairing_timer_handle_ != nullptr) {
+            xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
+            self->pairing_timer_handle_ = nullptr;
+        }
+        self->is_pairing_active_ = false;
+    }
+}
+
+void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
+{
+    EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
+    if (self != nullptr) {
+        self->send_pair_request();
+    }
 }
