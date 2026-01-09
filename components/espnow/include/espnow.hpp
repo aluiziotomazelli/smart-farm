@@ -2,8 +2,10 @@
 
 #include "esp_now.h"
 #include "protocol_types.hpp"
+#include "protocol_messages.hpp"
 #include <cstdint>
 #include <vector>
+#include <optional>
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "freertos/queue.h"
@@ -69,11 +71,17 @@ public:
     static constexpr int MAX_PEERS = 19;
 
     esp_err_t init(const EspNowConfig &config);
-    esp_err_t send(NodeId dest_node_id,
-                   PayloadType payload_type,
-                   const void *payload,
-                   size_t len,
-                   bool require_ack = false);
+    esp_err_t send_data(NodeId dest_node_id,
+                        PayloadType payload_type,
+                        const void *payload,
+                        size_t len,
+                        bool require_ack = false);
+    esp_err_t send_command(NodeId dest_node_id,
+                           CommandType command_type,
+                           const void *payload,
+                           size_t len,
+                           bool require_ack = false);
+    esp_err_t confirm_reception(AckStatus status);
 
     // Peer Management Functions
     esp_err_t add_peer(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
@@ -88,7 +96,10 @@ private:
     EspNowConfig config_{};
     std::vector<PeerInfo> peers_;
     SemaphoreHandle_t peers_mutex_              = nullptr;
+    SemaphoreHandle_t pairing_mutex_            = nullptr;
+    SemaphoreHandle_t ack_mutex_                = nullptr;
     bool is_initialized_                        = false;
+    std::optional<MessageHeader> last_header_requiring_ack_{};
     bool is_pairing_active_                     = false;
     TimerHandle_t pairing_timer_handle_         = nullptr;
     TimerHandle_t pairing_timeout_timer_handle_ = nullptr;
@@ -106,6 +117,7 @@ private:
     esp_err_t remove_peer_internal(NodeId node_id);
     void send_pair_request();
     esp_err_t send_packet(const uint8_t *mac_addr, const void *data, size_t len);
+    bool find_peer_mac(NodeId node_id, uint8_t *mac);
 
     // Protocol Message Processing
     void handle_pair_request(const RxPacket &packet);

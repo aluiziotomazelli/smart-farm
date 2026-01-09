@@ -56,6 +56,12 @@ EspNow::~EspNow()
     if (peers_mutex_ != nullptr) {
         vSemaphoreDelete(peers_mutex_);
     }
+    if (pairing_mutex_ != nullptr) {
+        vSemaphoreDelete(pairing_mutex_);
+    }
+    if (ack_mutex_ != nullptr) {
+        vSemaphoreDelete(ack_mutex_);
+    }
     if (singleton_mutex_ != nullptr) {
         vSemaphoreDelete(singleton_mutex_);
     }
@@ -88,9 +94,11 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     broadcast_peer.encrypt = false;
     ESP_ERROR_CHECK(esp_now_add_peer(&broadcast_peer));
 
-    peers_mutex_ = xSemaphoreCreateMutex();
-    if (peers_mutex_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to create peers mutex.");
+    peers_mutex_   = xSemaphoreCreateMutex();
+    pairing_mutex_ = xSemaphoreCreateMutex();
+    ack_mutex_     = xSemaphoreCreateMutex();
+    if (peers_mutex_ == nullptr || pairing_mutex_ == nullptr || ack_mutex_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create mutexes.");
         return ESP_FAIL;
     }
 
@@ -101,7 +109,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
         return ESP_FAIL;
     }
 
-    if (xTaskCreate(rx_dispatch_task, "espnow_dispatch", 2048, this, 10,
+    if (xTaskCreate(rx_dispatch_task, "espnow_dispatch", 3072, this, 10,
                     &rx_dispatch_task_handle_) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dispatch task.");
         return ESP_FAIL;
@@ -118,37 +126,14 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     return ESP_OK;
 }
 
-esp_err_t EspNow::send(NodeId dest_node_id,
-                       PayloadType payload_type,
-                       const void *payload,
-                       size_t len,
-                       bool require_ack)
+esp_err_t EspNow::send_data(NodeId dest_node_id,
+                            PayloadType payload_type,
+                            const void *payload,
+                            size_t len,
+                            bool require_ack)
 {
-    if (!is_initialized_) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (payload == nullptr || len == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (len > MAX_PAYLOAD_SIZE) {
-        ESP_LOGE(TAG, "Payload exceeds maximum size of %d bytes.", MAX_PAYLOAD_SIZE);
-        return ESP_ERR_INVALID_ARG;
-    }
-
     uint8_t dest_mac[6];
-    bool peer_found = false;
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
-        for (const auto &peer : peers_) {
-            if (peer.node_id == dest_node_id) {
-                memcpy(dest_mac, peer.mac, 6);
-                peer_found = true;
-                break;
-            }
-        }
-        xSemaphoreGive(peers_mutex_);
-    }
-
-    if (!peer_found) {
+    if (!find_peer_mac(dest_node_id, dest_mac)) {
         ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8, static_cast<uint8_t>(dest_node_id));
         return ESP_ERR_NOT_FOUND;
     }
@@ -158,10 +143,40 @@ esp_err_t EspNow::send(NodeId dest_node_id,
 
     MessageHeader *header    = reinterpret_cast<MessageHeader *>(packet_buffer.data());
     header->msg_type         = MessageType::DATA;
-    header->sequence_number  = 0; // TODO: Implement sequence numbers
+    header->sequence_number  = 0;
     header->sender_type      = config_.node_type;
     header->sender_node_id   = config_.node_id;
     header->payload_type     = payload_type;
+    header->requires_ack     = require_ack;
+    header->dest_node_id     = dest_node_id;
+    header->timestamp_ms     = esp_timer_get_time() / 1000;
+
+    memcpy(packet_buffer.data() + sizeof(MessageHeader), payload, len);
+
+    return send_packet(dest_mac, packet_buffer.data(), packet_len);
+}
+
+esp_err_t EspNow::send_command(NodeId dest_node_id,
+                               CommandType command_type,
+                               const void *payload,
+                               size_t len,
+                               bool require_ack)
+{
+    uint8_t dest_mac[6];
+    if (!find_peer_mac(dest_node_id, dest_mac)) {
+        ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8, static_cast<uint8_t>(dest_node_id));
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    size_t packet_len = sizeof(MessageHeader) + len;
+    std::vector<uint8_t> packet_buffer(packet_len);
+
+    MessageHeader *header    = reinterpret_cast<MessageHeader *>(packet_buffer.data());
+    header->msg_type         = MessageType::COMMAND;
+    header->sequence_number  = 0;
+    header->sender_type      = config_.node_type;
+    header->sender_node_id   = config_.node_id;
+    header->payload_type     = static_cast<PayloadType>(command_type);
     header->requires_ack     = require_ack;
     header->dest_node_id     = dest_node_id;
     header->timestamp_ms     = esp_timer_get_time() / 1000;
@@ -196,8 +211,13 @@ esp_err_t EspNow::add_peer(NodeId node_id, const uint8_t *mac, uint8_t channel, 
 
 esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
 {
+    if (xSemaphoreTake(pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
     if (is_pairing_active_) {
         ESP_LOGW(TAG, "Pairing is already active.");
+        xSemaphoreGive(pairing_mutex_);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -217,6 +237,7 @@ esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
                                                      pdFALSE, this, pairing_timer_cb);
         if (pairing_timeout_timer_handle_ == nullptr) {
             ESP_LOGE(TAG, "Failed to create pairing timeout timer.");
+            xSemaphoreGive(pairing_mutex_);
             return ESP_FAIL;
         }
         xTimerStart(pairing_timeout_timer_handle_, 0);
@@ -230,6 +251,7 @@ esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
 
         if (pairing_timer_handle_ == nullptr || pairing_timeout_timer_handle_ == nullptr) {
             ESP_LOGE(TAG, "Failed to create slave pairing timers.");
+            xSemaphoreGive(pairing_mutex_);
             return ESP_FAIL;
         }
         xTimerStart(pairing_timer_handle_, 0);
@@ -238,6 +260,7 @@ esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
     }
 
     is_pairing_active_ = true;
+    xSemaphoreGive(pairing_mutex_);
     return ESP_OK;
 }
 
@@ -251,7 +274,62 @@ esp_err_t EspNow::remove_peer(NodeId node_id)
     return result;
 }
 
+esp_err_t EspNow::confirm_reception(AckStatus status)
+{
+    if (xSemaphoreTake(ack_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (!last_header_requiring_ack_.has_value()) {
+        ESP_LOGW(TAG, "confirm_reception called but no message is awaiting ACK.");
+        xSemaphoreGive(ack_mutex_);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const auto &header_to_ack = last_header_requiring_ack_.value();
+
+    AckMessage ack;
+    ack.header.msg_type       = MessageType::ACK;
+    ack.header.sender_node_id = config_.node_id;
+    ack.header.sender_type    = config_.node_type;
+    ack.header.dest_node_id   = header_to_ack.sender_node_id;
+    ack.ack_sequence          = header_to_ack.sequence_number;
+    ack.status                = status;
+
+    uint8_t dest_mac[6];
+    if (!find_peer_mac(header_to_ack.sender_node_id, dest_mac)) {
+        ESP_LOGE(TAG, "Cannot send ACK. Peer %d not found.",
+                 static_cast<int>(header_to_ack.sender_node_id));
+        last_header_requiring_ack_.reset();
+        xSemaphoreGive(ack_mutex_);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    esp_err_t result = send_packet(dest_mac, &ack, sizeof(ack));
+
+    last_header_requiring_ack_.reset();
+    xSemaphoreGive(ack_mutex_);
+
+    return result;
+}
+
 // --- Private Methods ---
+bool EspNow::find_peer_mac(NodeId node_id, uint8_t *mac)
+{
+    bool peer_found = false;
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        for (const auto &peer : peers_) {
+            if (peer.node_id == node_id) {
+                memcpy(mac, peer.mac, 6);
+                peer_found = true;
+                break;
+            }
+        }
+        xSemaphoreGive(peers_mutex_);
+    }
+    return peer_found;
+}
+
 esp_err_t EspNow::send_packet(const uint8_t *mac_addr, const void *data, size_t len)
 {
     if (len > ESP_NOW_MAX_DATA_LEN - CRC_SIZE) {
@@ -317,14 +395,20 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t 
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel = channel;
                 peer_info.encrypt = false;
-                ESP_ERROR_CHECK(esp_now_add_peer(&peer_info));
+                esp_err_t add_result = esp_now_add_peer(&peer_info);
+                if (add_result != ESP_OK) {
+                    return add_result;
+                }
             }
             else if (channel_changed) {
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel = channel;
                 peer_info.encrypt = false;
-                ESP_ERROR_CHECK(esp_now_mod_peer(&peer_info));
+                esp_err_t mod_result = esp_now_mod_peer(&peer_info);
+                if (mod_result != ESP_OK) {
+                    return mod_result;
+                }
             }
 
             memcpy(updated_peer.mac, mac, 6);
@@ -341,7 +425,10 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t 
     if (peers_.size() >= MAX_PEERS) {
         ESP_LOGW(TAG, "Peer list is full. Removing the oldest peer.");
         const PeerInfo &oldest_peer = peers_.back();
-        esp_now_del_peer(oldest_peer.mac);
+        esp_err_t result = esp_now_del_peer(oldest_peer.mac);
+        if (result != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to remove oldest peer to make space: %s", esp_err_to_name(result));
+        }
         peers_.pop_back();
     }
 
@@ -349,7 +436,10 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t 
     memcpy(peer_info.peer_addr, mac, 6);
     peer_info.channel = channel;
     peer_info.encrypt = false;
-    ESP_ERROR_CHECK(esp_now_add_peer(&peer_info));
+    esp_err_t add_result = esp_now_add_peer(&peer_info);
+    if (add_result != ESP_OK) {
+        return add_result;
+    }
 
     PeerInfo new_peer;
     memcpy(new_peer.mac, mac, 6);
@@ -426,11 +516,20 @@ void EspNow::rx_dispatch_task(void *arg)
                 }
                 break;
             case MessageType::DATA:
-            case MessageType::ACK:
             case MessageType::COMMAND:
+                // If the message requires an ACK, save its header before passing to the app
+                if (header->requires_ack) {
+                    if (xSemaphoreTake(self->ack_mutex_, pdMS_TO_TICKS(10)) == pdTRUE) {
+                        self->last_header_requiring_ack_ = *header;
+                        xSemaphoreGive(self->ack_mutex_);
+                    }
+                }
                 if (xQueueSend(self->config_.app_rx_queue, &packet, 0) != pdTRUE) {
                     ESP_LOGW(TAG, "Application RX queue full.");
                 }
+                break;
+            case MessageType::ACK:
+                // TODO: Handle ACK logic internally (e.g., notify a waiting task)
                 break;
             default:
                 ESP_LOGW(TAG, "Unknown message type: 0x%02X", static_cast<int>(header->msg_type));
@@ -460,7 +559,13 @@ void EspNow::send_pair_request()
 
 void EspNow::handle_pair_request(const RxPacket &packet)
 {
-    if (!config_.is_master || !is_pairing_active_) {
+    if (xSemaphoreTake(pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return;
+    }
+    bool is_active = is_pairing_active_;
+    xSemaphoreGive(pairing_mutex_);
+
+    if (!config_.is_master || !is_active) {
         return;
     }
 
@@ -483,8 +588,8 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     }
 
     // Add the peer to the internal list
-    add_peer_internal(request->header.sender_node_id, packet.src_mac,
-                      config_.wifi_channel, request->header.sender_type);
+    add_peer(request->header.sender_node_id, packet.src_mac,
+             config_.wifi_channel, request->header.sender_type);
 
     // Send an accepted response
     response.status       = PairStatus::ACCEPTED;
@@ -494,8 +599,13 @@ void EspNow::handle_pair_request(const RxPacket &packet)
 
 void EspNow::handle_pair_response(const RxPacket &packet)
 {
+    if (xSemaphoreTake(pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return;
+    }
+
     // Ignore if we are the master or not in pairing mode
     if (config_.is_master || !is_pairing_active_) {
+        xSemaphoreGive(pairing_mutex_);
         return;
     }
 
@@ -505,8 +615,8 @@ void EspNow::handle_pair_response(const RxPacket &packet)
         ESP_LOGI(TAG, "Pairing accepted by Hub (Node ID %" PRIu8 ")", static_cast<uint8_t>(response->header.sender_node_id));
 
         // Use the channel provided by the hub for communication
-        add_peer_internal(response->header.sender_node_id, packet.src_mac,
-                          response->wifi_channel, response->header.sender_type);
+        add_peer(response->header.sender_node_id, packet.src_mac,
+                 response->wifi_channel, response->header.sender_type);
 
         // Stop both pairing timers (periodic and timeout)
         if (pairing_timer_handle_ != nullptr) {
@@ -523,6 +633,8 @@ void EspNow::handle_pair_response(const RxPacket &packet)
     else {
         ESP_LOGW(TAG, "Pairing rejected by Hub.");
     }
+
+    xSemaphoreGive(pairing_mutex_);
 }
 
 void EspNow::transport_worker_task(void *arg)
@@ -562,6 +674,10 @@ void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
         return;
     }
 
+    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return;
+    }
+
     if (self->config_.is_master) {
         // Master's pairing window has expired
         self->is_pairing_active_ = false;
@@ -576,6 +692,7 @@ void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
         }
         self->is_pairing_active_ = false;
     }
+    xSemaphoreGive(self->pairing_mutex_);
 }
 
 void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
