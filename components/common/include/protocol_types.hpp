@@ -57,7 +57,6 @@ enum class PairStatus : uint8_t
 {
     ACCEPTED             = 0x00,
     REJECTED_NOT_ALLOWED = 0x01,
-    REJECTED_NO_SPACE    = 0x02,
 };
 
 enum class AckStatus : uint8_t
