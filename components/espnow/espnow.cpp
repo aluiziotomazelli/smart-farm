@@ -129,12 +129,13 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     is_initialized_ = true;
     ESP_LOGI(TAG, "EspNow component initialized successfully.");
 
-    if (!config_.is_master && config_.heartbeat_interval_ms > 0)
-    {
-        ESP_LOGI(TAG, "Starting heartbeat timer with interval: %" PRIu32 " ms.", config_.heartbeat_interval_ms);
-        heartbeat_timer_handle_ = xTimerCreate("heartbeat", pdMS_TO_TICKS(config_.heartbeat_interval_ms), pdTRUE, this, periodic_heartbeat_cb);
-        if (heartbeat_timer_handle_ == nullptr)
-        {
+    if (!config_.is_master && config_.heartbeat_interval_ms > 0) {
+        ESP_LOGI(TAG, "Starting heartbeat timer with interval: %" PRIu32 " ms.",
+                 config_.heartbeat_interval_ms);
+        heartbeat_timer_handle_ =
+            xTimerCreate("heartbeat", pdMS_TO_TICKS(config_.heartbeat_interval_ms),
+                         pdTRUE, this, periodic_heartbeat_cb);
+        if (heartbeat_timer_handle_ == nullptr) {
             ESP_LOGE(TAG, "Failed to create heartbeat timer.");
             return ESP_FAIL;
         }
@@ -219,16 +220,13 @@ std::vector<EspNow::PeerInfo> EspNow::get_peers()
 std::vector<NodeId> EspNow::get_offline_peers() const
 {
     std::vector<NodeId> offline_peers;
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         const uint32_t now_ms = esp_timer_get_time() / 1000;
-        for (const auto &peer : peers_)
-        {
-            if (peer.heartbeat_interval_ms > 0)
-            {
-                uint32_t timeout = peer.heartbeat_interval_ms * HEARTBEAT_OFFLINE_MULTIPLIER;
-                if (now_ms - peer.last_seen_ms > timeout)
-                {
+        for (const auto &peer : peers_) {
+            if (peer.heartbeat_interval_ms > 0) {
+                uint32_t timeout =
+                    peer.heartbeat_interval_ms * HEARTBEAT_OFFLINE_MULTIPLIER;
+                if (now_ms - peer.last_seen_ms > timeout) {
                     offline_peers.push_back(peer.node_id);
                 }
             }
@@ -527,7 +525,8 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
+                             esp_now_send_status_t status)
 {
     // Placeholder for ACK tracking
 }
@@ -619,68 +618,66 @@ void EspNow::send_heartbeat()
 {
     uint8_t dest_mac[6];
 
-    if (!find_peer_mac(NodeId::HUB, dest_mac))
-    {
+    if (!find_peer_mac(NodeId::HUB, dest_mac)) {
         ESP_LOGD(TAG, "Hub not found in peers list, sending broadcast heartbeat.");
         const uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
         memcpy(dest_mac, broadcast_mac, sizeof(broadcast_mac));
     }
 
     HeartbeatMessage heartbeat;
-    heartbeat.header.msg_type = MessageType::HEARTBEAT;
+    heartbeat.header.msg_type       = MessageType::HEARTBEAT;
     heartbeat.header.sender_node_id = config_.node_id;
-    heartbeat.header.sender_type = config_.node_type;
-    heartbeat.header.dest_node_id = NodeId::HUB;
-    heartbeat.uptime_ms = esp_timer_get_time() / 1000;
+    heartbeat.header.sender_type    = config_.node_type;
+    heartbeat.header.dest_node_id   = NodeId::HUB;
+    heartbeat.uptime_ms             = esp_timer_get_time() / 1000;
 
     esp_err_t result = send_packet(dest_mac, &heartbeat, sizeof(heartbeat));
-    if (result != ESP_OK)
-    {
+    if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to send heartbeat: %s", esp_err_to_name(result));
     }
 }
 
 void EspNow::handle_heartbeat_response(const RxPacket &packet)
 {
-    const HeartbeatResponse *response = reinterpret_cast<const HeartbeatResponse *>(packet.data);
-    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d", response->wifi_channel);
+    const HeartbeatResponse *response =
+        reinterpret_cast<const HeartbeatResponse *>(packet.data);
+    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
+             response->wifi_channel);
 }
 
 void EspNow::handle_heartbeat(const RxPacket &packet)
 {
-    if (!config_.is_master)
-    {
+    if (!config_.is_master) {
         return;
     }
 
     const HeartbeatMessage *msg = reinterpret_cast<const HeartbeatMessage *>(packet.data);
-    NodeId sender_id = msg->header.sender_node_id;
+    NodeId sender_id            = msg->header.sender_node_id;
 
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         auto it = std::find_if(peers_.begin(), peers_.end(),
-                               [&](const PeerInfo &p)
-                               { return p.node_id == sender_id; });
+                               [&](const PeerInfo &p) { return p.node_id == sender_id; });
 
-        if (it != peers_.end())
-        {
+        if (it != peers_.end()) {
             it->last_seen_ms = esp_timer_get_time() / 1000;
-            ESP_LOGD(TAG, "Heartbeat received from Node ID %" PRIu8 ". Updated last_seen.", static_cast<uint8_t>(sender_id));
+            ESP_LOGD(TAG,
+                     "Heartbeat received from Node ID %" PRIu8 ". Updated last_seen.",
+                     static_cast<uint8_t>(sender_id));
 
             // Respond to the heartbeat
             HeartbeatResponse response;
-            response.header.msg_type = MessageType::HEARTBEAT_RESPONSE;
+            response.header.msg_type       = MessageType::HEARTBEAT_RESPONSE;
             response.header.sender_node_id = config_.node_id;
-            response.header.sender_type = config_.node_type;
-            response.header.dest_node_id = sender_id;
-            response.server_time_ms = it->last_seen_ms;
-            response.wifi_channel = config_.wifi_channel;
+            response.header.sender_type    = config_.node_type;
+            response.header.dest_node_id   = sender_id;
+            response.server_time_ms        = it->last_seen_ms;
+            response.wifi_channel          = config_.wifi_channel;
 
             send_packet(it->mac, &response, sizeof(response));
         }
-        else
-        {
-            ESP_LOGW(TAG, "Received heartbeat from unknown Node ID: %" PRIu8, static_cast<uint8_t>(sender_id));
+        else {
+            ESP_LOGW(TAG, "Received heartbeat from unknown Node ID: %" PRIu8,
+                     static_cast<uint8_t>(sender_id));
         }
 
         xSemaphoreGive(peers_mutex_);
@@ -723,15 +720,16 @@ void EspNow::handle_pair_request(const RxPacket &packet)
              request->header.sender_type);
 
     // Update the peer's heartbeat interval
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        auto it = std::find_if(peers_.begin(), peers_.end(), [&](const PeerInfo &p)
-                               { return p.node_id == request->header.sender_node_id; });
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        auto it = std::find_if(peers_.begin(), peers_.end(), [&](const PeerInfo &p) {
+            return p.node_id == request->header.sender_node_id;
+        });
 
-        if (it != peers_.end())
-        {
+        if (it != peers_.end()) {
             it->heartbeat_interval_ms = request->heartbeat_interval_ms;
-            ESP_LOGI(TAG, "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32 " ms.",
+            ESP_LOGI(TAG,
+                     "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32
+                     " ms.",
                      static_cast<uint8_t>(it->node_id), it->heartbeat_interval_ms);
         }
         xSemaphoreGive(peers_mutex_);
@@ -858,8 +856,7 @@ void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
 void EspNow::periodic_heartbeat_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self != nullptr)
-    {
+    if (self != nullptr) {
         self->send_heartbeat();
     }
 }

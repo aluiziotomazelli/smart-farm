@@ -146,5 +146,9 @@ private:
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                                 const uint8_t *data,
                                 int len);
-    static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
+    static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+                                esp_now_send_status_t status);
+    // static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+    // esp_now_send_status_t status);
+    // static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
 };
