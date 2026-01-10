@@ -23,6 +23,7 @@ struct PairRequest
     uint8_t firmware_version[3];
     uint32_t uptime_ms;
     char device_name[16];
+    uint32_t heartbeat_interval_ms;
 };
 
 struct PairResponse

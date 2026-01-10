@@ -65,6 +65,7 @@ public:
         uint8_t channel;
         uint32_t last_seen_ms;
         bool paired;
+        uint32_t heartbeat_interval_ms;
     };
 
     // Public API
@@ -90,6 +91,7 @@ public:
                        NodeType type);
     esp_err_t remove_peer(NodeId node_id);
     std::vector<PeerInfo> get_peers();
+    std::vector<NodeId> get_offline_peers() const;
     esp_err_t start_pairing(uint32_t timeout_ms = 30000);
 
 private:
@@ -106,6 +108,7 @@ private:
     bool is_pairing_active_                     = false;
     TimerHandle_t pairing_timer_handle_         = nullptr;
     TimerHandle_t pairing_timeout_timer_handle_ = nullptr;
+    TimerHandle_t heartbeat_timer_handle_       = nullptr;
 
     QueueHandle_t rx_dispatch_queue_           = nullptr;
     QueueHandle_t transport_worker_queue_      = nullptr;
@@ -129,19 +132,19 @@ private:
     void handle_pair_request(const RxPacket &packet);
     void handle_pair_response(const RxPacket &packet);
     void handle_heartbeat(const RxPacket &packet);
+    void handle_heartbeat_response(const RxPacket &packet);
+    void send_heartbeat();
 
     // Task functions
     static void rx_dispatch_task(void *arg);
     static void transport_worker_task(void *arg);
     static void pairing_timer_cb(TimerHandle_t xTimer);
     static void periodic_pairing_cb(TimerHandle_t xTimer);
+    static void periodic_heartbeat_cb(TimerHandle_t xTimer);
 
     // Static ESP-NOW callbacks (ISR context)
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                                 const uint8_t *data,
                                 int len);
-    static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
-                                esp_now_send_status_t status);
-    // static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
-    // esp_now_send_status_t status);
+    static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
 };
