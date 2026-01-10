@@ -1,15 +1,15 @@
 #pragma once
 
 #include "esp_now.h"
-#include "protocol_types.hpp"
 #include "protocol_messages.hpp"
+#include "protocol_types.hpp"
 #include <cstdint>
-#include <vector>
 #include <optional>
+#include <vector>
 #include "freertos/FreeRTOS.h"
-#include "freertos/timers.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/timers.h"
 
 // Configuration to initialize the EspNow component
 struct EspNowConfig
@@ -84,7 +84,10 @@ public:
     esp_err_t confirm_reception(AckStatus status);
 
     // Peer Management Functions
-    esp_err_t add_peer(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
+    esp_err_t add_peer(NodeId node_id,
+                       const uint8_t *mac,
+                       uint8_t channel,
+                       NodeType type);
     esp_err_t remove_peer(NodeId node_id);
     std::vector<PeerInfo> get_peers();
     esp_err_t start_pairing(uint32_t timeout_ms = 30000);
@@ -95,17 +98,17 @@ private:
     // --- Private Members ---
     EspNowConfig config_{};
     std::vector<PeerInfo> peers_;
-    SemaphoreHandle_t peers_mutex_              = nullptr;
-    SemaphoreHandle_t pairing_mutex_            = nullptr;
-    SemaphoreHandle_t ack_mutex_                = nullptr;
-    bool is_initialized_                        = false;
+    SemaphoreHandle_t peers_mutex_   = nullptr;
+    SemaphoreHandle_t pairing_mutex_ = nullptr;
+    SemaphoreHandle_t ack_mutex_     = nullptr;
+    bool is_initialized_             = false;
     std::optional<MessageHeader> last_header_requiring_ack_{};
     bool is_pairing_active_                     = false;
     TimerHandle_t pairing_timer_handle_         = nullptr;
     TimerHandle_t pairing_timeout_timer_handle_ = nullptr;
 
-    QueueHandle_t rx_dispatch_queue_      = nullptr;
-    QueueHandle_t transport_worker_queue_ = nullptr;
+    QueueHandle_t rx_dispatch_queue_           = nullptr;
+    QueueHandle_t transport_worker_queue_      = nullptr;
     TaskHandle_t rx_dispatch_task_handle_      = nullptr;
     TaskHandle_t transport_worker_task_handle_ = nullptr;
 
@@ -113,7 +116,10 @@ private:
     static SemaphoreHandle_t singleton_mutex_;
 
     // --- Private Methods ---
-    esp_err_t add_peer_internal(NodeId node_id, const uint8_t *mac, uint8_t channel, NodeType type);
+    esp_err_t add_peer_internal(NodeId node_id,
+                                const uint8_t *mac,
+                                uint8_t channel,
+                                NodeType type);
     esp_err_t remove_peer_internal(NodeId node_id);
     void send_pair_request();
     esp_err_t send_packet(const uint8_t *mac_addr, const void *data, size_t len);
@@ -131,6 +137,11 @@ private:
     static void periodic_pairing_cb(TimerHandle_t xTimer);
 
     // Static ESP-NOW callbacks (ISR context)
-    static void esp_now_recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int len);
-    static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status);
+    static void esp_now_recv_cb(const esp_now_recv_info_t *info,
+                                const uint8_t *data,
+                                int len);
+    static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+                                esp_now_send_status_t status);
+    // static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+    // esp_now_send_status_t status);
 };
