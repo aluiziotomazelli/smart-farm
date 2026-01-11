@@ -96,6 +96,31 @@ public:
 
 private:
     EspNow();
+    // --- FSM and TX Task Structures ---
+    struct TxPacket
+    {
+        uint8_t dest_mac[6];
+        uint8_t data[ESP_NOW_MAX_DATA_LEN];
+        size_t len;
+        bool requires_ack;
+    };
+
+    enum class TxState
+    {
+        IDLE,
+        SENDING,
+        WAITING_FOR_ACK,
+        RETRYING,
+        SCANNING
+    };
+
+    struct PendingAck
+    {
+        uint16_t sequence_number;
+        uint32_t timestamp_ms;
+        uint8_t retries_left;
+        TxPacket packet;
+    };
 
     // --- Private Members ---
     EspNowConfig config_{};
@@ -112,8 +137,10 @@ private:
 
     QueueHandle_t rx_dispatch_queue_           = nullptr;
     QueueHandle_t transport_worker_queue_      = nullptr;
+    QueueHandle_t tx_queue_                    = nullptr;
     TaskHandle_t rx_dispatch_task_handle_      = nullptr;
     TaskHandle_t transport_worker_task_handle_ = nullptr;
+    TaskHandle_t tx_manager_task_handle_       = nullptr;
 
     static EspNow *instance_ptr_;
     static SemaphoreHandle_t singleton_mutex_;
@@ -127,17 +154,20 @@ private:
     void send_pair_request();
     esp_err_t send_packet(const uint8_t *mac_addr, const void *data, size_t len);
     bool find_peer_mac(NodeId node_id, uint8_t *mac);
+    uint32_t get_time_ms() const;
 
     // Protocol Message Processing
     void handle_pair_request(const RxPacket &packet);
     void handle_pair_response(const RxPacket &packet);
     void handle_heartbeat(const RxPacket &packet);
     void handle_heartbeat_response(const RxPacket &packet);
+    void handle_scan_probe(const RxPacket &packet);
     void send_heartbeat();
 
     // Task functions
     static void rx_dispatch_task(void *arg);
     static void transport_worker_task(void *arg);
+    static void tx_manager_task(void *arg);
     static void pairing_timer_cb(TimerHandle_t xTimer);
     static void periodic_pairing_cb(TimerHandle_t xTimer);
     static void periodic_heartbeat_cb(TimerHandle_t xTimer);
