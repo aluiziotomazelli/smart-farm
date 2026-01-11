@@ -13,6 +13,11 @@ constexpr size_t MAX_PAYLOAD_SIZE = ESP_NOW_MAX_DATA_LEN - MESSAGE_HEADER_SIZE -
 constexpr uint32_t DEFAULT_ACK_TIMEOUT_MS        = 500;
 constexpr uint32_t DEFAULT_HEARTBEAT_INTERVAL_MS = 60000;
 constexpr uint8_t DEFAULT_WIFI_CHANNEL           = 1;
+constexpr float HEARTBEAT_OFFLINE_MULTIPLIER     = 2.5f;
+
+// Constants for retry logic
+constexpr uint32_t LOGICAL_ACK_TIMEOUT_MS = 500;
+constexpr uint8_t MAX_LOGICAL_RETRIES     = 3;
 
 // Defines the functional category of a node.
 enum class NodeType : uint8_t
@@ -42,6 +47,8 @@ enum class MessageType : uint8_t
     DATA               = 0x10,
     ACK                = 0x11,
     COMMAND            = 0x20,
+    CHANNEL_SCAN_PROBE = 0x30,
+    CHANNEL_SCAN_RESPONSE = 0x31,
 };
 
 enum class PayloadType : uint8_t
