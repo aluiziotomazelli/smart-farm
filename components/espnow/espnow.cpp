@@ -117,26 +117,26 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     rx_dispatch_queue_      = xQueueCreate(20, sizeof(RxPacket));
     transport_worker_queue_ = xQueueCreate(10, sizeof(RxPacket));
     tx_queue_               = xQueueCreate(10, sizeof(TxPacket));
-    if (rx_dispatch_queue_ == nullptr || transport_worker_queue_ == nullptr || tx_queue_ == nullptr)
-    {
+    if (rx_dispatch_queue_ == nullptr || transport_worker_queue_ == nullptr ||
+        tx_queue_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create internal queues.");
         return ESP_FAIL;
     }
 
-    if (xTaskCreate(rx_dispatch_task, "espnow_dispatch", 3072, this, 10, &rx_dispatch_task_handle_) != pdPASS)
-    {
+    if (xTaskCreate(rx_dispatch_task, "espnow_dispatch", 3072, this, 10,
+                    &rx_dispatch_task_handle_) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dispatch task.");
         return ESP_FAIL;
     }
 
-    if (xTaskCreate(transport_worker_task, "espnow_worker", 3072, this, 5, &transport_worker_task_handle_) != pdPASS)
-    {
+    if (xTaskCreate(transport_worker_task, "espnow_worker", 3072, this, 5,
+                    &transport_worker_task_handle_) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create worker task.");
         return ESP_FAIL;
     }
 
-    if (xTaskCreate(tx_manager_task, "espnow_tx_manager", 3072, this, 9, &tx_manager_task_handle_) != pdPASS)
-    {
+    if (xTaskCreate(tx_manager_task, "espnow_tx_manager", 3072, this, 9,
+                    &tx_manager_task_handle_) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create TX manager task.");
         return ESP_FAIL;
     }
@@ -144,12 +144,13 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     is_initialized_ = true;
     ESP_LOGI(TAG, "EspNow component initialized successfully.");
 
-    if (!config_.is_master && config_.heartbeat_interval_ms > 0)
-    {
-        ESP_LOGI(TAG, "Starting heartbeat timer with interval: %" PRIu32 " ms.", config_.heartbeat_interval_ms);
-        heartbeat_timer_handle_ = xTimerCreate("heartbeat", pdMS_TO_TICKS(config_.heartbeat_interval_ms), pdTRUE, this, periodic_heartbeat_cb);
-        if (heartbeat_timer_handle_ == nullptr)
-        {
+    if (!config_.is_master && config_.heartbeat_interval_ms > 0) {
+        ESP_LOGI(TAG, "Starting heartbeat timer with interval: %" PRIu32 " ms.",
+                 config_.heartbeat_interval_ms);
+        heartbeat_timer_handle_ =
+            xTimerCreate("heartbeat", pdMS_TO_TICKS(config_.heartbeat_interval_ms),
+                         pdTRUE, this, periodic_heartbeat_cb);
+        if (heartbeat_timer_handle_ == nullptr) {
             ESP_LOGE(TAG, "Failed to create heartbeat timer.");
             return ESP_FAIL;
         }
@@ -166,15 +167,14 @@ esp_err_t EspNow::send_data(NodeId dest_node_id,
                             bool require_ack)
 {
     TxPacket tx_packet;
-    if (!find_peer_mac(dest_node_id, tx_packet.dest_mac))
-    {
-        ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8, static_cast<uint8_t>(dest_node_id));
+    if (!find_peer_mac(dest_node_id, tx_packet.dest_mac)) {
+        ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8,
+                 static_cast<uint8_t>(dest_node_id));
         return ESP_ERR_NOT_FOUND;
     }
 
     tx_packet.len = sizeof(MessageHeader) + len;
-    if (tx_packet.len > ESP_NOW_MAX_DATA_LEN)
-    {
+    if (tx_packet.len > ESP_NOW_MAX_DATA_LEN) {
         return ESP_ERR_INVALID_ARG;
     }
     tx_packet.requires_ack = require_ack;
@@ -187,12 +187,11 @@ esp_err_t EspNow::send_data(NodeId dest_node_id,
     header->payload_type    = payload_type;
     header->requires_ack    = require_ack;
     header->dest_node_id    = dest_node_id;
-    header->timestamp_ms    = esp_timer_get_time() / 1000;
+    header->timestamp_ms    = get_time_ms();
 
     memcpy(tx_packet.data + sizeof(MessageHeader), payload, len);
 
-    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue data packet for sending.");
         return ESP_ERR_TIMEOUT;
     }
@@ -207,15 +206,14 @@ esp_err_t EspNow::send_command(NodeId dest_node_id,
                                bool require_ack)
 {
     TxPacket tx_packet;
-    if (!find_peer_mac(dest_node_id, tx_packet.dest_mac))
-    {
-        ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8, static_cast<uint8_t>(dest_node_id));
+    if (!find_peer_mac(dest_node_id, tx_packet.dest_mac)) {
+        ESP_LOGE(TAG, "Could not find peer with node_id: %" PRIu8,
+                 static_cast<uint8_t>(dest_node_id));
         return ESP_ERR_NOT_FOUND;
     }
 
     tx_packet.len = sizeof(MessageHeader) + len;
-    if (tx_packet.len > ESP_NOW_MAX_DATA_LEN)
-    {
+    if (tx_packet.len > ESP_NOW_MAX_DATA_LEN) {
         return ESP_ERR_INVALID_ARG;
     }
     tx_packet.requires_ack = require_ack;
@@ -228,12 +226,11 @@ esp_err_t EspNow::send_command(NodeId dest_node_id,
     header->payload_type    = static_cast<PayloadType>(command_type);
     header->requires_ack    = require_ack;
     header->dest_node_id    = dest_node_id;
-    header->timestamp_ms    = esp_timer_get_time() / 1000;
+    header->timestamp_ms    = get_time_ms();
 
     memcpy(tx_packet.data + sizeof(MessageHeader), payload, len);
 
-    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue command packet for sending.");
         return ESP_ERR_TIMEOUT;
     }
@@ -254,16 +251,13 @@ std::vector<EspNow::PeerInfo> EspNow::get_peers()
 std::vector<NodeId> EspNow::get_offline_peers() const
 {
     std::vector<NodeId> offline_peers;
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        const uint32_t now_ms = esp_timer_get_time() / 1000;
-        for (const auto &peer : peers_)
-        {
-            if (peer.heartbeat_interval_ms > 0)
-            {
-                uint32_t timeout = peer.heartbeat_interval_ms * HEARTBEAT_OFFLINE_MULTIPLIER;
-                if (now_ms - peer.last_seen_ms > timeout)
-                {
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        const uint32_t now_ms = get_time_ms();
+        for (const auto &peer : peers_) {
+            if (peer.heartbeat_interval_ms > 0) {
+                uint32_t timeout =
+                    peer.heartbeat_interval_ms * HEARTBEAT_OFFLINE_MULTIPLIER;
+                if (now_ms - peer.last_seen_ms > timeout) {
                     offline_peers.push_back(peer.node_id);
                 }
             }
@@ -379,9 +373,9 @@ esp_err_t EspNow::confirm_reception(AckStatus status)
     ack.status                = status;
 
     TxPacket tx_packet;
-    if (!find_peer_mac(header_to_ack.sender_node_id, tx_packet.dest_mac))
-    {
-        ESP_LOGE(TAG, "Cannot send ACK. Peer %d not found.", static_cast<int>(header_to_ack.sender_node_id));
+    if (!find_peer_mac(header_to_ack.sender_node_id, tx_packet.dest_mac)) {
+        ESP_LOGE(TAG, "Cannot send ACK. Peer %d not found.",
+                 static_cast<int>(header_to_ack.sender_node_id));
         last_header_requiring_ack_.reset();
         xSemaphoreGive(ack_mutex_);
         return ESP_ERR_NOT_FOUND;
@@ -391,8 +385,7 @@ esp_err_t EspNow::confirm_reception(AckStatus status)
     memcpy(tx_packet.data, &ack, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue ACK packet for sending.");
         last_header_requiring_ack_.reset();
         xSemaphoreGive(ack_mutex_);
@@ -508,7 +501,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
             memcpy(updated_peer.mac, mac, 6);
             updated_peer.type         = type;
             updated_peer.channel      = channel;
-            updated_peer.last_seen_ms = esp_timer_get_time() / 1000;
+            updated_peer.last_seen_ms = get_time_ms();
 
             peers_.erase(it);
             peers_.insert(peers_.begin(), updated_peer);
@@ -541,7 +534,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
     new_peer.node_id      = node_id;
     new_peer.type         = type;
     new_peer.channel      = channel;
-    new_peer.last_seen_ms = esp_timer_get_time() / 1000;
+    new_peer.last_seen_ms = get_time_ms();
     new_peer.paired       = true;
     peers_.insert(peers_.begin(), new_peer);
 
@@ -572,11 +565,11 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t status)
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
+                             esp_now_send_status_t status)
 {
-    if (status == ESP_NOW_SEND_FAIL)
-    {
-        ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR, MAC2STR(mac_addr));
+    if (status == ESP_NOW_SEND_FAIL) {
+        ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR, MAC2STR(tx_info->des_addr));
         // Notify the TX manager task about the physical layer failure.
         // We use a notification value of 2 for physical ACK fail.
         xTaskNotify(instance_ptr_->tx_manager_task_handle_, 2, eSetBits);
@@ -589,7 +582,7 @@ void EspNow::rx_dispatch_task(void *arg)
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
 
-    for (;;) {
+    while (true) {
         if (xQueueReceive(self->rx_dispatch_queue_, &packet, portMAX_DELAY) == pdTRUE) {
             // CRC Validation
             if (packet.len < CRC_SIZE) {
@@ -600,9 +593,7 @@ void EspNow::rx_dispatch_task(void *arg)
                 esp_rom_crc8_le(0, packet.data, packet.len - CRC_SIZE);
 
             if (received_crc != calculated_crc) {
-                ESP_LOGW(TAG, "CRC mismatch from %02X:%02X:%02X:%02X:%02X:%02X",
-                         packet.src_mac[0], packet.src_mac[1], packet.src_mac[2],
-                         packet.src_mac[3], packet.src_mac[4], packet.src_mac[5]);
+                ESP_LOGW(TAG, "CRC mismatch from " MACSTR, MAC2STR(packet.src_mac));
                 continue;
             }
 
@@ -620,8 +611,7 @@ void EspNow::rx_dispatch_task(void *arg)
             case MessageType::ACK:
             case MessageType::CHANNEL_SCAN_PROBE:
             case MessageType::CHANNEL_SCAN_RESPONSE:
-                if (xQueueSend(self->transport_worker_queue_, &packet, 0) != pdTRUE)
-                {
+                if (xQueueSend(self->transport_worker_queue_, &packet, 0) != pdTRUE) {
                     ESP_LOGW(TAG, "Transport worker queue full.");
                 }
                 break;
@@ -654,7 +644,7 @@ void EspNow::send_pair_request()
     request.header.msg_type       = MessageType::PAIR_REQUEST;
     request.header.sender_node_id = config_.node_id;
     request.header.sender_type    = config_.node_type;
-    request.uptime_ms             = esp_timer_get_time() / 1000;
+    request.uptime_ms             = get_time_ms();
     request.heartbeat_interval_ms = config_.heartbeat_interval_ms;
 
     TxPacket tx_packet;
@@ -664,12 +654,10 @@ void EspNow::send_pair_request()
     memcpy(tx_packet.data, &request, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue pair request for sending.");
     }
-    else
-    {
+    else {
         ESP_LOGI(TAG, "Queued pairing request.");
     }
 }
@@ -677,8 +665,7 @@ void EspNow::send_pair_request()
 void EspNow::send_heartbeat()
 {
     TxPacket tx_packet;
-    if (!find_peer_mac(NodeId::HUB, tx_packet.dest_mac))
-    {
+    if (!find_peer_mac(NodeId::HUB, tx_packet.dest_mac)) {
         ESP_LOGD(TAG, "Hub not found, sending broadcast heartbeat.");
         const uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
         memcpy(tx_packet.dest_mac, broadcast_mac, sizeof(broadcast_mac));
@@ -689,97 +676,95 @@ void EspNow::send_heartbeat()
     heartbeat.header.sender_node_id = config_.node_id;
     heartbeat.header.sender_type    = config_.node_type;
     heartbeat.header.dest_node_id   = NodeId::HUB;
-    heartbeat.uptime_ms             = esp_timer_get_time() / 1000;
+    heartbeat.uptime_ms             = get_time_ms();
 
     tx_packet.len = sizeof(heartbeat);
     memcpy(tx_packet.data, &heartbeat, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue heartbeat for sending.");
     }
 }
 
 void EspNow::handle_heartbeat_response(const RxPacket &packet)
 {
-    const HeartbeatResponse *response = reinterpret_cast<const HeartbeatResponse *>(packet.data);
-    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d", response->wifi_channel);
+    const HeartbeatResponse *response =
+        reinterpret_cast<const HeartbeatResponse *>(packet.data);
+    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
+             response->wifi_channel);
 }
 
 void EspNow::handle_scan_probe(const RxPacket &packet)
 {
-    if (!config_.is_master)
-    {
+    // Only HUB respond to scan probes
+    if (config_.node_id != NodeId::HUB) {
         return;
     }
 
     const MessageHeader *header = reinterpret_cast<const MessageHeader *>(packet.data);
 
-    ESP_LOGD(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.", static_cast<uint8_t>(header->sender_node_id));
+    ESP_LOGD(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.",
+             static_cast<uint8_t>(header->sender_node_id));
 
     TxPacket tx_packet;
     memcpy(tx_packet.dest_mac, packet.src_mac, 6);
 
     MessageHeader response_header;
-    response_header.msg_type = MessageType::CHANNEL_SCAN_RESPONSE;
+    response_header.msg_type       = MessageType::CHANNEL_SCAN_RESPONSE;
     response_header.sender_node_id = config_.node_id;
-    response_header.sender_type = config_.node_type;
-    response_header.dest_node_id = header->sender_node_id;
+    response_header.sender_type    = config_.node_type;
+    response_header.dest_node_id   = header->sender_node_id;
 
     tx_packet.len = sizeof(response_header);
     memcpy(tx_packet.data, &response_header, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue scan probe response.");
     }
 }
 
 void EspNow::handle_heartbeat(const RxPacket &packet)
 {
-    if (!config_.is_master)
-    {
+    if (!config_.is_master) {
         return;
     }
 
     const HeartbeatMessage *msg = reinterpret_cast<const HeartbeatMessage *>(packet.data);
-    NodeId sender_id = msg->header.sender_node_id;
+    NodeId sender_id            = msg->header.sender_node_id;
 
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         auto it = std::find_if(peers_.begin(), peers_.end(),
-                               [&](const PeerInfo &p)
-                               { return p.node_id == sender_id; });
+                               [&](const PeerInfo &p) { return p.node_id == sender_id; });
 
-        if (it != peers_.end())
-        {
-            it->last_seen_ms = esp_timer_get_time() / 1000;
-            ESP_LOGD(TAG, "Heartbeat received from Node ID %" PRIu8 ". Updated last_seen.", static_cast<uint8_t>(sender_id));
+        if (it != peers_.end()) {
+            it->last_seen_ms = get_time_ms();
+            ESP_LOGD(TAG,
+                     "Heartbeat received from Node ID %" PRIu8 ". Updated last_seen.",
+                     static_cast<uint8_t>(sender_id));
 
             // Respond to the heartbeat
             HeartbeatResponse response;
-            response.header.msg_type = MessageType::HEARTBEAT_RESPONSE;
+            response.header.msg_type       = MessageType::HEARTBEAT_RESPONSE;
             response.header.sender_node_id = config_.node_id;
-            response.header.sender_type = config_.node_type;
-            response.header.dest_node_id = sender_id;
-            response.server_time_ms = it->last_seen_ms;
-            response.wifi_channel = config_.wifi_channel;
+            response.header.sender_type    = config_.node_type;
+            response.header.dest_node_id   = sender_id;
+            response.server_time_ms        = it->last_seen_ms;
+            response.wifi_channel          = config_.wifi_channel;
 
             TxPacket tx_packet;
             memcpy(tx_packet.dest_mac, it->mac, 6);
             tx_packet.len = sizeof(response);
             memcpy(tx_packet.data, &response, tx_packet.len);
             tx_packet.requires_ack = false;
-            if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-            {
+            if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
                 ESP_LOGE(TAG, "Failed to queue heartbeat response.");
             }
         }
-        else
-        {
-            ESP_LOGW(TAG, "Received heartbeat from unknown Node ID: %" PRIu8, static_cast<uint8_t>(sender_id));
+        else {
+            ESP_LOGW(TAG, "Received heartbeat from unknown Node ID: %" PRIu8,
+                     static_cast<uint8_t>(sender_id));
         }
 
         xSemaphoreGive(peers_mutex_);
@@ -810,8 +795,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     response.header.dest_node_id   = request->header.sender_node_id;
 
     // Check if the request is from another hub and reject it
-    if (request->header.sender_type == NodeType::HUB)
-    {
+    if (request->header.sender_type == NodeType::HUB) {
         ESP_LOGW(TAG, "Rejecting pairing request from another Hub");
         response.status = PairStatus::REJECTED_NOT_ALLOWED;
 
@@ -820,8 +804,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
         tx_packet.len = sizeof(response);
         memcpy(tx_packet.data, &response, tx_packet.len);
         tx_packet.requires_ack = false;
-        if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-        {
+        if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
             ESP_LOGE(TAG, "Failed to queue pair rejection response.");
         }
         return;
@@ -832,15 +815,16 @@ void EspNow::handle_pair_request(const RxPacket &packet)
              request->header.sender_type);
 
     // Update the peer's heartbeat interval
-    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        auto it = std::find_if(peers_.begin(), peers_.end(), [&](const PeerInfo &p)
-                               { return p.node_id == request->header.sender_node_id; });
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        auto it = std::find_if(peers_.begin(), peers_.end(), [&](const PeerInfo &p) {
+            return p.node_id == request->header.sender_node_id;
+        });
 
-        if (it != peers_.end())
-        {
+        if (it != peers_.end()) {
             it->heartbeat_interval_ms = request->heartbeat_interval_ms;
-            ESP_LOGI(TAG, "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32 " ms.",
+            ESP_LOGI(TAG,
+                     "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32
+                     " ms.",
                      static_cast<uint8_t>(it->node_id), it->heartbeat_interval_ms);
         }
         xSemaphoreGive(peers_mutex_);
@@ -855,8 +839,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     tx_packet.len = sizeof(response);
     memcpy(tx_packet.data, &response, tx_packet.len);
     tx_packet.requires_ack = false;
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE)
-    {
+    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue pair acceptance response.");
     }
 }
@@ -907,7 +890,7 @@ void EspNow::transport_worker_task(void *arg)
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
 
-    for (;;) {
+    while (true) {
         if (xQueueReceive(self->transport_worker_queue_, &packet, portMAX_DELAY) ==
             pdTRUE) {
             if (packet.len < sizeof(MessageHeader) + CRC_SIZE) {
@@ -941,14 +924,17 @@ void EspNow::transport_worker_task(void *arg)
                 break;
             case MessageType::CHANNEL_SCAN_RESPONSE:
             {
-                const MessageHeader *header = reinterpret_cast<const MessageHeader *>(packet.data);
+                const MessageHeader *header =
+                    reinterpret_cast<const MessageHeader *>(packet.data);
                 ESP_LOGI(TAG, "Hub responded to scan. Updating peer info.");
-                // We don't have the channel in the response yet, let's assume it's the current channel
-                // This part needs the channel to be added to CHANNEL_SCAN_RESPONSE for full correctness.
-                // For now, we assume the scan loop channel is correct.
+                // We don't have the channel in the response yet, let's assume it's the
+                // current channel This part needs the channel to be added to
+                // CHANNEL_SCAN_RESPONSE for full correctness. For now, we assume the scan
+                // loop channel is correct.
                 uint8_t current_channel;
                 esp_wifi_get_channel(&current_channel, nullptr);
-                self->add_peer(header->sender_node_id, packet.src_mac, current_channel, header->sender_type);
+                self->add_peer(header->sender_node_id, packet.src_mac, current_channel,
+                               header->sender_type);
 
                 // Notify the TX manager that the Hub was found.
                 xTaskNotify(self->tx_manager_task_handle_, 3, eSetBits);
@@ -1001,39 +987,43 @@ void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
 void EspNow::periodic_heartbeat_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self != nullptr)
-    {
+    if (self != nullptr) {
         self->send_heartbeat();
     }
+}
+
+uint32_t EspNow::get_time_ms() const
+{
+    return esp_timer_get_time() / 1000;
 }
 
 void EspNow::tx_manager_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     TxPacket packet_to_send;
-    TxState current_state = TxState::IDLE;
+    TxState current_state            = TxState::IDLE;
     static uint16_t sequence_counter = 0;
     std::optional<PendingAck> pending_ack_msg;
     uint8_t phy_send_fail_count = 0;
 
-    TimerHandle_t ack_timeout_timer = xTimerCreate("ack_timeout", pdMS_TO_TICKS(LOGICAL_ACK_TIMEOUT_MS), pdFALSE, self->tx_manager_task_handle_, [](TimerHandle_t xTimer) {
-        xTaskNotify(static_cast<TaskHandle_t>(pvTimerGetTimerID(xTimer)), 0, eNoAction);
-    });
+    TimerHandle_t ack_timeout_timer =
+        xTimerCreate("ack_timeout", pdMS_TO_TICKS(LOGICAL_ACK_TIMEOUT_MS), pdFALSE,
+                     self->tx_manager_task_handle_, [](TimerHandle_t xTimer) {
+                         xTaskNotify(static_cast<TaskHandle_t>(pvTimerGetTimerID(xTimer)),
+                                     0, eNoAction);
+                     });
 
-    if (ack_timeout_timer == nullptr)
-    {
+    if (ack_timeout_timer == nullptr) {
         ESP_LOGE(TAG, "Failed to create ack_timeout_timer.");
         vTaskDelete(nullptr); // Abort task
     }
 
-    for (;;)
-    {
-        switch (current_state)
-        {
+    while (true) {
+        switch (current_state) {
         case TxState::IDLE:
         {
-            if (xQueueReceive(self->tx_queue_, &packet_to_send, portMAX_DELAY) == pdTRUE)
-            {
+            if (xQueueReceive(self->tx_queue_, &packet_to_send, portMAX_DELAY) ==
+                pdTRUE) {
                 current_state = TxState::SENDING;
             }
             break;
@@ -1041,24 +1031,23 @@ void EspNow::tx_manager_task(void *arg)
 
         case TxState::SENDING:
         {
-            MessageHeader *header = reinterpret_cast<MessageHeader *>(packet_to_send.data);
+            MessageHeader *header =
+                reinterpret_cast<MessageHeader *>(packet_to_send.data);
             header->sequence_number = sequence_counter++;
 
-            esp_err_t send_result = self->send_packet(packet_to_send.dest_mac, packet_to_send.data, packet_to_send.len);
+            esp_err_t send_result = self->send_packet(
+                packet_to_send.dest_mac, packet_to_send.data, packet_to_send.len);
 
-            if (send_result == ESP_OK && packet_to_send.requires_ack)
-            {
-                pending_ack_msg = PendingAck{
-                    .sequence_number = header->sequence_number,
-                    .timestamp_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000),
-                    .retries_left = MAX_LOGICAL_RETRIES,
-                    .packet = packet_to_send};
+            if (send_result == ESP_OK && packet_to_send.requires_ack) {
+                pending_ack_msg = PendingAck{.sequence_number = header->sequence_number,
+                                             .timestamp_ms    = self->get_time_ms(),
+                                             .retries_left    = MAX_LOGICAL_RETRIES,
+                                             .packet          = packet_to_send};
 
                 xTimerStart(ack_timeout_timer, 0);
                 current_state = TxState::WAITING_FOR_ACK;
             }
-            else
-            {
+            else {
                 current_state = TxState::IDLE;
             }
             break;
@@ -1067,8 +1056,8 @@ void EspNow::tx_manager_task(void *arg)
         case TxState::WAITING_FOR_ACK:
         {
             uint32_t notification_value;
-            if (xTaskNotifyWait(0, ULONG_MAX, &notification_value, portMAX_DELAY) == pdPASS)
-            {
+            if (xTaskNotifyWait(0, ULONG_MAX, &notification_value, portMAX_DELAY) ==
+                pdPASS) {
                 if (notification_value == 1) // Notification from ACK received
                 {
                     ESP_LOGD(TAG, "ACK received. Returning to IDLE.");
@@ -1080,24 +1069,25 @@ void EspNow::tx_manager_task(void *arg)
                 else if (notification_value == 2) // Notification from physical send fail
                 {
                     phy_send_fail_count++;
-                    ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d", pending_ack_msg->sequence_number, phy_send_fail_count);
-                    if (phy_send_fail_count >= MAX_LOGICAL_RETRIES)
-                    {
-                        ESP_LOGE(TAG, "Max physical ACK failures reached. Triggering SCANNING state.");
+                    ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
+                             pending_ack_msg->sequence_number, phy_send_fail_count);
+                    if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
+                        ESP_LOGE(TAG, "Max physical ACK failures reached. Triggering "
+                                      "SCANNING state.");
                         phy_send_fail_count = 0;
                         pending_ack_msg.reset();
                         xTimerStop(ack_timeout_timer, 0);
                         current_state = TxState::SCANNING;
                     }
-                    else
-                    {
-                        // We can optionally retry immediately on physical failure, but for now we'll wait for logical timeout
+                    else {
+                        // We can optionally retry immediately on physical failure,
+                        // but for now we'll wait for logical timeout
                     }
                 }
                 else // Notification from timer timeout
                 {
                     phy_send_fail_count = 0;
-                    current_state = TxState::RETRYING;
+                    current_state       = TxState::RETRYING;
                 }
             }
             break;
@@ -1105,17 +1095,19 @@ void EspNow::tx_manager_task(void *arg)
 
         case TxState::RETRYING:
         {
-            if (pending_ack_msg && pending_ack_msg->retries_left > 0)
-            {
+            if (pending_ack_msg && pending_ack_msg->retries_left > 0) {
                 pending_ack_msg->retries_left--;
-                ESP_LOGW(TAG, "ACK timeout for seq %u. Retrying... (%d left)", pending_ack_msg->sequence_number, pending_ack_msg->retries_left);
-                self->send_packet(pending_ack_msg->packet.dest_mac, pending_ack_msg->packet.data, pending_ack_msg->packet.len);
+                ESP_LOGW(TAG, "ACK timeout for seq %u. Retrying... (%d left)",
+                         pending_ack_msg->sequence_number, pending_ack_msg->retries_left);
+                self->send_packet(pending_ack_msg->packet.dest_mac,
+                                  pending_ack_msg->packet.data,
+                                  pending_ack_msg->packet.len);
                 xTimerStart(ack_timeout_timer, 0);
                 current_state = TxState::WAITING_FOR_ACK;
             }
-            else
-            {
-                ESP_LOGE(TAG, "Failed to send packet with seq %u after max retries.", pending_ack_msg->sequence_number);
+            else {
+                ESP_LOGE(TAG, "Failed to send packet with seq %u after max retries.",
+                         pending_ack_msg->sequence_number);
                 pending_ack_msg.reset();
                 current_state = TxState::IDLE;
             }
@@ -1126,13 +1118,20 @@ void EspNow::tx_manager_task(void *arg)
         {
             ESP_LOGW(TAG, "Starting channel scan to find Hub.");
             bool hub_found = false;
-            if (self->heartbeat_timer_handle_ != nullptr)
-            {
+            if (self->heartbeat_timer_handle_ != nullptr) {
                 xTimerStop(self->heartbeat_timer_handle_, portMAX_DELAY);
             }
 
-            for (uint8_t channel = 1; channel <= 13; ++channel)
-            {
+            uint8_t current_channel;
+            esp_wifi_get_channel(&current_channel, nullptr);
+            if (current_channel < 1 || current_channel > 13) {
+                current_channel = 1;
+            }
+            uint32_t scan_start_time = self->get_time_ms();
+
+            for (uint8_t offset = 0; offset < 13 && !hub_found; ++offset) {
+                uint8_t channel = ((current_channel - 1 + offset) % 13) + 1;
+
                 esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
 
                 TxPacket probe_packet;
@@ -1140,37 +1139,55 @@ void EspNow::tx_manager_task(void *arg)
                 memcpy(probe_packet.dest_mac, broadcast_mac, sizeof(broadcast_mac));
 
                 MessageHeader probe_header;
-                probe_header.msg_type = MessageType::CHANNEL_SCAN_PROBE;
+                probe_header.msg_type       = MessageType::CHANNEL_SCAN_PROBE;
                 probe_header.sender_node_id = self->config_.node_id;
-                probe_header.sender_type = self->config_.node_type;
-                probe_header.dest_node_id = NodeId::HUB;
+                probe_header.sender_type    = self->config_.node_type;
+                probe_header.dest_node_id   = NodeId::HUB;
 
                 probe_packet.len = sizeof(probe_header);
                 memcpy(probe_packet.data, &probe_header, probe_packet.len);
                 probe_packet.requires_ack = false;
 
-                self->send_packet(probe_packet.dest_mac, probe_packet.data, probe_packet.len);
+                for (uint8_t attempt = 0; attempt < SCAN_CHANNEL_ATTEMPTS && !hub_found;
+                     attempt++) {
+                    self->send_packet(probe_packet.dest_mac, probe_packet.data,
+                                      probe_packet.len);
 
-                uint32_t notification_value;
-                if (xTaskNotifyWait(0, ULONG_MAX, &notification_value, pdMS_TO_TICKS(250)) == pdPASS)
-                {
-                    if (notification_value == 3) // Hub found
-                    {
-                        ESP_LOGI(TAG, "Hub found on channel %d. Re-syncing.", channel);
-                        // The transport_worker_task will handle the peer modification.
-                        hub_found = true;
-                        break;
+                    uint32_t notification_value;
+                    if (xTaskNotifyWait(0, ULONG_MAX, &notification_value,
+                                        pdMS_TO_TICKS(SCAN_CHANNEL_TIMEOUT_MS)) ==
+                        pdPASS) {
+                        // transport_worker_task sends a notification with value 3
+                        // when receive a CHANNEL_SCAN_RESPONSE
+                        if (notification_value == 3) // Hub found
+                        {
+                            ESP_LOGI(TAG, "Hub found on channel %d. Re-syncing.",
+                                     channel);
+                            // The transport_worker_task will handle the peer
+                            // modification.
+                            hub_found = true;
+                            break;
+                        }
                     }
+                    if (attempt < SCAN_CHANNEL_ATTEMPTS - 1) {
+                        vTaskDelay(pdMS_TO_TICKS(5));
+                    }
+                }
+                if (offset < 12 && !hub_found) {
+                    vTaskDelay(pdMS_TO_TICKS(2));
+                }
+                uint32_t current_time = self->get_time_ms();
+                if (current_time - scan_start_time > MAX_SCAN_TIME_MS) {
+                    break;
                 }
             }
 
-            if (!hub_found)
-            {
+            if (!hub_found) {
                 ESP_LOGE(TAG, "Hub not found after full scan.");
+                esp_wifi_set_channel(current_channel, WIFI_SECOND_CHAN_NONE);
             }
 
-            if (self->heartbeat_timer_handle_ != nullptr)
-            {
+            if (self->heartbeat_timer_handle_ != nullptr) {
                 xTimerStart(self->heartbeat_timer_handle_, 0);
             }
             current_state = TxState::IDLE;

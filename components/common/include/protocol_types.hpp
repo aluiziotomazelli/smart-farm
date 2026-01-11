@@ -1,11 +1,11 @@
 #pragma once
 #include "esp_now.h"
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 // Correct size of the universal message header
-constexpr size_t MESSAGE_HEADER_SIZE  = 12;
-constexpr size_t CRC_SIZE             = 1;
+constexpr size_t MESSAGE_HEADER_SIZE = 12;
+constexpr size_t CRC_SIZE            = 1;
 // The maximum payload size is the total ESP-NOW size minus the header and CRC
 constexpr size_t MAX_PAYLOAD_SIZE = ESP_NOW_MAX_DATA_LEN - MESSAGE_HEADER_SIZE - CRC_SIZE;
 
@@ -19,6 +19,11 @@ constexpr float HEARTBEAT_OFFLINE_MULTIPLIER     = 2.5f;
 constexpr uint32_t LOGICAL_ACK_TIMEOUT_MS = 500;
 constexpr uint8_t MAX_LOGICAL_RETRIES     = 3;
 
+constexpr uint16_t SCAN_CHANNEL_TIMEOUT_MS = 50;
+constexpr uint8_t SCAN_CHANNEL_ATTEMPTS    = 2;
+constexpr uint16_t MAX_SCAN_TIME_MS =
+    SCAN_CHANNEL_TIMEOUT_MS * SCAN_CHANNEL_ATTEMPTS * 20;
+
 // Defines the functional category of a node.
 enum class NodeType : uint8_t
 {
@@ -31,23 +36,23 @@ enum class NodeType : uint8_t
 // Defines the unique, hardcoded identifier for a specific node.
 enum class NodeId : uint8_t
 {
-    HUB = 1,
-    WATER_TANK = 5,
+    HUB          = 1,
+    WATER_TANK   = 5,
     SOLAR_SENSOR = 7,
     PUMP_CONTROL = 10,
-    WEATHER = 12,
+    WEATHER      = 12,
 };
 
 enum class MessageType : uint8_t
 {
-    PAIR_REQUEST       = 0x00,
-    PAIR_RESPONSE      = 0x01,
-    HEARTBEAT          = 0x02,
-    HEARTBEAT_RESPONSE = 0x03,
-    DATA               = 0x10,
-    ACK                = 0x11,
-    COMMAND            = 0x20,
-    CHANNEL_SCAN_PROBE = 0x30,
+    PAIR_REQUEST          = 0x00,
+    PAIR_RESPONSE         = 0x01,
+    HEARTBEAT             = 0x02,
+    HEARTBEAT_RESPONSE    = 0x03,
+    DATA                  = 0x10,
+    ACK                   = 0x11,
+    COMMAND               = 0x20,
+    CHANNEL_SCAN_PROBE    = 0x30,
     CHANNEL_SCAN_RESPONSE = 0x31,
 };
 
