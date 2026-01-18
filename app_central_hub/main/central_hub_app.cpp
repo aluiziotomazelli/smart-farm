@@ -43,6 +43,7 @@ void CentralHubApp::button_task()
     bool button_pressed          = false;
     TickType_t last_press_time   = 0;
     const TickType_t debounce_ms = 150;
+    uint32_t last_stack_check    = 0;
 
     while (true) {
         uint32_t notifications = 0;
@@ -63,6 +64,16 @@ void CentralHubApp::button_task()
                     }
                 }
             }
+        }
+
+        // Drain app RX queue to prevent saturation
+        EspNow::RxPacket rx_packet;
+        while (xQueueReceive(app_queue_, &rx_packet, 0) == pdTRUE) {
+            const MessageHeader *header =
+                reinterpret_cast<const MessageHeader *>(rx_packet.data);
+            ESP_LOGI(TAG, "App received packet from Node ID %u (MsgType: %u)",
+                     static_cast<uint8_t>(header->sender_node_id),
+                     static_cast<uint8_t>(header->msg_type));
         }
 
         // --- Button logic (polling) ---
@@ -111,6 +122,13 @@ void CentralHubApp::button_task()
         }
         else if (level != BUTTON_ACTIVE_LEVEL && button_pressed) {
             button_pressed = false; // Reset button state
+        }
+
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (now - last_stack_check > 5000) {
+            last_stack_check = now;
+            ESP_LOGI(TAG, "[Stack] app_main: %u bytes free",
+                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
 }
