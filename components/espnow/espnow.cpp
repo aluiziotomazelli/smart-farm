@@ -12,6 +12,9 @@
 // Logging TAG
 static const char *TAG = "EspNow";
 
+// Stack monitoring interval (ms)
+#define STACK_MONITOR_INTERVAL_MS 10000
+
 // Singleton static members
 EspNow *EspNow::instance_ptr_              = nullptr;
 SemaphoreHandle_t EspNow::singleton_mutex_ = nullptr;
@@ -592,9 +595,10 @@ void EspNow::rx_dispatch_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
+    uint32_t last_stack_check = 0;
 
     while (true) {
-        if (xQueueReceive(self->rx_dispatch_queue_, &packet, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(self->rx_dispatch_queue_, &packet, pdMS_TO_TICKS(1000)) == pdTRUE) {
             // CRC Validation
             if (packet.len < CRC_SIZE) {
                 continue;
@@ -645,6 +649,13 @@ void EspNow::rx_dispatch_task(void *arg)
                          static_cast<int>(header->msg_type));
                 break;
             }
+        }
+
+        uint32_t now = self->get_time_ms();
+        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
+            last_stack_check = now;
+            ESP_LOGI(TAG, "[Stack] rx_dispatch: %u bytes free",
+                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
 }
@@ -908,9 +919,10 @@ void EspNow::transport_worker_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
+    uint32_t last_stack_check = 0;
 
     while (true) {
-        if (xQueueReceive(self->transport_worker_queue_, &packet, portMAX_DELAY) ==
+        if (xQueueReceive(self->transport_worker_queue_, &packet, pdMS_TO_TICKS(1000)) ==
             pdTRUE) {
             if (packet.len < sizeof(MessageHeader) + CRC_SIZE) {
                 continue;
@@ -961,6 +973,13 @@ void EspNow::transport_worker_task(void *arg)
             default:
                 break;
             }
+        }
+
+        uint32_t now = self->get_time_ms();
+        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
+            last_stack_check = now;
+            ESP_LOGI(TAG, "[Stack] transport_worker: %u bytes free",
+                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
 }
@@ -1037,8 +1056,17 @@ void EspNow::tx_manager_task(void *arg)
         vTaskDelete(nullptr); // Abort task
     }
 
+    uint32_t last_stack_check = 0;
+
     while (true) {
         uint32_t notifications = 0;
+
+        uint32_t now = self->get_time_ms();
+        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
+            last_stack_check = now;
+            ESP_LOGI(TAG, "[Stack] tx_manager: %u bytes free",
+                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
+        }
 
         switch (current_state) {
         case TxState::IDLE:
