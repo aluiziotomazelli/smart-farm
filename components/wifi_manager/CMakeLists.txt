@@ -11,5 +11,5 @@ idf_component_register(
         # esp_event 
         esp_netif 
         freertos
-        common_types
+        common
 )

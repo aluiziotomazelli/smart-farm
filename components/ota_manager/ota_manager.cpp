@@ -7,9 +7,13 @@
 #include <cstring>
 
 #include "esp_event.h"
+#include "ota_events.hpp"
 #include "protocol_types.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+
+// Define the event base
+ESP_EVENT_DEFINE_BASE(APP_OTA_EVENT);
 
 static const char *TAG = "OTA";
 

@@ -8,10 +8,8 @@ idf_component_register(
         "."
     
     REQUIRES
-         core
-         esp_wifi
          wifi_manager
-         espnow_comm
+         espnow
          ota_manager
-         common_types
+         common
 )

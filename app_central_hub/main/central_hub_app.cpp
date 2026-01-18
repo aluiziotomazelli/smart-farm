@@ -1,12 +1,12 @@
 #include "central_hub_app.hpp"
-#include "common_types.hpp"
-#include "espnow_comm.hpp"
-#include "ota_manager.hpp"
-#include "wifi_manager.hpp"
-
-#define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
-
+#include "espnow.hpp"
+#include "nvs_flash.h"
+#include "ota_manager.hpp"
+#include "protocol_types.hpp"
+#include "wifi_manager.hpp"
+#include <stdio.h>
+#include <string.h>
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -20,47 +20,6 @@ static const char *TAG = "CentralHubApp";
 CentralHubApp::CentralHubApp()
 {
     // Constructor is intentionally empty.
-}
-
-EspNowComm comm;
-
-void CentralHubApp::on_espnow_receive(uint8_t node_id,
-                                      const uint8_t *data,
-                                      int len,
-                                      int8_t rssi)
-{
-    ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
-
-    if (len > 0 && data != nullptr) {
-        auto header = reinterpret_cast<const MessageHeader *>(data);
-        if (header->type == MessageType::DATA) {
-            WaterLevelReport report;
-            if (len == sizeof(report)) {
-                memcpy(&report, data, sizeof(report));
-                ESP_LOGI(
-                    TAG,
-                    "WaterLevelReport from node %u: Level=%u‰, Dist=%.2fcm, V=%.2fV, "
-                    "Q=%d, F=%d, Full=%d, Backup=%d",
-                    node_id, report.level_permille, report.distance_cm,
-                    report.battery_mv / 1000.0f, (int)report.quality, (int)report.failure,
-                    (int)report.float_switch_is_full, (int)report.backup_mode_active);
-            }
-            else {
-                ESP_LOGW(TAG, "Received DATA packet with unexpected size: %d bytes", len);
-            }
-        }
-        else {
-            ESP_LOGI(TAG, "Received message of type %d", (int)header->type);
-        }
-    }
-}
-
-void CentralHubApp::registerEspNowCallbacks()
-{
-    comm.setReceiveCallback(
-        [this](uint8_t node_id, const uint8_t *data, int len, int8_t rssi) {
-            this->on_espnow_receive(node_id, data, len, rssi);
-        });
 }
 
 void CentralHubApp::button_task_handler(void *arg)
@@ -96,33 +55,34 @@ void CentralHubApp::button_task()
 
                 ESP_LOGI(TAG, "Button pressed! Sending OTA command...");
 
-                auto peers          = comm.getPeers();
-                uint8_t target_node = 0;
+                auto &espnow       = EspNow::instance();
+                auto peers         = espnow.get_peers();
+                NodeId target_node = NodeId(0);
 
                 // Find the first non-hub peer
                 for (const auto &peer : peers) {
-                    target_node = peer.node_id;
-                    break;
+                    if (peer.type != NodeType::HUB) {
+                        target_node = peer.node_id;
+                        break;
+                    }
                 }
 
-                if (target_node != 0) {
+                if (target_node != NodeId(0)) {
                     OtaCommand command = {};
                     // NOTE: The URL must be accessible by the target device.
                     // "ota-server.local" is a placeholder for mDNS.
-                    snprintf(command.url, sizeof(command.url),
+                    snprintf(reinterpret_cast<char *>(command.firmware_url),
+                             sizeof(command.firmware_url),
                              "http://ota-server.local:8070/ota_test.bin");
 
-                    // Sending empty credentials will make the target use its stored ones.
-                    command.ssid[0]     = '\0';
-                    command.password[0] = '\0';
-
-                    if (comm.send(target_node, MessageType::OTA, (uint8_t *)&command,
-                                  sizeof(command)) == ESP_OK) {
-                        ESP_LOGI(TAG, "OTA command sent to node %u.", target_node);
+                    if (espnow.send_command(target_node, CommandType::START_OTA, &command,
+                                            sizeof(command)) == ESP_OK) {
+                        ESP_LOGI(TAG, "OTA command sent to node %u.",
+                                 static_cast<uint8_t>(target_node));
                     }
                     else {
                         ESP_LOGE(TAG, "Failed to send OTA command to node %u.",
-                                 target_node);
+                                 static_cast<uint8_t>(target_node));
                     }
                 }
                 else {
@@ -135,6 +95,27 @@ void CentralHubApp::button_task()
         }
 
         vTaskDelay(pdMS_TO_TICKS(20)); // Poll every 20ms
+    }
+}
+
+void CentralHubApp::peer_check_timer_cb(TimerHandle_t xTimer)
+{
+    CentralHubApp *app = static_cast<CentralHubApp *>(pvTimerGetTimerID(xTimer));
+    if (app == nullptr) {
+        return;
+    }
+
+    auto &espnow       = EspNow::instance();
+    auto offline_peers = espnow.get_offline_peers();
+
+    if (offline_peers.empty()) {
+        ESP_LOGI(TAG, "Peer check: All peers are online.");
+    }
+    else {
+        for (const auto &peer_id : offline_peers) {
+            ESP_LOGW(TAG, "Peer check: Peer with ID %u is offline.",
+                     static_cast<uint8_t>(peer_id));
+        }
     }
 }
 
@@ -157,20 +138,28 @@ void CentralHubApp::init()
 
     ota.init();
 
-    ESPNOWConfig espnow_config;
-    espnow_config.node_id   = common::generate_node_id();
+    EspNowConfig espnow_config;
+    espnow_config.node_id   = NodeId::HUB;
     espnow_config.node_type = NodeType::HUB;
+    espnow_config.is_master = true;
 
-    if (!comm.init(espnow_config)) {
+    auto &espnow = EspNow::instance();
+    if (espnow.init(espnow_config) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW");
         return;
     }
+    espnow.start_pairing();
 
-    registerEspNowCallbacks();
-
-    comm.startDiscovery(50000); // Infinite discovery
-
-    ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u", espnow_config.node_id);
+    ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u",
+             static_cast<uint8_t>(espnow_config.node_id));
 
     xTaskCreate(button_task_handler, "button_task", 4096, this, 5, NULL);
+
+    peer_check_timer_handle_ = xTimerCreate("peer_check_timer", pdMS_TO_TICKS(10000),
+                                            pdTRUE, this, peer_check_timer_cb);
+    if (peer_check_timer_handle_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create peer_check_timer");
+        return;
+    }
+    xTimerStart(peer_check_timer_handle_, 0);
 }

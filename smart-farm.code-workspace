@@ -20,6 +20,9 @@
 		},
 		{
 			"path": "app_test"
+		},
+		{
+			"path": "app_slave"
 		}
 	],
 	"settings": {}
