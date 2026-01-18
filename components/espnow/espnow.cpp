@@ -196,6 +196,10 @@ esp_err_t EspNow::send_data(NodeId dest_node_id,
         return ESP_ERR_TIMEOUT;
     }
 
+    if (tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+    }
+
     return ESP_OK;
 }
 
@@ -233,6 +237,10 @@ esp_err_t EspNow::send_command(NodeId dest_node_id,
     if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue command packet for sending.");
         return ESP_ERR_TIMEOUT;
+    }
+
+    if (tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
     }
 
     return ESP_OK;
@@ -390,6 +398,10 @@ esp_err_t EspNow::confirm_reception(AckStatus status)
         last_header_requiring_ack_.reset();
         xSemaphoreGive(ack_mutex_);
         return ESP_ERR_TIMEOUT;
+    }
+
+    if (tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
     }
 
     last_header_requiring_ack_.reset();
@@ -571,8 +583,8 @@ void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
     if (status == ESP_NOW_SEND_FAIL) {
         ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR, MAC2STR(tx_info->des_addr));
         // Notify the TX manager task about the physical layer failure.
-        // We use a notification value of 2 for physical ACK fail.
-        xTaskNotify(instance_ptr_->tx_manager_task_handle_, 2, eSetBits);
+        xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
+                    eSetBits);
     }
 }
 
@@ -659,6 +671,9 @@ void EspNow::send_pair_request()
     }
     else {
         ESP_LOGI(TAG, "Queued pairing request.");
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -722,6 +737,11 @@ void EspNow::send_heartbeat()
 
     if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue heartbeat for sending.");
+    }
+    else {
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -915,8 +935,7 @@ void EspNow::transport_worker_task(void *arg)
             case MessageType::ACK:
             {
                 // Notify the TX manager that a logical ACK was received.
-                // We use a notification value of 1 for logical ACK success.
-                xTaskNotify(self->tx_manager_task_handle_, 1, eSetBits);
+                xTaskNotify(self->tx_manager_task_handle_, NOTIFY_LOGICAL_ACK, eSetBits);
                 break;
             }
             case MessageType::CHANNEL_SCAN_PROBE:
@@ -937,7 +956,7 @@ void EspNow::transport_worker_task(void *arg)
                                header->sender_type);
 
                 // Notify the TX manager that the Hub was found.
-                xTaskNotify(self->tx_manager_task_handle_, 3, eSetBits);
+                xTaskNotify(self->tx_manager_task_handle_, NOTIFY_HUB_FOUND, eSetBits);
                 break;
             }
             default:
@@ -950,45 +969,26 @@ void EspNow::transport_worker_task(void *arg)
 void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self == nullptr) {
-        return;
+    if (self != nullptr && self->tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(self->tx_manager_task_handle_, NOTIFY_PAIRING_TIMEOUT, eSetBits);
     }
-
-    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
-        return;
-    }
-
-    if (self->config_.is_master) {
-        // Master's pairing window has expired
-        self->is_pairing_active_ = false;
-        ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
-    }
-    else {
-        // Slave's pairing attempt has timed out
-        ESP_LOGW(TAG, "Pairing attempt timed out.");
-        if (self->pairing_timer_handle_ != nullptr) {
-            xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
-            self->pairing_timer_handle_ = nullptr;
-        }
-        self->is_pairing_active_ = false;
-    }
-    xSemaphoreGive(self->pairing_mutex_);
 }
 
 void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self != nullptr) {
-        // Periodically send a pairing request
-        self->send_pair_request();
+    if (self != nullptr && self->tx_manager_task_handle_ != nullptr) {
+        // Notify the TX manager task to send a pairing request
+        xTaskNotify(self->tx_manager_task_handle_, NOTIFY_PAIRING, eSetBits);
     }
 }
 
 void EspNow::periodic_heartbeat_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self != nullptr) {
-        self->send_heartbeat();
+    if (self != nullptr && self->tx_manager_task_handle_ != nullptr) {
+        // Notify the TX manager task to send a heartbeat
+        xTaskNotify(self->tx_manager_task_handle_, NOTIFY_HEARTBEAT, eSetBits);
     }
 }
 
@@ -1010,7 +1010,7 @@ void EspNow::tx_manager_task(void *arg)
         xTimerCreate("ack_timeout", pdMS_TO_TICKS(LOGICAL_ACK_TIMEOUT_MS), pdFALSE,
                      self->tx_manager_task_handle_, [](TimerHandle_t xTimer) {
                          xTaskNotify(static_cast<TaskHandle_t>(pvTimerGetTimerID(xTimer)),
-                                     0, eNoAction);
+                                     NOTIFY_ACK_TIMEOUT, eSetBits);
                      });
 
     if (ack_timeout_timer == nullptr) {
@@ -1019,12 +1019,57 @@ void EspNow::tx_manager_task(void *arg)
     }
 
     while (true) {
+        uint32_t notifications = 0;
+
         switch (current_state) {
         case TxState::IDLE:
         {
-            if (xQueueReceive(self->tx_queue_, &packet_to_send, portMAX_DELAY) ==
-                pdTRUE) {
+            // First, check if there's anything already in the queue to process
+            if (xQueueReceive(self->tx_queue_, &packet_to_send, 0) == pdTRUE) {
                 current_state = TxState::SENDING;
+                break;
+            }
+
+            // Wait for any interesting notification (DATA, HEARTBEAT, PAIRING, or
+            // TIMEOUT)
+            if (xTaskNotifyWait(0,
+                                NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING |
+                                    NOTIFY_PAIRING_TIMEOUT,
+                                &notifications, portMAX_DELAY) == pdTRUE) {
+                if (notifications & NOTIFY_HEARTBEAT) {
+                    self->send_heartbeat();
+                }
+
+                if (notifications & NOTIFY_PAIRING) {
+                    self->send_pair_request();
+                }
+
+                if (notifications & NOTIFY_PAIRING_TIMEOUT) {
+                    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) ==
+                        pdTRUE) {
+                        if (self->config_.is_master) {
+                            self->is_pairing_active_ = false;
+                            ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
+                        }
+                        else {
+                            ESP_LOGW(TAG, "Pairing attempt timed out.");
+                            if (self->pairing_timer_handle_ != nullptr) {
+                                xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
+                                self->pairing_timer_handle_ = nullptr;
+                            }
+                            self->is_pairing_active_ = false;
+                        }
+                        xSemaphoreGive(self->pairing_mutex_);
+                    }
+                }
+                if (notifications & NOTIFY_DATA) {
+                    // We check the queue. We don't "drain" it to allow FSM to process one
+                    // by one if needed, but here we just transition to SENDING if there's
+                    // something.
+                    if (xQueueReceive(self->tx_queue_, &packet_to_send, 0) == pdTRUE) {
+                        current_state = TxState::SENDING;
+                    }
+                }
             }
             break;
         }
@@ -1055,19 +1100,18 @@ void EspNow::tx_manager_task(void *arg)
 
         case TxState::WAITING_FOR_ACK:
         {
-            uint32_t notification_value;
-            if (xTaskNotifyWait(0, ULONG_MAX, &notification_value, portMAX_DELAY) ==
-                pdPASS) {
-                if (notification_value == 1) // Notification from ACK received
-                {
+            if (xTaskNotifyWait(0,
+                                NOTIFY_LOGICAL_ACK | NOTIFY_PHYSICAL_FAIL |
+                                    NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT,
+                                &notifications, portMAX_DELAY) == pdPASS) {
+                if (notifications & NOTIFY_LOGICAL_ACK) {
                     ESP_LOGD(TAG, "ACK received. Returning to IDLE.");
                     phy_send_fail_count = 0;
                     pending_ack_msg.reset();
                     xTimerStop(ack_timeout_timer, 0);
                     current_state = TxState::IDLE;
                 }
-                else if (notification_value == 2) // Notification from physical send fail
-                {
+                else if (notifications & NOTIFY_PHYSICAL_FAIL) {
                     phy_send_fail_count++;
                     ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
                              pending_ack_msg->sequence_number, phy_send_fail_count);
@@ -1079,15 +1123,29 @@ void EspNow::tx_manager_task(void *arg)
                         xTimerStop(ack_timeout_timer, 0);
                         current_state = TxState::SCANNING;
                     }
-                    else {
-                        // We can optionally retry immediately on physical failure,
-                        // but for now we'll wait for logical timeout
-                    }
                 }
-                else // Notification from timer timeout
-                {
+                else if (notifications & NOTIFY_ACK_TIMEOUT) {
                     phy_send_fail_count = 0;
                     current_state       = TxState::RETRYING;
+                }
+
+                if (notifications & NOTIFY_PAIRING_TIMEOUT) {
+                    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) ==
+                        pdTRUE) {
+                        if (self->config_.is_master) {
+                            self->is_pairing_active_ = false;
+                            ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
+                        }
+                        else {
+                            ESP_LOGW(TAG, "Pairing attempt timed out.");
+                            if (self->pairing_timer_handle_ != nullptr) {
+                                xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
+                                self->pairing_timer_handle_ = nullptr;
+                            }
+                            self->is_pairing_active_ = false;
+                        }
+                        xSemaphoreGive(self->pairing_mutex_);
+                    }
                 }
             }
             break;
@@ -1153,18 +1211,12 @@ void EspNow::tx_manager_task(void *arg)
                     self->send_packet(probe_packet.dest_mac, probe_packet.data,
                                       probe_packet.len);
 
-                    uint32_t notification_value;
-                    if (xTaskNotifyWait(0, ULONG_MAX, &notification_value,
+                    if (xTaskNotifyWait(0, NOTIFY_HUB_FOUND, &notifications,
                                         pdMS_TO_TICKS(SCAN_CHANNEL_TIMEOUT_MS)) ==
                         pdPASS) {
-                        // transport_worker_task sends a notification with value 3
-                        // when receive a CHANNEL_SCAN_RESPONSE
-                        if (notification_value == 3) // Hub found
-                        {
+                        if (notifications & NOTIFY_HUB_FOUND) {
                             ESP_LOGI(TAG, "Hub found on channel %d. Re-syncing.",
                                      channel);
-                            // The transport_worker_task will handle the peer
-                            // modification.
                             hub_found = true;
                             break;
                         }
