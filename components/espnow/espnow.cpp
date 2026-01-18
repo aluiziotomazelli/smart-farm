@@ -13,7 +13,7 @@
 static const char *TAG = "EspNow";
 
 // Stack monitoring interval (ms)
-#define STACK_MONITOR_INTERVAL_MS 10000
+#define STACK_MONITOR_INTERVAL_MS 5000
 
 // Singleton static members
 EspNow *EspNow::instance_ptr_              = nullptr;
@@ -597,6 +597,8 @@ void EspNow::rx_dispatch_task(void *arg)
     RxPacket packet;
     uint32_t last_stack_check = 0;
 
+    ESP_LOGI(TAG, "rx_dispatch_task started.");
+
     while (true) {
         if (xQueueReceive(self->rx_dispatch_queue_, &packet, pdMS_TO_TICKS(1000)) == pdTRUE) {
             // CRC Validation
@@ -921,6 +923,10 @@ void EspNow::transport_worker_task(void *arg)
     RxPacket packet;
     uint32_t last_stack_check = 0;
 
+    ESP_LOGI(TAG, "transport_worker_task started.");
+
+    ESP_LOGI(TAG, "tx_manager_task started.");
+
     while (true) {
         if (xQueueReceive(self->transport_worker_queue_, &packet, pdMS_TO_TICKS(1000)) ==
             pdTRUE) {
@@ -1081,7 +1087,7 @@ void EspNow::tx_manager_task(void *arg)
             if (xTaskNotifyWait(
                     0,
                     NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING | NOTIFY_PAIRING_TIMEOUT,
-                    &notifications, portMAX_DELAY) == pdTRUE) {
+                    &notifications, pdMS_TO_TICKS(1000)) == pdTRUE) {
 
                 if (notifications & NOTIFY_HEARTBEAT) {
                     self->send_heartbeat();
@@ -1144,7 +1150,7 @@ void EspNow::tx_manager_task(void *arg)
             if (xTaskNotifyWait(0,
                                 NOTIFY_LOGICAL_ACK | NOTIFY_PHYSICAL_FAIL |
                                     NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT,
-                                &notifications, portMAX_DELAY) == pdPASS) {
+                                &notifications, pdMS_TO_TICKS(1000)) == pdPASS) {
                 if (notifications & NOTIFY_LOGICAL_ACK) {
                     ESP_LOGD(TAG, "ACK received. Returning to IDLE.");
                     phy_send_fail_count = 0;
