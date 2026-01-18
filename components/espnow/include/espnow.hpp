@@ -102,8 +102,9 @@ private:
     static constexpr uint32_t NOTIFY_HUB_FOUND     = 0x04;
     static constexpr uint32_t NOTIFY_HEARTBEAT     = 0x08;
     static constexpr uint32_t NOTIFY_PAIRING       = 0x10;
-    static constexpr uint32_t NOTIFY_DATA          = 0x20;
-    static constexpr uint32_t NOTIFY_ACK_TIMEOUT   = 0x40;
+    static constexpr uint32_t NOTIFY_DATA            = 0x20;
+    static constexpr uint32_t NOTIFY_ACK_TIMEOUT     = 0x40;
+    static constexpr uint32_t NOTIFY_PAIRING_TIMEOUT = 0x80;
 
     // --- FSM and TX Task Structures ---
     struct TxPacket

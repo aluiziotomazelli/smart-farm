@@ -1049,9 +1049,11 @@ void EspNow::tx_manager_task(void *arg)
                 break;
             }
 
-            // Wait for any interesting notification (DATA, HEARTBEAT, or PAIRING)
-            if (xTaskNotifyWait(0, NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING,
-                                &notifications, portMAX_DELAY) == pdTRUE) {
+            // Wait for any interesting notification (DATA, HEARTBEAT, PAIRING, or TIMEOUT)
+            if (xTaskNotifyWait(
+                    0,
+                    NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING | NOTIFY_PAIRING_TIMEOUT,
+                    &notifications, portMAX_DELAY) == pdTRUE) {
 
                 if (notifications & NOTIFY_HEARTBEAT) {
                     self->send_heartbeat();
@@ -1059,6 +1061,24 @@ void EspNow::tx_manager_task(void *arg)
 
                 if (notifications & NOTIFY_PAIRING) {
                     self->send_pair_request();
+                }
+
+                if (notifications & NOTIFY_PAIRING_TIMEOUT) {
+                    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+                        if (self->config_.is_master) {
+                            self->is_pairing_active_ = false;
+                            ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
+                        }
+                        else {
+                            ESP_LOGW(TAG, "Pairing attempt timed out.");
+                            if (self->pairing_timer_handle_ != nullptr) {
+                                xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
+                                self->pairing_timer_handle_ = nullptr;
+                            }
+                            self->is_pairing_active_ = false;
+                        }
+                        xSemaphoreGive(self->pairing_mutex_);
+                    }
                 }
 
                 // If NOTIFY_DATA was received, the next loop iteration will pick it up
@@ -1095,7 +1115,7 @@ void EspNow::tx_manager_task(void *arg)
         {
             if (xTaskNotifyWait(0,
                                 NOTIFY_LOGICAL_ACK | NOTIFY_PHYSICAL_FAIL |
-                                    NOTIFY_ACK_TIMEOUT,
+                                    NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT,
                                 &notifications, portMAX_DELAY) == pdPASS) {
                 if (notifications & NOTIFY_LOGICAL_ACK) {
                     ESP_LOGD(TAG, "ACK received. Returning to IDLE.");
@@ -1120,6 +1140,24 @@ void EspNow::tx_manager_task(void *arg)
                 else if (notifications & NOTIFY_ACK_TIMEOUT) {
                     phy_send_fail_count = 0;
                     current_state       = TxState::RETRYING;
+                }
+
+                if (notifications & NOTIFY_PAIRING_TIMEOUT) {
+                    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+                        if (self->config_.is_master) {
+                            self->is_pairing_active_ = false;
+                            ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
+                        }
+                        else {
+                            ESP_LOGW(TAG, "Pairing attempt timed out.");
+                            if (self->pairing_timer_handle_ != nullptr) {
+                                xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
+                                self->pairing_timer_handle_ = nullptr;
+                            }
+                            self->is_pairing_active_ = false;
+                        }
+                        xSemaphoreGive(self->pairing_mutex_);
+                    }
                 }
             }
             break;

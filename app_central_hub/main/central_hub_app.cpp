@@ -38,13 +38,34 @@ void CentralHubApp::button_task()
     io_conf.intr_type     = GPIO_INTR_DISABLE;
     gpio_config(&io_conf);
 
-    ESP_LOGI(TAG, "Button task started. Press BOOT button to send OTA command.");
+    ESP_LOGI(TAG, "Main app task started. Press BOOT button to send OTA command.");
 
     bool button_pressed          = false;
     TickType_t last_press_time   = 0;
     const TickType_t debounce_ms = 150;
 
     while (true) {
+        uint32_t notifications = 0;
+        // Wait for notifications with a 20ms timeout to keep polling the button
+        if (xTaskNotifyWait(0, NOTIFY_PEER_CHECK, &notifications, pdMS_TO_TICKS(20)) ==
+            pdPASS) {
+            if (notifications & NOTIFY_PEER_CHECK) {
+                auto &espnow       = EspNow::instance();
+                auto offline_peers = espnow.get_offline_peers();
+
+                if (offline_peers.empty()) {
+                    ESP_LOGI(TAG, "Peer check: All peers are online.");
+                }
+                else {
+                    for (const auto &peer_id : offline_peers) {
+                        ESP_LOGW(TAG, "Peer check: Peer with ID %u is offline.",
+                                 static_cast<uint8_t>(peer_id));
+                    }
+                }
+            }
+        }
+
+        // --- Button logic (polling) ---
         int level = gpio_get_level(BUTTON_GPIO);
 
         if (level == BUTTON_ACTIVE_LEVEL && !button_pressed) {
@@ -69,8 +90,6 @@ void CentralHubApp::button_task()
 
                 if (target_node != NodeId(0)) {
                     OtaCommand command = {};
-                    // NOTE: The URL must be accessible by the target device.
-                    // "ota-server.local" is a placeholder for mDNS.
                     snprintf(reinterpret_cast<char *>(command.firmware_url),
                              sizeof(command.firmware_url),
                              "http://ota-server.local:8070/ota_test.bin");
@@ -93,29 +112,14 @@ void CentralHubApp::button_task()
         else if (level != BUTTON_ACTIVE_LEVEL && button_pressed) {
             button_pressed = false; // Reset button state
         }
-
-        vTaskDelay(pdMS_TO_TICKS(20)); // Poll every 20ms
     }
 }
 
 void CentralHubApp::peer_check_timer_cb(TimerHandle_t xTimer)
 {
     CentralHubApp *app = static_cast<CentralHubApp *>(pvTimerGetTimerID(xTimer));
-    if (app == nullptr) {
-        return;
-    }
-
-    auto &espnow       = EspNow::instance();
-    auto offline_peers = espnow.get_offline_peers();
-
-    if (offline_peers.empty()) {
-        ESP_LOGI(TAG, "Peer check: All peers are online.");
-    }
-    else {
-        for (const auto &peer_id : offline_peers) {
-            ESP_LOGW(TAG, "Peer check: Peer with ID %u is offline.",
-                     static_cast<uint8_t>(peer_id));
-        }
+    if (app != nullptr && app->app_task_handle_ != nullptr) {
+        xTaskNotify(app->app_task_handle_, NOTIFY_PEER_CHECK, eSetBits);
     }
 }
 
@@ -153,7 +157,7 @@ void CentralHubApp::init()
     ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u",
              static_cast<uint8_t>(espnow_config.node_id));
 
-    xTaskCreate(button_task_handler, "button_task", 4096, this, 5, NULL);
+    xTaskCreate(button_task_handler, "app_main_task", 4096, this, 5, &app_task_handle_);
 
     peer_check_timer_handle_ = xTimerCreate("peer_check_timer", pdMS_TO_TICKS(10000),
                                             pdTRUE, this, peer_check_timer_cb);
