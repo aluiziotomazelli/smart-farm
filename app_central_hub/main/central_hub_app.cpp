@@ -1,5 +1,6 @@
 #include "central_hub_app.hpp"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "espnow.hpp"
 #include "nvs_flash.h"
 #include "ota_manager.hpp"
@@ -43,9 +44,17 @@ void CentralHubApp::button_task()
     bool button_pressed          = false;
     TickType_t last_press_time   = 0;
     const TickType_t debounce_ms = 150;
+    uint32_t last_stack_check    = 0;
 
     while (true) {
         uint32_t notifications = 0;
+
+        uint32_t now = esp_timer_get_time() / 1000;
+        if (now - last_stack_check > 5000) {
+            last_stack_check = now;
+            ESP_LOGI(TAG, "[Stack] app_main: %u bytes free",
+                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
+        }
         // Wait for notifications with a 20ms timeout to keep polling the button
         if (xTaskNotifyWait(0, NOTIFY_PEER_CHECK, &notifications, pdMS_TO_TICKS(20)) ==
             pdPASS) {
