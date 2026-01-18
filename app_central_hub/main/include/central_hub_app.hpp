@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
 
@@ -21,4 +22,5 @@ private:
     static void peer_check_timer_cb(TimerHandle_t xTimer);
     TimerHandle_t peer_check_timer_handle_ = nullptr;
     TaskHandle_t app_task_handle_          = nullptr;
+    QueueHandle_t app_queue_               = nullptr;
 };

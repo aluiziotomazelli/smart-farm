@@ -127,6 +127,14 @@ void CentralHubApp::init()
 {
     ESP_LOGI(TAG, "Initializing CentralHubApp");
 
+    // Initialize NVS (required for WiFi)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     auto &wifi = WiFiManager::instance();
     auto &ota  = OtaManager::instance();
 
@@ -142,10 +150,18 @@ void CentralHubApp::init()
 
     ota.init();
 
+    // Create the application queue for ESP-NOW packets
+    app_queue_ = xQueueCreate(10, sizeof(EspNow::RxPacket));
+    if (app_queue_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create app_queue_");
+        return;
+    }
+
     EspNowConfig espnow_config;
-    espnow_config.node_id   = NodeId::HUB;
-    espnow_config.node_type = NodeType::HUB;
-    espnow_config.is_master = true;
+    espnow_config.node_id       = NodeId::HUB;
+    espnow_config.node_type     = NodeType::HUB;
+    espnow_config.app_rx_queue  = app_queue_;
+    espnow_config.is_master     = true;
 
     auto &espnow = EspNow::instance();
     if (espnow.init(espnow_config) != ESP_OK) {
