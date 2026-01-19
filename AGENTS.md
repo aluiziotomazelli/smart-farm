@@ -52,7 +52,7 @@ Hello Agent! Welcome to the project. Please follow these guidelines to ensure yo
 - **Current Firmware Applications:**
     - `app_water_tank/`: Logic for water level monitoring.
     - `app_central_hub/`: The main gateway/coordinator for the smart farm system.
-    - `app_ota/`: A temporary app to test OTA functions.
+    - `app_slave/`: A temporary app to test espnow functionality.
     - `app_test/`: An app for testing/compiling new functionalities before integration.
     - **Discovery:** Use `ls -d app_*/` to find all available apps.
 

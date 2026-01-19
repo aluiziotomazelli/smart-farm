@@ -7,23 +7,14 @@
 			"path": "app_central_hub"
 		},
 		{
-			"path": "app_ota_sender"
-		},
-		{
-			"path": "components"
-		},
-		{
-			"path": "managed_components"
-		},
-		{
-			"path": "app_ota"
-		},
-		{
 			"path": "app_test"
 		},
 		{
 			"path": "app_slave"
 		}
+		{
+			"path": "components"
+		},
 	],
 	"settings": {}
 }
