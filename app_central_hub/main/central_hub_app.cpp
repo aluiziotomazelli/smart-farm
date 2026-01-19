@@ -56,8 +56,8 @@ void CentralHubApp::button_task()
                      (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
         // Wait for notifications with a 20ms timeout to keep polling the button
-        if (xTaskNotifyWait(0, NOTIFY_PEER_CHECK, &notifications, pdMS_TO_TICKS(20)) ==
-            pdPASS) {
+        if (xTaskNotifyWait(0, NOTIFY_PEER_CHECK, &notifications,
+                            pdMS_TO_TICKS(20)) == pdPASS) {
             if (notifications & NOTIFY_PEER_CHECK) {
                 auto &espnow       = EspNow::instance();
                 auto offline_peers = espnow.get_offline_peers();
@@ -103,8 +103,8 @@ void CentralHubApp::button_task()
                              sizeof(command.firmware_url),
                              "http://ota-server.local:8070/ota_test.bin");
 
-                    if (espnow.send_command(target_node, CommandType::START_OTA, &command,
-                                            sizeof(command)) == ESP_OK) {
+                    if (espnow.send_command(target_node, CommandType::START_OTA,
+                                            &command, sizeof(command)) == ESP_OK) {
                         ESP_LOGI(TAG, "OTA command sent to node %u.",
                                  static_cast<uint8_t>(target_node));
                     }
@@ -182,7 +182,8 @@ void CentralHubApp::init()
     ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u",
              static_cast<uint8_t>(espnow_config.node_id));
 
-    xTaskCreate(button_task_handler, "app_main_task", 4096, this, 5, &app_task_handle_);
+    xTaskCreate(button_task_handler, "app_main_task", 4096, this, 5,
+                &app_task_handle_);
 
     peer_check_timer_handle_ = xTimerCreate("peer_check_timer", pdMS_TO_TICKS(10000),
                                             pdTRUE, this, peer_check_timer_cb);

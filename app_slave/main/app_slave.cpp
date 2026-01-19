@@ -34,11 +34,12 @@ void AppSlave::init()
     }
 
     EspNowConfig config;
-    config.node_id               = NodeId::WATER_TANK;
-    config.node_type             = NodeType::SENSOR;
-    config.is_master             = false;
-    config.heartbeat_interval_ms = 10000;
-    config.app_rx_queue          = app_queue_;
+    config.node_id                     = NodeId::WATER_TANK;
+    config.node_type                   = NodeType::SENSOR;
+    config.is_master                   = false;
+    config.heartbeat_interval_ms       = 10000;
+    config.app_rx_queue                = app_queue_;
+    config.stack_size_transport_worker = 3584; // Optimized for Slave (Safe margin)
 
     auto &espnow = EspNow::instance();
     espnow.init(config);

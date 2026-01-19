@@ -25,3 +25,5 @@ Thumbs.db
 # App específico (se quiser)
 app_*/build/
 app_*/sdkconfig
+*.bak
+.clangd

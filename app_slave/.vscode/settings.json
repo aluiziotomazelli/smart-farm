@@ -1,0 +1,7 @@
+{
+    "clangd.arguments": [
+        "--background-index",
+        "--query-driver=/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-g++,/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
+        "--compile-commands-dir=/home/german/dev/workspaces/smart-farm/app_slave/build"
+    ]
+}

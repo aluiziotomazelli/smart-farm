@@ -1,0 +1,16 @@
+{
+  "idf.espIdfPath": "/home/german/dev/esp/esp-idf",
+  "idf.toolsPath": "/home/german/.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=/home/german/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-g++,/home/german/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-gcc",
+    "--compile-commands-dir=/home/german/dev/workspaces/smart-farm/app_water_tank/build"
+  ],
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ]
+}
