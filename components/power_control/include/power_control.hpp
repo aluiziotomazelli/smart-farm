@@ -16,16 +16,20 @@ public:
 
     PowerControl(const PowerControl::Config &cfg);
 
+    ~PowerControl() = default;
+
     esp_err_t init();
-
-    esp_err_t on();
-    esp_err_t off();
-
-    bool is_on() const;
+    esp_err_t deinit();
+    esp_err_t turnOn();
+    esp_err_t turnOff();
+    esp_err_t toggle();
+    bool isOn() const;
+    bool isInitialized() const;
+    gpio_num_t getPin() const;
 
 private:
-    Config config_;
-    bool state_ = false;
-
     esp_err_t apply_gpio(bool enable);
+    Config config_;
+    bool initialized_ = false;
+    bool isOn_        = false;
 };

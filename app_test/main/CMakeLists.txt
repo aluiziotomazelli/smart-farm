@@ -7,8 +7,9 @@ idf_component_register(
         "include"
         
     REQUIRES
-        espnow
-        common
+        # espnow
+        # common
+        power_control
         
     PRIV_REQUIRES
     
