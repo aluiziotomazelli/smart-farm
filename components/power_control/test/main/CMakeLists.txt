@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS 
         "power_control_test.cpp"
+        "gpio_validator_test.cpp"
     INCLUDE_DIRS 
         "."
     REQUIRES 

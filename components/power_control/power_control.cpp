@@ -1,4 +1,5 @@
 #include "power_control.hpp"
+#include "gpio_validator.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -20,25 +21,9 @@ esp_err_t PowerControl::init()
              config_.gpio, config_.inverted_logic ? "true" : "false",
              config_.initial_on ? "on" : "off");
 
-    // Check if GPIO is reserved for SPI flash
-    if (config_.gpio >= GPIO_NUM_6 && config_.gpio <= GPIO_NUM_11) {
-        ESP_LOGE(TAG, "GPIO %d is reserved for SPI flash - CANNOT use as output",
-                 config_.gpio);
-        ESP_LOGW(TAG, "Using flash pins (6-11) will corrupt flash operations and "
-                      "cause resets");
-        return ESP_ERR_INVALID_ARG;
-    }
-    // Check if GPIO is valid for output
-    if (!GPIO_IS_VALID_OUTPUT_GPIO(config_.gpio)) {
-        ESP_LOGE(TAG, "Invalid GPIO %d", config_.gpio);
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Check if GPIO has special functions during boot
-    if (config_.gpio == GPIO_NUM_0 || config_.gpio == GPIO_NUM_2 ||
-        config_.gpio == GPIO_NUM_12 || config_.gpio == GPIO_NUM_15) {
-        ESP_LOGW(TAG, "GPIO %d has special functions during boot", config_.gpio);
-    }
+    // Validate GPIO safety and mode
+    ESP_RETURN_ON_ERROR(GpioValidator::validate(config_.gpio, GpioValidator::Mode::OUTPUT),
+                        TAG, "GPIO %d validation failed", config_.gpio);
 
     // Reset GPIO
     ESP_RETURN_ON_ERROR(gpio_reset_pin(config_.gpio), TAG, "Failed to reset GPIO %d",
