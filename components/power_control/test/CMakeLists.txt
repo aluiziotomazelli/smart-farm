@@ -1,17 +1,10 @@
-# cmake_minimum_required(VERSION 3.16)
-cmake_minimum_required(VERSION 3.30)
-
-# Define o nome do projeto de teste
-set(PROJECT_NAME "power_control_test")
-
-# Adiciona o componente power_control ao path
-list(APPEND EXTRA_COMPONENT_DIRS
-    ${CMAKE_CURRENT_LIST_DIR}/..
-    ${CMAKE_CURRENT_LIST_DIR}/../../gpio_validator
+idf_component_register(
+    SRCS 
+        "test_power_control.cpp"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        unity
+        power_control
+        gpio_validator
 )
-
-# Inclui o framework ESP-IDF
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-
-# Define o projeto
-project(${PROJECT_NAME})

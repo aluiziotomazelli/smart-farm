@@ -242,6 +242,45 @@ TEST_CASE("PowerControl: Inverted logic", "[power_control][control]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
 }
 
+TEST_CASE("PowerControl: Inverted logic (Automated)", "[power_control][logic]")
+{
+    // Usamos um pino genérico de saída em vez do LED para ser mais profissional
+    const gpio_num_t PIN = TEST_GPIO_VALID_1;
+    ESP_LOGI(TAG, "Testing inverted logic on GPIO %d", PIN);
+
+    PowerControl::Config cfg = {
+        .gpio           = PIN,
+        .inverted_logic = true, // Active LOW: ON = 0V, OFF = 3.3V
+        .initial_on     = false // Começa desligado (então o pino deve estar em HIGH)
+    };
+
+    PowerControl pc(cfg);
+    TEST_ASSERT_EQUAL(ESP_OK, pc.init());
+
+    // 1. Verificar estado inicial
+    TEST_ASSERT_FALSE(pc.isOn());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, gpio_get_level(PIN),
+                                  "Initial state OFF should be HIGH (Inverted)");
+
+    // 2. Testar Ligar (Logic ON -> Physical LOW)
+    ESP_LOGI(TAG, "Turning ON (Physical should be LOW)");
+    TEST_ASSERT_EQUAL(ESP_OK, pc.turnOn());
+    TEST_ASSERT_TRUE(pc.isOn());
+    // A mágica está aqui: lemos o hardware para confirmar a lógica
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, gpio_get_level(PIN),
+                                  "Hardware level should be LOW when ON (Inverted)");
+
+    // 3. Testar Desligar (Logic OFF -> Physical HIGH)
+    ESP_LOGI(TAG, "Turning OFF (Physical should be HIGH)");
+    TEST_ASSERT_EQUAL(ESP_OK, pc.turnOff());
+    TEST_ASSERT_FALSE(pc.isOn());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(
+        1, gpio_get_level(PIN), "Hardware level should be HIGH when OFF (Inverted)");
+
+    // Cleanup
+    TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
+}
+
 TEST_CASE("PowerControl: Blink pattern", "[power_control][control][visual]")
 {
     ESP_LOGI(TAG, "Testing blink pattern (visual test)");
@@ -430,29 +469,4 @@ TEST_CASE("PowerControl: LED instance with multiple operations",
     // Cleanup
     TEST_ASSERT_EQUAL(ESP_OK, led.deinit());
     TEST_ASSERT_EQUAL(ESP_OK, gpio.deinit());
-}
-
-// ============================================================================
-// MAIN - Unity Test Runner
-// ============================================================================
-
-extern "C" void app_main(void)
-{
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "  PowerControl Component Unit Tests");
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Running tests on hardware (no mocks)");
-    ESP_LOGI(TAG, "Visual tests will use GPIO 2 (built-in LED)");
-    ESP_LOGI(TAG, "");
-
-    // Run all tests
-    UNITY_BEGIN();
-    unity_run_all_tests();
-    UNITY_END();
-
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "  All tests completed!");
-    ESP_LOGI(TAG, "===========================================");
 }

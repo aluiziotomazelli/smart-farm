@@ -1,27 +1,7 @@
 {
-	"folders": [
-		{
-			"path": "app_water_tank"
-		},
-		{
-			"path": "app_central_hub"
-		},
-		{
-			"path": "app_test"
-		},
-		{
-			"path": "app_slave"
-		},
-		{
-			"path": "components"
-		}
-	],
-	"settings": {
-		"clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
-		"clangd.arguments": [
-			"--background-index",
-			"--query-driver=/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-*",
-			"--compile-commands-dir=/home/german/dev/workspaces/smart-farm/app_test/build"
-		],
-	}
+    "folders": [
+        {
+            "path": "app_central_hub"
+        }
+    ]
 }

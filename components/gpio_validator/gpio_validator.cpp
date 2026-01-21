@@ -3,6 +3,7 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_chip_info.h"
 #include "esp_log.h"
+#include "soc/soc_caps.h"
 
 static const char *TAG = "GpioValidator";
 
@@ -12,6 +13,11 @@ esp_err_t GpioValidator::validate(gpio_num_t gpio, Mode mode)
     esp_chip_info(&chip_info);
 
     // 1. Basic validation: Is it a valid GPIO for this chip?
+    if (gpio < 0 || gpio >= SOC_GPIO_PIN_COUNT) {
+        ESP_LOGE(TAG, "GPIO %d is out of range", gpio);
+        return ESP_ERR_INVALID_ARG;
+    }
+
     if (!GPIO_IS_VALID_GPIO(gpio)) {
         ESP_LOGE(TAG, "GPIO %d is not a valid GPIO for this chip", gpio);
         return ESP_ERR_INVALID_ARG;

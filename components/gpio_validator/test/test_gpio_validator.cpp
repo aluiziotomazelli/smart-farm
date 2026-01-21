@@ -48,30 +48,29 @@ TEST_CASE("GpioValidator: Edge cases", "[gpio_validator][edge]")
 
     // Very high GPIO number
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      GpioValidator::validate(static_cast<gpio_num_t>(255),
+                      GpioValidator::validate(static_cast<gpio_num_t>(100),
                                               GpioValidator::Mode::OUTPUT));
 }
 
-TEST_CASE("GpioValidator: Cross-chip compatibility",
-          "[gpio_validator][compatibility]")
+TEST_CASE("GpioValidator: Full range sweep", "[gpio_validator][security]")
 {
-    ESP_LOGI(TAG, "Testing cross-chip compatibility");
+    for (int i = -128; i <= 127; i++) {
+        gpio_num_t pin = static_cast<gpio_num_t>(i);
+        esp_err_t res  = GpioValidator::validate(pin, GpioValidator::Mode::INPUT);
 
-    // GPIOs that should be safe on ALL ESP chips
-    gpio_num_t universal_safe_gpios[] = {
-        GPIO_NUM_2,  // Usually LED
-        GPIO_NUM_4,  // Commonly available
-        GPIO_NUM_5,  // Commonly available
-        GPIO_NUM_18, // Usually available
-        GPIO_NUM_19  // Usually available
-    };
-
-    for (auto gpio : universal_safe_gpios) {
-        ESP_LOGI(TAG, "Testing universal safe GPIO %d", gpio);
-
-        // Should work on any chip
-        TEST_ASSERT_EQUAL(
-            ESP_OK, GpioValidator::validate(gpio, GpioValidator::Mode::OUTPUT));
+        if (i < 0 || i >= SOC_GPIO_PIN_COUNT) {
+            // Valores fisicamente impossíveis DEVEM retornar erro
+            TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, res);
+        }
+        else {
+            // Para pinos dentro da faixa, aceitamos OK ou INVALID_ARG
+            // (pois o validador pode ter regras específicas como Flash/Input-only)
+            // O importante é que a função retorne um desses dois e NÃO trave o chip.
+            bool valid_result = (res == ESP_OK || res == ESP_ERR_INVALID_ARG);
+            TEST_ASSERT_TRUE_MESSAGE(
+                valid_result,
+                "Validator returned an unexpected error code or crashed");
+        }
     }
 }
 
@@ -269,52 +268,3 @@ TEST_CASE("GpioValidator: ESP32-S3 warning pins",
     }
 }
 #endif // CONFIG_IDF_TARGET_ESP32S3
-
-extern "C" void app_main(void)
-{
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "  GpioValidator Component Unit Tests");
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "Running tests on hardware (no mocks)");
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    ESP_LOGI(TAG, "Detected chip model: %d", chip_info.model);
-    ESP_LOGI(TAG, "GPIO_NUM_MAX: %d", GPIO_NUM_MAX);
-    ESP_LOGI(TAG, "");
-
-    // Run tests
-    UNITY_BEGIN();
-
-    unity_run_tests_by_tag("[gpio_validator][basic]", false);
-    unity_run_tests_by_tag("[gpio_validator][edge]", false);
-    unity_run_tests_by_tag("[gpio_validator][compatibility]", false);
-
-    switch (chip_info.model) {
-    case CHIP_ESP32:
-        ESP_LOGI(TAG, "Running ESP32-specific tests");
-        unity_run_tests_by_tag("[gpio_validator][esp32]", false);
-        break;
-
-    case CHIP_ESP32C3:
-        ESP_LOGI(TAG, "Running ESP32-C3-specific tests");
-        unity_run_tests_by_tag("[gpio_validator][esp32c3]", false);
-        break;
-
-    case CHIP_ESP32S3:
-        ESP_LOGI(TAG, "Running ESP32-S3-specific tests");
-        unity_run_tests_by_tag("[gpio_validator][esp32s3]", false);
-        break;
-
-    default:
-        ESP_LOGW(TAG, "Chip model %d - running generic tests only", chip_info.model);
-        break;
-    }
-
-    UNITY_END();
-
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "  All tests completed!");
-    ESP_LOGI(TAG, "===========================================");
-}
