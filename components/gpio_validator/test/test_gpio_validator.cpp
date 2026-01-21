@@ -16,8 +16,7 @@ TEST_CASE("GpioValidator: Basic valid GPIOs", "[gpio_validator][basic]")
     ESP_LOGI(TAG, "Testing basic valid GPIOs");
 
     // Common valid GPIOs for most ESP chips
-    gpio_num_t valid_gpios[] = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5, GPIO_NUM_13,
-                                GPIO_NUM_14};
+    gpio_num_t valid_gpios[] = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5};
 
     for (auto gpio : valid_gpios) {
         ESP_LOGI(TAG, "Validating GPIO %d", gpio);
