@@ -58,30 +58,29 @@ TEST_CASE("PowerControl: Init with valid GPIO", "[power_control][init]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
 }
 
-// TEST_CASE("PowerControl: Init with invalid GPIO - Flash pins",
-//           "[power_control][init][negative]")
-// {
-//     ESP_LOGI(TAG, "Testing initialization with flash pins (should fail)");
+TEST_CASE("PowerControl: Init with invalid GPIO - Flash pins",
+          "[power_control][init][negative]")
+{
+    ESP_LOGI(TAG, "Testing initialization with flash pins (should fail)");
 
-//     gpio_num_t invalid_gpios[] = {TEST_GPIO_FLASH_1, TEST_GPIO_FLASH_2,
-//                                   TEST_GPIO_FLASH_3, TEST_GPIO_FLASH_4};
+    gpio_num_t invalid_gpios[] = {TEST_GPIO_FLASH_1, TEST_GPIO_FLASH_2,
+                                  TEST_GPIO_FLASH_3, TEST_GPIO_FLASH_4};
 
-//     for (int i = 0; i < sizeof(invalid_gpios) / sizeof(invalid_gpios[0]); i++) {
-//         ESP_LOGI(TAG, "Testing GPIO %d (flash pin)", invalid_gpios[i]);
+    for (int i = 0; i < sizeof(invalid_gpios) / sizeof(invalid_gpios[0]); i++) {
+        ESP_LOGI(TAG, "Testing GPIO %d (flash pin)", invalid_gpios[i]);
 
-//         PowerControl::Config cfg = {
-//             .gpio = invalid_gpios[i], .inverted_logic = false, .initial_on =
-//             false};
+        PowerControl::Config cfg = {
+            .gpio = invalid_gpios[i], .inverted_logic = false, .initial_on = false};
 
-//         PowerControl pc(cfg);
+        PowerControl pc(cfg);
 
-//         // Init should fail with invalid argument
-//         TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, pc.init());
+        // Init should fail with invalid argument
+        TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, pc.init());
 
-//         // Should not be initialized
-//         TEST_ASSERT_FALSE(pc.isInitialized());
-//     }
-// }
+        // Should not be initialized
+        TEST_ASSERT_FALSE(pc.isInitialized());
+    }
+}
 
 TEST_CASE("PowerControl: Init with invalid GPIO - Input-only pins",
           "[power_control][init][negative]")
@@ -228,16 +227,16 @@ TEST_CASE("PowerControl: Inverted logic", "[power_control][control]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.init());
 
     // Turn ON (physical level should be LOW)
-    ESP_LOGI(TAG, "Turning ON with inverted logic (LED should light up)");
+    ESP_LOGI(TAG, "Turning ON with inverted logic (LED should be OFF)");
     TEST_ASSERT_EQUAL(ESP_OK, pc.turnOn());
     TEST_ASSERT_TRUE(pc.isOn());
-    visual_delay(1000);
+    visual_delay(2000);
 
     // Turn OFF (physical level should be HIGH)
-    ESP_LOGI(TAG, "Turning OFF with inverted logic (LED should turn off)");
+    ESP_LOGI(TAG, "Turning OFF with inverted logic (LED should be ON)");
     TEST_ASSERT_EQUAL(ESP_OK, pc.turnOff());
     TEST_ASSERT_FALSE(pc.isOn());
-    visual_delay(1000);
+    visual_delay(2000);
 
     // Cleanup
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
@@ -306,7 +305,7 @@ TEST_CASE("PowerControl: Deinitialization", "[power_control][state]")
     TEST_ASSERT_TRUE(pc.isInitialized());
 
     ESP_LOGI(TAG, "LED should be ON");
-    visual_delay(1000);
+    visual_delay(2000);
 
     // Deinitialize
     ESP_LOGI(TAG, "Deinitializing...");
@@ -317,7 +316,7 @@ TEST_CASE("PowerControl: Deinitialization", "[power_control][state]")
     TEST_ASSERT_FALSE(pc.isOn());
 
     ESP_LOGI(TAG, "LED should be OFF after deinit");
-    visual_delay(1000);
+    visual_delay(2000);
 
     // Operations should fail after deinit
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, pc.turnOn());
@@ -373,19 +372,27 @@ TEST_CASE("PowerControl: Multiple instances with different GPIOs",
     TEST_ASSERT_NOT_EQUAL(pc1.getPin(), pc2.getPin());
 
     // Control independently
+    ESP_LOGI(TAG, "Turning on VALID_GPIO_1");
     TEST_ASSERT_EQUAL(ESP_OK, pc1.turnOn());
     TEST_ASSERT_TRUE(pc1.isOn());
     TEST_ASSERT_FALSE(pc2.isOn());
+    visual_delay(1000);
 
+    ESP_LOGI(TAG, "Turning on VALID_GPIO_2");
     TEST_ASSERT_EQUAL(ESP_OK, pc2.turnOn());
     TEST_ASSERT_TRUE(pc1.isOn());
     TEST_ASSERT_TRUE(pc2.isOn());
+    visual_delay(1000);
 
+    ESP_LOGI(TAG, "Turning off VALID_GPIO_1");
     TEST_ASSERT_EQUAL(ESP_OK, pc1.turnOff());
     TEST_ASSERT_FALSE(pc1.isOn());
     TEST_ASSERT_TRUE(pc2.isOn());
+    visual_delay(1000);
 
     // Cleanup
+
+    ESP_LOGI(TAG, "Deinit both instances");
     TEST_ASSERT_EQUAL(ESP_OK, pc1.deinit());
     TEST_ASSERT_EQUAL(ESP_OK, pc2.deinit());
 }

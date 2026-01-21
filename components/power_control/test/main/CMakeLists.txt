@@ -3,7 +3,10 @@ idf_component_register(
         "power_control_test.cpp"
     INCLUDE_DIRS 
         "."
+        "../../include"
     REQUIRES 
         power_control
         unity
+        gpio_validator
+    PRIV_REQUIRES
 )

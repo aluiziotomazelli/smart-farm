@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS 
+       gpio_validator_test.cpp
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        gpio_validator
+        unity
+)

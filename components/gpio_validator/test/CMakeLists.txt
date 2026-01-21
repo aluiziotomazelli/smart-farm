@@ -1,13 +1,11 @@
-# cmake_minimum_required(VERSION 3.16)
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.16)
 
 # Define o nome do projeto de teste
-set(PROJECT_NAME "power_control_test")
+set(PROJECT_NAME "gpio_validator_test")
 
 # Adiciona o componente power_control ao path
 list(APPEND EXTRA_COMPONENT_DIRS
     ${CMAKE_CURRENT_LIST_DIR}/..
-    ${CMAKE_CURRENT_LIST_DIR}/../../gpio_validator
 )
 
 # Inclui o framework ESP-IDF

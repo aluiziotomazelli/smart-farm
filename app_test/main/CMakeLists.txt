@@ -10,6 +10,7 @@ idf_component_register(
         # espnow
         # common
         power_control
+        gpio_validator
         
     PRIV_REQUIRES
     
