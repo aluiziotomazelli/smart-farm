@@ -98,10 +98,6 @@ esp_err_t GpioValidator::validate(gpio_num_t gpio, Mode mode)
         if (g == 18 || g == 19) {
             ESP_LOGW(TAG, "GPIO %d is used for USB-JTAG - use with caution", g);
         }
-        // Warning: UART0 (20, 21)
-        if (g == 20 || g == 21) {
-            ESP_LOGW(TAG, "GPIO %d is used for UART0 (TX/RX) - use with caution", g);
-        }
         // Warning: Strapping pins (2, 8, 9)
         if (g == 2 || g == 8 || g == 9) {
             ESP_LOGW(TAG, "GPIO %d is a strapping pin - may affect boot mode", g);
