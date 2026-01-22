@@ -15,21 +15,26 @@ const char *us_failure_to_string(UsFailure failure);
 /**
  * @brief Ultrasonic distance measurement sensor driver.
  *
- * @details This class provides a robust interface for ultrasonic distance measurement.
- * It implements a configurable multi-ping strategy with statistical filtering
- * to improve measurement reliability and accuracy, especially in noisy environments.
+ * @details This class provides a robust interface for ultrasonic distance
+ * measurement. It implements a configurable multi-ping strategy with statistical
+ * filtering to improve measurement reliability and accuracy, especially in noisy
+ * environments.
  */
 class UltrasonicSensor
 {
+#ifdef UNIT_TEST
+    friend class UltrasonicTestAccessor;
+#endif
 public:
     /**
-     * @brief Statistical filtering algorithms for processing raw distance measurements.
+     * @brief Statistical filtering algorithms for processing raw distance
+     * measurements.
      */
     enum class Filter
     {
-        MEDIAN,           /**< Selects the median value from a series of measurements. */
-        DOMINANT_CLUSTER, /**< Finds the most frequent cluster of values and returns its
-                             average. */
+        MEDIAN, /**< Selects the median value from a series of measurements. */
+        DOMINANT_CLUSTER, /**< Finds the most frequent cluster of values and returns
+                             its average. */
     };
 
     /**
@@ -37,7 +42,8 @@ public:
      */
     struct UltrasonicConfig
     {
-        uint8_t ping_count = 7; /**< Number of pings per measurement cycle (max: 15). */
+        uint8_t ping_count =
+            7; /**< Number of pings per measurement cycle (max: 15). */
         const uint16_t ping_interval_ms =
             70; /**< Delay between consecutive pings in milliseconds. */
         const uint16_t ping_duration_us =
@@ -46,14 +52,14 @@ public:
             30000; /**< Maximum wait time for an echo pulse in microseconds. */
         Filter filter =
             Filter::MEDIAN; /**< Statistical filter to apply to the measurements. */
-        bool blind_ping =
-            true; /**< If true, performs and discards one ping before the main cycle. */
+        bool blind_ping = true; /**< If true, performs and discards one ping before
+                                   the main cycle. */
         const float min_distance_cm =
             10.0f; /**< The minimum valid distance in centimeters. */
         const float max_distance_cm =
-            200.0f; /**< The maximum valid distance in centimeters. */
-        float max_dev_cm =
-            15.0f; /**< The maximum standard deviation allowed for a valid reading. */
+            200.0f;               /**< The maximum valid distance in centimeters. */
+        float max_dev_cm = 15.0f; /**< The maximum standard deviation allowed for a
+                                     valid reading. */
         const uint16_t warmup_time_ms = 600;
     };
 
@@ -88,10 +94,13 @@ public:
      *
      * @param[out] out_cm The calculated distance in centimeters.
      * @param[out] out_quality The quality classification of the measurement.
-     * @param[out] out_failure The type of failure, if the measurement was unsuccessful.
+     * @param[out] out_failure The type of failure, if the measurement was
+     * unsuccessful.
      * @return true if a valid measurement was obtained, false otherwise.
      */
-    bool readDistance_cm(float &out_cm, UsQuality &out_quality, UsFailure &out_failure);
+    bool readDistance_cm(float &out_cm,
+                         UsQuality &out_quality,
+                         UsFailure &out_failure);
 
     /**
      * @brief Sets the number of pings for subsequent measurements.

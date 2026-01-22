@@ -1,5 +1,6 @@
 #include "ultrasonic_sensor.hpp"
-#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <algorithm>
@@ -147,37 +148,40 @@ float UltrasonicSensor::reduceMedian(float *v, size_t n)
 
 float UltrasonicSensor::reduceDominantCluster(float *v, size_t n)
 {
-    static constexpr float DELTA_CM =
-        5.0f; // Max distance between values in the same cluster
-
+    static constexpr float DELTA_CM = 5.0f;
     std::sort(v, v + n);
 
-    float best_cluster_val      = v[0];
-    size_t best_cluster_size    = 1;
-    float current_cluster_val   = v[0];
-    size_t current_cluster_size = 1;
+    float best_cluster_sum   = 0;
+    size_t best_cluster_size = 0;
 
-    // Find the largest cluster of values within DELTA_CM of each other
-    for (size_t i = 1; i < n; i++) {
-        if (fabsf(v[i] - current_cluster_val) <= DELTA_CM) {
-            current_cluster_size++;
-        }
-        else {
-            if (current_cluster_size > best_cluster_size) {
-                best_cluster_val  = current_cluster_val;
-                best_cluster_size = current_cluster_size;
+    for (size_t i = 0; i < n; i++) {
+        float current_sum   = 0;
+        size_t current_size = 0;
+
+        // Attempt to find a group of values that are within DELTA_CM of v[i]
+        for (size_t j = i; j < n; j++) {
+            if (fabsf(v[j] - v[i]) <= DELTA_CM) {
+                current_sum += v[j];
+                current_size++;
             }
-            current_cluster_val  = v[i];
-            current_cluster_size = 1;
+            else {
+                break; // How is ordered, can break early
+            }
+        }
+
+        // If this cluster is larger than the previous best, it becomes the new
+        // dominant
+        if (current_size > best_cluster_size) {
+            best_cluster_size = current_size;
+            best_cluster_sum  = current_sum;
         }
     }
+    float average =
+        (best_cluster_size > 0) ? (best_cluster_sum / best_cluster_size) : 0.0f;
+    ESP_LOGD(TAG, "Dominant cluster: size=%u, average=%.2f", best_cluster_size,
+             average);
 
-    // Check if the last cluster was the largest
-    if (current_cluster_size > best_cluster_size) {
-        best_cluster_val = current_cluster_val;
-    }
-
-    return best_cluster_val;
+    return average;
 }
 
 bool UltrasonicSensor::readDistance_cm(float &out_cm,
@@ -284,9 +288,10 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
         // Per requirements, if the signal is already weak due to low ping count,
         // a moderately high variance should invalidate it completely.
         if (std_dev > cfg_.max_dev_cm * 0.6f) {
-            ESP_LOGW(TAG,
-                     "Weak signal with high variance, invalidating, std_dev = % .2f ",
-                     std_dev);
+            ESP_LOGW(
+                TAG,
+                "Weak signal with high variance, invalidating, std_dev = % .2f ",
+                std_dev);
             out_quality = UsQuality::INVALID;
             out_failure = UsFailure::HIGH_VARIANCE;
             return false;
@@ -302,7 +307,8 @@ bool UltrasonicSensor::readDistance_cm(float &out_cm,
         value = reduceDominantCluster(samples, valid);
     }
 
-    ESP_LOGD(TAG, "Final result: value=%.2f cm, quality=%d", value, (int)out_quality);
+    ESP_LOGD(TAG, "Final result: value=%.2f cm, quality=%d", value,
+             (int)out_quality);
     out_cm = value;
     return true;
 }
