@@ -2,6 +2,7 @@
 
 // #include "espnow.hpp"
 // #include "protocol_messages.hpp"
+#include "float_switch.hpp"
 #include "power_control.hpp"
 
 class TestApp

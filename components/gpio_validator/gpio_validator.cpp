@@ -57,6 +57,10 @@ esp_err_t GpioValidator::validate(gpio_num_t gpio, Mode mode)
         if (g == 0 || g == 2 || g == 5 || g == 12 || g == 15) {
             ESP_LOGW(TAG, "GPIO %d is a strapping pin - may affect boot mode", g);
         }
+        if (g >= 34 && g <= 39 && mode == Mode::INPUT) {
+            ESP_LOGW(TAG, "GPIO %d has no pullup/pulldown support", g);
+            return ESP_OK;
+        }
         break;
     }
 

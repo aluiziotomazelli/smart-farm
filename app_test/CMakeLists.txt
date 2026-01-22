@@ -10,6 +10,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/../components/espnow
     ${CMAKE_CURRENT_LIST_DIR}/../components/power_control
     ${CMAKE_CURRENT_LIST_DIR}/../components/gpio_validator
+    ${CMAKE_CURRENT_LIST_DIR}/../components/sensor_floatswitch
 )
 
 # Inclui o framework ESP-IDF

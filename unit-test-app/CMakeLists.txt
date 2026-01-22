@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 
 list(APPEND EXTRA_COMPONENT_DIRS "../components/power_control")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/gpio_validator")
+list(APPEND EXTRA_COMPONENT_DIRS "../components/sensor_floatswitch")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(unit-test-app)

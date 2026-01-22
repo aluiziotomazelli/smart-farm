@@ -114,15 +114,15 @@ esp_err_t PowerControl::deinit()
         return ESP_OK;
     }
 
-    // Forçar GPIO para LOW (estado seguro)
+    // Force GPIO low before deinitialization for safety
     ESP_RETURN_ON_ERROR(gpio_set_level(config_.gpio, 0), TAG,
                         "Failed to set GPIO low during deinit");
 
-    // Resetar pino (volta para estado de alta impedância)
+    // Reset GPIO (returns to high-impedance state)
     esp_err_t ret = gpio_reset_pin(config_.gpio);
     if (ret == ESP_OK) {
         initialized_ = false;
-        isOn_        = false; // Resetar estado interno também
+        isOn_        = false; // Reset internal state also
         ESP_LOGI(TAG, "Power control deinitialized on GPIO %d", config_.gpio);
     }
 

@@ -11,6 +11,7 @@ idf_component_register(
         # common
         power_control
         gpio_validator
+        sensor_floatswitch
         
     PRIV_REQUIRES
     

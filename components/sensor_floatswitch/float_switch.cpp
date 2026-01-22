@@ -1,4 +1,5 @@
 #include "float_switch.hpp"
+#include "gpio_validator.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -20,7 +21,13 @@ esp_err_t FloatSwitch::init()
              cfg_.normally_open, static_cast<int>(cfg_.active_level),
              static_cast<int>(cfg_.wakeup_on));
 
-    ESP_RETURN_ON_ERROR(configureGpio(), TAG, "Failed to configure GPIO %d", cfg_.gpio);
+    // Validate GPIO safety and mode
+    ESP_RETURN_ON_ERROR(
+        GpioValidator::validate(cfg_.gpio, GpioValidator::Mode::INPUT), TAG,
+        "GPIO %d validation failed", cfg_.gpio);
+
+    ESP_RETURN_ON_ERROR(configureGpio(), TAG, "Failed to configure GPIO %d",
+                        cfg_.gpio);
 
     initialized_ = ESP_OK;
 
@@ -29,16 +36,23 @@ esp_err_t FloatSwitch::init()
 
 esp_err_t FloatSwitch::configureGpio()
 {
+    // Reset GPIO
+    ESP_RETURN_ON_ERROR(gpio_reset_pin(cfg_.gpio), TAG, "Failed to reset GPIO %d",
+                        cfg_.gpio);
+
+    // Set GPIO as input
     gpio_config_t cfg{};
     cfg.pin_bit_mask = (1ULL << cfg_.gpio);
     cfg.mode         = GPIO_MODE_INPUT;
-    cfg.intr_type =
-        GPIO_INTR_DISABLE; // Interrupts are handled by the deep sleep wakeup controller.
+    cfg.intr_type    = GPIO_INTR_DISABLE; // Interrupts are handled by the deep sleep
+                                          // wakeup controller.
 
     // The internal pull resistor is configured to oppose the active level.
-    // This ensures that the pin is in a defined state when the switch contact is open.
+    // This ensures that the pin is in a defined state when the switch contact is
+    // open.
     // - If active_level is LOW (contact pulls to GND), we need a pull-up resistor.
-    // - If active_level is HIGH (contact pulls to VCC), we need a pull-down resistor.
+    // - If active_level is HIGH (contact pulls to VCC), we need a pull-down
+    // resistor.
     switch (cfg_.active_level) {
     case ActiveLevel::LOW:
         cfg.pull_up_en   = GPIO_PULLUP_ENABLE;
@@ -103,7 +117,8 @@ bool FloatSwitch::shouldEnableWakeup()
     case WakeupCondition::WHEN_TANK_IS_FULL:
         // We want to wake up when the tank becomes full.
         // Similarly, we only arm the wake-up trigger if the tank is currently
-        // EMPTY. This prepares the system to catch the transition from empty to full.
+        // EMPTY. This prepares the system to catch the transition from empty to
+        // full.
         return !isTankFull();
 
     default:
@@ -117,8 +132,8 @@ bool FloatSwitch::isContactClosed()
     if (initialized_ != ESP_OK) {
         // This is a critical error, as the application is trying to use the
         // component without initializing it.
-        ESP_LOGE(TAG, "FloatSwitch not initialized");
-        abort(); // Or handle the error in a less drastic way if appropriate.
+        ESP_LOGE(TAG, "FloatSwitch not initialized, returning raw GPIO level");
+        return gpio_get_level(cfg_.gpio); // Return raw level as fallback
     }
 
     // --- Debouncing Logic ---
@@ -137,7 +152,8 @@ bool FloatSwitch::isContactClosed()
     }
 
     // A stable reading is determined by a majority vote of the samples.
-    // `raw_stable` will be true if the GPIO level was mostly HIGH, false if mostly LOW.
+    // `raw_stable` will be true if the GPIO level was mostly HIGH, false if mostly
+    // LOW.
     bool raw_stable = (high_count > (samples / 2));
 
     // Finally, translate the stable electrical level into the contact state.
@@ -150,4 +166,28 @@ bool FloatSwitch::isContactClosed()
         // If active level is HIGH, a closed contact means the raw signal is HIGH.
         return raw_stable;
     }
+}
+
+FloatSwitch::~FloatSwitch()
+{
+    deinit(); // Chama o deinit para garantir que o GPIO seja resetado
+}
+
+esp_err_t FloatSwitch::deinit()
+{
+    if (initialized_ != ESP_OK) {
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "Deinitializing FloatSwitch on GPIO %d", cfg_.gpio);
+
+    // Reset GPIO to default state
+    esp_err_t ret = gpio_reset_pin(cfg_.gpio);
+    if (ret == ESP_OK) {
+        initialized_ = ESP_ERR_INVALID_STATE;
+        return ret;
+    }
+    else
+        ESP_LOGE(TAG, "Failed to reset GPIO %d during deinit", cfg_.gpio);
+
+    return ret;
 }

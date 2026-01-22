@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS 
+        "test_sensor_floatswitch.cpp"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        unity
+        sensor_floatswitch
+)
