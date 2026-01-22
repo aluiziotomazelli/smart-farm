@@ -7,6 +7,7 @@ list(APPEND EXTRA_COMPONENT_DIRS "../components/gpio_validator")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/sensor_floatswitch")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/sensor_ultrasonic")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/common")
+list(APPEND EXTRA_COMPONENT_DIRS "../components/core")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(unit-test-app)
