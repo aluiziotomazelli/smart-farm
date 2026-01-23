@@ -688,11 +688,12 @@ void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
                              esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_FAIL) {
-        ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR,
-                 MAC2STR(mac_addr));
         // Notify the TX manager task about the physical layer failure.
-        xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
-                    eSetBits);
+        // We avoid logging here as this callback runs in the Wi-Fi task context.
+        if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
+                        eSetBits);
+        }
     }
 }
 
@@ -1123,29 +1124,9 @@ void EspNow::transport_worker_task(void *arg)
 void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
 {
     EspNow *self = static_cast<EspNow *>(pvTimerGetTimerID(xTimer));
-    if (self == nullptr) {
-        return;
+    if (self != nullptr && self->tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(self->tx_manager_task_handle_, NOTIFY_PAIRING_TIMEOUT, eSetBits);
     }
-
-    if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) {
-        return;
-    }
-
-    if (self->config_.is_master) {
-        // Master's pairing window has expired
-        self->is_pairing_active_ = false;
-        ESP_LOGI(TAG, "Pairing timeout reached. Pairing stopped.");
-    }
-    else {
-        // Slave's pairing attempt has timed out
-        ESP_LOGW(TAG, "Pairing attempt timed out.");
-        if (self->pairing_timer_handle_ != nullptr) {
-            xTimerDelete(self->pairing_timer_handle_, portMAX_DELAY);
-            self->pairing_timer_handle_ = nullptr;
-        }
-        self->is_pairing_active_ = false;
-    }
-    xSemaphoreGive(self->pairing_mutex_);
 }
 
 void EspNow::periodic_pairing_cb(TimerHandle_t xTimer)
