@@ -25,6 +25,7 @@ class UltrasonicSensor
 #ifdef UNIT_TEST
     friend class UltrasonicTestAccessor;
 #endif
+
 public:
     /**
      * @brief Statistical filtering algorithms for processing raw distance

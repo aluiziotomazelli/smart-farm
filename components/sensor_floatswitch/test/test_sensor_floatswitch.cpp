@@ -2,7 +2,10 @@
 #include "float_switch.hpp"
 #include "unity.h"
 #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
+
+#include "esp_random.h"
+#include "esp_timer.h"
+#include "freertos/task.h"
 
 static const char *TAG = "FloatSwitchTest";
 
@@ -293,4 +296,65 @@ TEST_CASE("FloatSwitch: Stress Lifecycle", "[float_switch][memory]")
 
     // The delta should be negligible or zero
     TEST_ASSERT_UINT32_WITHIN(10, initial_free, final_free);
+}
+
+TEST_CASE("FloatSwitch: Debounce with Real-time Bouncing",
+          "[float_switch][debounce][rtos]")
+{
+    gpio_set_direction(CTRL_PIN, GPIO_MODE_OUTPUT);
+
+    FloatSwitch::Config cfg = {.gpio          = INPUT_PIN,
+                               .normally_open = true,
+                               .active_level  = FloatSwitch::ActiveLevel::LOW,
+                               .wakeup_on     = FloatSwitch::WakeupCondition::NEVER};
+
+    FloatSwitch fs(cfg);
+    TEST_ASSERT_EQUAL(ESP_OK, fs.init());
+
+    gpio_set_direction(CTRL_PIN, GPIO_MODE_OUTPUT);
+
+    // 1. Garantir múltiplas leituras estáveis em LOW
+    gpio_set_level(CTRL_PIN, 0);
+    for (int i = 0; i < 3; i++) {
+        vTaskDelay(pdMS_TO_TICKS(30));
+        TEST_ASSERT_TRUE(fs.isContactClosed());
+    }
+
+    ESP_LOGI(TAG, "Starting timed transition test...");
+
+    // 2. Medir TEMPO EXATO da transição
+    int64_t transition_start, detection_time;
+
+    // Primeira leitura inicia sampling
+    bool first_read  = fs.isContactClosed();
+    transition_start = esp_timer_get_time();
+
+    // Imediatamente após iniciar sampling, muda para HIGH
+    gpio_set_level(CTRL_PIN, 1);
+    ESP_LOGI(TAG, "Transition to HIGH at %lld us", transition_start);
+
+    // Loop de polling até detectar mudança
+    bool changed = false;
+    for (int i = 0; i < 10; i++) {
+        vTaskDelay(pdMS_TO_TICKS(5)); // Poll a cada 5ms
+
+        bool current = fs.isContactClosed();
+        if (!current) { // Detectou HIGH (contato aberto)
+            detection_time = esp_timer_get_time();
+            changed        = true;
+            ESP_LOGI(TAG, "Detected change at %lld us (iter %d)", detection_time, i);
+            break;
+        }
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(changed, "Should detect transition");
+
+    int64_t delay_us = detection_time - transition_start;
+    ESP_LOGI(TAG, "Detection delay: %lld us (%.1f ms)", delay_us, delay_us / 1000.0);
+
+    // O delay deve ser ~20-25ms (tempo de debouncing)
+    TEST_ASSERT_GREATER_THAN(15000, delay_us); // >15ms
+    TEST_ASSERT_LESS_THAN(40000, delay_us);    // <40ms
+
+    fs.deinit();
 }

@@ -44,10 +44,9 @@ static void visual_delay(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
-// ============================================================================
-// 1. INITIALIZATION TESTS
-// ============================================================================
-
+/**
+ * 1. Brief Test that valid GPIO initializes correctly
+ */
 TEST_CASE("PowerControl: Init with valid GPIO", "[power_control][init]")
 {
     PowerControl::Config cfg = {
@@ -61,6 +60,9 @@ TEST_CASE("PowerControl: Init with valid GPIO", "[power_control][init]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
 }
 
+/**
+ * 2. Brief Test that prohibited pins are rejected
+ */
 TEST_CASE("PowerControl: Init with prohibited (Flash) pins",
           "[power_control][init][negative]")
 {
@@ -75,6 +77,9 @@ TEST_CASE("PowerControl: Init with prohibited (Flash) pins",
     }
 }
 
+/**
+ * 3. Brief Test with input-only pins (ESP32 only)
+ */
 #if CONFIG_IDF_TARGET_ESP32
 TEST_CASE("PowerControl: Init with ESP32 input-only pins",
           "[power_control][init][negative]")
@@ -92,10 +97,9 @@ TEST_CASE("PowerControl: Init with ESP32 input-only pins",
 }
 #endif
 
-// ============================================================================
-// 2. AUTOMATED LOGIC TESTS (Fast)
-// ============================================================================
-
+/**
+ * 4. Brief Test that normal logic works
+ */
 TEST_CASE("PowerControl: Normal Logic Validation", "[power_control][logic]")
 {
     const gpio_num_t PIN     = TEST_GPIO_VALID_1;
@@ -123,6 +127,9 @@ TEST_CASE("PowerControl: Normal Logic Validation", "[power_control][logic]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
 }
 
+/**
+ * 5. Brief Test that inverted logic works
+ */
 TEST_CASE("PowerControl: Inverted Logic Validation", "[power_control][logic]")
 {
     const gpio_num_t PIN     = TEST_GPIO_VALID_2;
@@ -145,10 +152,23 @@ TEST_CASE("PowerControl: Inverted Logic Validation", "[power_control][logic]")
     TEST_ASSERT_EQUAL(ESP_OK, pc.deinit());
 }
 
-// ============================================================================
-// 3. MULTIPLE INSTANCES & MEMORY TESTS
-// ============================================================================
+/**
+ * 6. Brief Test that toggle works with inverted logic
+ */
+TEST_CASE("PowerControl: Toggle with inverted logic", "[power_control][logic]")
+{
+    PowerControl::Config cfg = {
+        .gpio = TEST_GPIO_VALID_1, .inverted_logic = true, .initial_on = false};
+    PowerControl pc(cfg);
+    pc.init();
+    bool initial = pc.isOn();
+    pc.toggle();
+    TEST_ASSERT_NOT_EQUAL(initial, pc.isOn());
+}
 
+/**
+ * 7. Brief Test that multiple instances are handled properly
+ */
 TEST_CASE("PowerControl: Multiple Instances", "[power_control][multi]")
 {
     PowerControl::Config cfg1 = {
@@ -178,7 +198,9 @@ TEST_CASE("PowerControl: Multiple Instances", "[power_control][multi]")
     TEST_ASSERT_EQUAL(ESP_OK, pc1.deinit());
     TEST_ASSERT_EQUAL(ESP_OK, pc2.deinit());
 }
-
+/**
+ * 8. Stack Lifecycle Test to ensure no memory leaks with multiple instances
+ */
 TEST_CASE("PowerControl: Stack Lifecycle", "[power_control][memory]")
 {
     size_t free_heap_before = heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -204,6 +226,9 @@ TEST_CASE("PowerControl: Stack Lifecycle", "[power_control][memory]")
     TEST_ASSERT_UINT32_WITHIN(10, free_heap_before, free_heap_after);
 }
 
+/**
+ *  9. Brief Test that deinit sets the power control to a safe state (OFF)
+ */
 TEST_CASE("PowerControl: Heap Lifecycle & Footprint", "[power_control][memory]")
 {
     size_t free_heap_before = heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -216,35 +241,39 @@ TEST_CASE("PowerControl: Heap Lifecycle & Footprint", "[power_control][memory]")
     auto *pc1                = new PowerControl(cfg);
     cfg.gpio                 = TEST_GPIO_VALID_2;
     auto *pc2                = new PowerControl(cfg);
+
     TEST_ASSERT_EQUAL(ESP_OK, pc1->init());
     TEST_ASSERT_EQUAL(ESP_OK, pc2->init());
+
+    size_t heap_after_allocation = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    int memory_allocated         = free_heap_before - heap_after_allocation;
+
+    TEST_ASSERT_GREATER_THAN(0, memory_allocated);
+
     TEST_ASSERT_EQUAL(ESP_OK, pc1->deinit());
     TEST_ASSERT_EQUAL(ESP_OK, pc2->deinit());
 
-    // Intentionally not deleting to simulate leak
-    size_t free_heap_after = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    int leak_size          = free_heap_before - free_heap_after;
-    ESP_LOGI(TAG, "Detected INTENCIONAL memory leak of %d bytes", leak_size);
-
-    // Minimal leak for 2 instances
-    size_t expected_min_leak = sizeof(PowerControl) * 2;
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(expected_min_leak, leak_size);
-
-    // Clean up
     delete pc1;
     delete pc2;
 
-    size_t final_cleanup = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG, "Final cleanup freed %d bytes", final_cleanup - free_heap_after);
+    size_t heap_after_cleanup = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    int memory_freed          = heap_after_cleanup - heap_after_allocation;
 
-    // Allow small variation due to logging or other background tasks
-    TEST_ASSERT_LESS_THAN_UINT32(expected_min_leak + 10, leak_size);
+    ESP_LOGI(TAG, "Memory allocated: %d bytes", memory_allocated);
+    ESP_LOGI(TAG, "Memory cleaned up: %d bytes", memory_freed);
+
+    // Allow small variation for logging, fragmentation, etc.
+    TEST_ASSERT_UINT32_WITHIN(10, free_heap_before, heap_after_cleanup);
+
+    int net_leak = memory_allocated - memory_freed;
+    ESP_LOGI(TAG, "Net leak: %d bytes", net_leak);
+    // Freed memory should approximately equal allocated memory
+    TEST_ASSERT_UINT32_WITHIN(10, memory_allocated, memory_freed);
 }
 
-// ============================================================================
-// 4. STATE & DEINIT TESTS
-// ============================================================================
-
+/**
+ *  10. Brief Test that deinit sets the power control to a safe state (OFF)
+ */
 TEST_CASE("PowerControl: Deinit sets safe state", "[power_control][state]")
 {
     const gpio_num_t PIN     = TEST_GPIO_VALID_1;
@@ -264,10 +293,49 @@ TEST_CASE("PowerControl: Deinit sets safe state", "[power_control][state]")
     TEST_ASSERT_EQUAL(0, gpio_get_level(PIN));
 }
 
-// ============================================================================
-// 5. VISUAL TESTS (Manual inspection)
-// ============================================================================
+/**
+ * 11. Brief Test that state is consistent
+ */
+TEST_CASE("PowerControl: State consistency", "[power_control][state]")
+{
+    PowerControl::Config cfg = {
+        .gpio = TEST_GPIO_VALID_1, .inverted_logic = false, .initial_on = false};
+    PowerControl pc(cfg);
+    pc.init();
+    pc.turnOn();
+    // Force state change and verify consistency
+    TEST_ASSERT_EQUAL(pc.isOn(), gpio_get_level(cfg.gpio) ^ cfg.inverted_logic);
+}
 
+/**
+ * 12. Brief Test that re-initialization is handled properly
+ */
+TEST_CASE("PowerControl: Re-initialization", "[power_control][lifecycle]")
+{
+    PowerControl::Config cfg = {
+        .gpio = TEST_GPIO_VALID_1, .inverted_logic = false, .initial_on = false};
+    PowerControl pc(cfg);
+    pc.init();
+    pc.deinit();
+    TEST_ASSERT_EQUAL(ESP_OK, pc.init()); // Re-init após deinit
+}
+
+/**
+ * 13. Brief Test that methods are rejected before initialization
+ */
+TEST_CASE("PowerControl: Methods before init", "[power_control][negative]")
+{
+    PowerControl::Config cfg = {
+        .gpio = TEST_GPIO_VALID_1, .inverted_logic = false, .initial_on = false};
+    PowerControl pc(cfg);
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, pc.turnOn());
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, pc.turnOff());
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, pc.toggle());
+}
+
+/**
+ * 14. Brief Test that visual blink works
+ */
 TEST_CASE("PowerControl: Visual Blink", "[power_control][visual]")
 {
     ESP_LOGI(TAG, "Starting visual blink test on GPIO %d", TEST_GPIO_LED);

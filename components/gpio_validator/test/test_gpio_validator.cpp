@@ -65,7 +65,8 @@ TEST_CASE("GpioValidator: Flash pins rejection", "[gpio_validator][critical]")
     }
 }
 
-TEST_CASE("GpioValidator: Input-only pins rejection", "[gpio_validator][input_only]")
+TEST_CASE("GpioValidator: ESP32 Input-only pins (must warning)",
+          "[gpio_validator][input_only]")
 {
     if (ARRAY_SIZE(INPUT_ONLY_PINS) == 0) {
         ESP_LOGI(TAG, "No input-only pins for this target. Skipping.");
@@ -89,6 +90,15 @@ TEST_CASE("GpioValidator: Warning pins (should pass)", "[gpio_validator][warning
         ESP_LOGI(TAG, "Testing warning/strapping pin GPIO %d", pin);
         TEST_ASSERT_EQUAL(ESP_OK,
                           GpioValidator::validate(pin, GpioValidator::Mode::OUTPUT));
+    }
+}
+
+TEST_CASE("GpioValidator: Warning pins with INPUT mode", "[gpio_validator][warning]")
+{
+    for (size_t i = 0; i < ARRAY_SIZE(WARNING_PINS); i++) {
+        gpio_num_t pin = WARNING_PINS[i];
+        TEST_ASSERT_EQUAL(ESP_OK,
+                          GpioValidator::validate(pin, GpioValidator::Mode::INPUT));
     }
 }
 
