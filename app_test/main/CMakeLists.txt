@@ -7,11 +7,11 @@ idf_component_register(
         "include"
         
     REQUIRES
-        # espnow
-        # common
-        power_control
-        gpio_validator
-        sensor_floatswitch
+        espnow
+        common
+        # power_control
+        # gpio_validator
+        # sensor_floatswitch
         
     PRIV_REQUIRES
     

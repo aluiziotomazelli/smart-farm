@@ -1,6 +1,5 @@
 #include "ota_manager.hpp"
 #include "esp_https_ota.h"
-#include "espnow.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -72,7 +71,10 @@ void OtaManager::deinit()
 
 // ============ Event Handler ============
 
-void OtaManager::eventHandler(void *arg, esp_event_base_t base, int32_t id, void *data)
+void OtaManager::eventHandler(void *arg,
+                              esp_event_base_t base,
+                              int32_t id,
+                              void *data)
 {
     OtaManager *manager = static_cast<OtaManager *>(arg);
 
@@ -120,7 +122,8 @@ void OtaManager::eventHandler(void *arg, esp_event_base_t base, int32_t id, void
 
 // ============ OTA Operations ============
 
-esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname, bool use_mdns)
+esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname,
+                                        bool use_mdns)
 {
     // Check if OTA is already in progress
     if (isOtaInProgress()) {
@@ -139,7 +142,7 @@ esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname, bool
     BaseType_t result = xTaskCreate(otaTask, "ota_task",
                                     8192, // Stack size
                                     params,
-                                    5,      // Priority (above idle, below WiFi/ESPNOW)
+                                    5, // Priority (above idle, below WiFi/ESPNOW)
                                     nullptr // Don't store handle
     );
 
@@ -193,9 +196,6 @@ void OtaManager::otaTask(void *pvParameters)
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "OTA successful! Restarting...");
 
-        // Deinitialize components to release resources
-        EspNow::instance().deinit();
-
         // Post OTA finished event (though restart will happen immediately)
         esp_event_post(APP_OTA_EVENT, OTA_EVT_FINISHED, nullptr, 0, 0);
 
@@ -215,7 +215,8 @@ void OtaManager::otaTask(void *pvParameters)
 
 // ============ MDNS Resolution ============
 
-esp_err_t OtaManager::resolveServerMdns(const std::string &hostname, std::string &url)
+esp_err_t OtaManager::resolveServerMdns(const std::string &hostname,
+                                        std::string &url)
 {
     ESP_LOGI(TAG, "Resolving %s.local via mDNS...", hostname.c_str());
 
@@ -231,7 +232,8 @@ esp_err_t OtaManager::resolveServerMdns(const std::string &hostname, std::string
 
     esp_err_t err = mdns_query_a(hostname.c_str(), 5000, &addr);
 
-    ESP_LOGI(TAG, "Query result: %s, addr: " IPSTR, esp_err_to_name(err), IP2STR(&addr));
+    ESP_LOGI(TAG, "Query result: %s, addr: " IPSTR, esp_err_to_name(err),
+             IP2STR(&addr));
 
     if (err == ESP_OK && addr.addr != 0) {
         char ip_str[16];
@@ -315,10 +317,11 @@ void OtaManager::cleanupOtaTask(OtaTaskParams *params)
 
 esp_err_t OtaManager::performOtaDownload(const std::string &url)
 {
-    esp_http_client_config_t http_config = {.url            = url.c_str(),
-                                            .cert_pem       = NULL,
-                                            .timeout_ms     = 10000,
-                                            .transport_type = HTTP_TRANSPORT_OVER_TCP,
+    esp_http_client_config_t http_config = {.url        = url.c_str(),
+                                            .cert_pem   = NULL,
+                                            .timeout_ms = 10000,
+                                            .transport_type =
+                                                HTTP_TRANSPORT_OVER_TCP,
                                             .skip_cert_common_name_check = true,
                                             .keep_alive_enable           = true};
 

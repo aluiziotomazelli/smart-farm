@@ -215,7 +215,8 @@ esp_err_t EspNow::init(const EspNowConfig &config)
                              MAC2STR(info.mac));
                 }
                 else {
-                    ESP_LOGE(TAG, "Persistence: Failed to restore peer " MACSTR ": %s",
+                    ESP_LOGE(TAG,
+                             "Persistence: Failed to restore peer " MACSTR ": %s",
                              MAC2STR(info.mac), esp_err_to_name(add_result));
                 }
             }
@@ -665,12 +666,12 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
                              esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_FAIL) {
         ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR,
-                 MAC2STR(mac_addr));
+                 MAC2STR(tx_info->src_addr));
         // Notify the TX manager task about the physical layer failure.
         xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                     eSetBits);

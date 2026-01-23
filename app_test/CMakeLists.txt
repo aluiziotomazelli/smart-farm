@@ -6,11 +6,11 @@ set(PROJECT_NAME "test")
 # Adiciona caminhos para componentes compartilhados
 list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/main
-    # ${CMAKE_CURRENT_LIST_DIR}/../components/common
-    # ${CMAKE_CURRENT_LIST_DIR}/../components/espnow
-    ${CMAKE_CURRENT_LIST_DIR}/../components/power_control
-    ${CMAKE_CURRENT_LIST_DIR}/../components/gpio_validator
-    ${CMAKE_CURRENT_LIST_DIR}/../components/sensor_floatswitch
+    ${CMAKE_CURRENT_LIST_DIR}/../components/common
+    ${CMAKE_CURRENT_LIST_DIR}/../components/espnow
+    # ${CMAKE_CURRENT_LIST_DIR}/../components/power_control
+    # ${CMAKE_CURRENT_LIST_DIR}/../components/gpio_validator
+    # ${CMAKE_CURRENT_LIST_DIR}/../components/sensor_floatswitch
 )
 
 # Inclui o framework ESP-IDF
