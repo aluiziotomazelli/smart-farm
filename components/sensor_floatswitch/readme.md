@@ -68,7 +68,7 @@ void app_main() {
 * **Memory Safety:** Full Lifecycle management with deinit() called on destruction to reset GPIO states.
 
 
-## 🧪 Unit Testing
+## Unit Testing
 
 This component includes a comprehensive test suite located in the `test/` directory, following the ESP-IDF unit testing pattern. The tests verify electrical logic, timing accuracy for debouncing, and power management rules.
 
