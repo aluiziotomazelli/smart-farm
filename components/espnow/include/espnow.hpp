@@ -154,6 +154,7 @@ private:
     TimerHandle_t pairing_timer_handle_         = nullptr;
     TimerHandle_t pairing_timeout_timer_handle_ = nullptr;
     TimerHandle_t heartbeat_timer_handle_       = nullptr;
+    TimerHandle_t ack_timeout_timer_handle_     = nullptr;
 
     QueueHandle_t rx_dispatch_queue_           = nullptr;
     QueueHandle_t transport_worker_queue_      = nullptr;
@@ -180,6 +181,7 @@ private:
     EspNowStorage::Peer info_to_storage(const PeerInfo &info);
     PeerInfo storage_to_info(const EspNowStorage::Peer &storage);
     void save_peers();
+    void update_wifi_channel(uint8_t channel);
 
     // Protocol Message Processing
     void handle_pair_request(const RxPacket &packet);

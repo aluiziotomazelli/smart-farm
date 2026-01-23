@@ -60,8 +60,23 @@ esp_err_t EspNow::deinit()
         return ESP_OK;
     }
 
+    is_initialized_ = false;
     ESP_LOGI(TAG, "Deinitializing EspNow component...");
 
+    if (rx_dispatch_task_handle_ != nullptr) {
+        xTaskNotify(rx_dispatch_task_handle_, NOTIFY_STOP, eSetBits);
+    }
+    if (transport_worker_task_handle_ != nullptr) {
+        xTaskNotify(transport_worker_task_handle_, NOTIFY_STOP, eSetBits);
+    }
+    if (tx_manager_task_handle_ != nullptr) {
+        xTaskNotify(tx_manager_task_handle_, NOTIFY_STOP, eSetBits);
+    }
+
+    // Give tasks time to exit
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Force delete any remaining tasks
     if (rx_dispatch_task_handle_ != nullptr) {
         vTaskDelete(rx_dispatch_task_handle_);
         rx_dispatch_task_handle_ = nullptr;
@@ -77,6 +92,10 @@ esp_err_t EspNow::deinit()
     if (heartbeat_timer_handle_ != nullptr) {
         xTimerDelete(heartbeat_timer_handle_, portMAX_DELAY);
         heartbeat_timer_handle_ = nullptr;
+    }
+    if (ack_timeout_timer_handle_ != nullptr) {
+        xTimerDelete(ack_timeout_timer_handle_, portMAX_DELAY);
+        ack_timeout_timer_handle_ = nullptr;
     }
     if (pairing_timer_handle_ != nullptr) {
         xTimerDelete(pairing_timer_handle_, portMAX_DELAY);
@@ -687,7 +706,12 @@ void EspNow::rx_dispatch_task(void *arg)
     ESP_LOGI(TAG, "rx_dispatch_task started.");
 
     while (true) {
-        if (xQueueReceive(self->rx_dispatch_queue_, &packet, pdMS_TO_TICKS(1000)) ==
+        uint32_t notifications = 0;
+        if (xTaskNotifyWait(0, NOTIFY_STOP, &notifications, 0) == pdTRUE) {
+            if (notifications & NOTIFY_STOP) break;
+        }
+
+        if (xQueueReceive(self->rx_dispatch_queue_, &packet, pdMS_TO_TICKS(500)) ==
             pdTRUE) {
             // CRC Validation
             if (packet.len < CRC_SIZE) {
@@ -750,6 +774,8 @@ void EspNow::rx_dispatch_task(void *arg)
                      (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
+    ESP_LOGI(TAG, "rx_dispatch_task exiting.");
+    vTaskDelete(NULL);
 }
 
 void EspNow::send_pair_request()
@@ -936,12 +962,11 @@ void EspNow::handle_pair_request(const RxPacket &packet)
         return;
     }
 
-    // Add the peer to the internal list, which also updates if the peer exists
-    add_peer(request->header.sender_node_id, packet.src_mac, config_.wifi_channel,
-             request->header.sender_type);
-
-    // Update the peer's heartbeat interval
+    // Add the peer and update heartbeat interval under a single mutex lock
     if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        add_peer_internal(request->header.sender_node_id, packet.src_mac,
+                          config_.wifi_channel, request->header.sender_type);
+
         auto it = std::find_if(peers_.begin(), peers_.end(), [&](const PeerInfo &p) {
             return p.node_id == request->header.sender_node_id;
         });
@@ -954,12 +979,13 @@ void EspNow::handle_pair_request(const RxPacket &packet)
                      static_cast<uint8_t>(it->node_id), it->heartbeat_interval_ms);
             save_peers();
         }
+
+        // Prepare accepted response
+        response.status       = PairStatus::ACCEPTED;
+        response.wifi_channel = config_.wifi_channel;
+
         xSemaphoreGive(peers_mutex_);
     }
-
-    // Send an accepted response
-    response.status       = PairStatus::ACCEPTED;
-    response.wifi_channel = config_.wifi_channel;
 
     TxPacket tx_packet;
     memcpy(tx_packet.dest_mac, packet.src_mac, 6);
@@ -1022,8 +1048,13 @@ void EspNow::transport_worker_task(void *arg)
     ESP_LOGI(TAG, "transport_worker_task started.");
 
     while (true) {
+        uint32_t notifications = 0;
+        if (xTaskNotifyWait(0, NOTIFY_STOP, &notifications, 0) == pdTRUE) {
+            if (notifications & NOTIFY_STOP) break;
+        }
+
         if (xQueueReceive(self->transport_worker_queue_, &packet,
-                          pdMS_TO_TICKS(1000)) == pdTRUE) {
+                          pdMS_TO_TICKS(500)) == pdTRUE) {
             if (packet.len < sizeof(MessageHeader) + CRC_SIZE) {
                 continue;
             }
@@ -1064,7 +1095,7 @@ void EspNow::transport_worker_task(void *arg)
                 // scan loop channel is correct.
                 uint8_t current_channel;
                 esp_wifi_get_channel(&current_channel, nullptr);
-                self->config_.wifi_channel = current_channel;
+                self->update_wifi_channel(current_channel);
                 self->add_peer(header->sender_node_id, packet.src_mac,
                                current_channel, header->sender_type);
 
@@ -1085,6 +1116,8 @@ void EspNow::transport_worker_task(void *arg)
                      (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
+    ESP_LOGI(TAG, "transport_worker_task exiting.");
+    vTaskDelete(NULL);
 }
 
 void EspNow::pairing_timer_cb(TimerHandle_t xTimer)
@@ -1172,6 +1205,31 @@ void EspNow::save_peers()
     storage_.save(config_.wifi_channel, storage_peers);
 }
 
+void EspNow::update_wifi_channel(uint8_t channel)
+{
+    if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+        if (config_.wifi_channel != channel) {
+            config_.wifi_channel = channel;
+            ESP_LOGI(TAG, "Wi-Fi channel updated to %d", channel);
+
+            // Update broadcast peer channel
+            esp_now_peer_info_t broadcast_peer = {};
+            const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+            memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
+            broadcast_peer.channel = channel;
+            broadcast_peer.encrypt = false;
+
+            esp_err_t err = esp_now_mod_peer(&broadcast_peer);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to update broadcast peer channel: %s",
+                         esp_err_to_name(err));
+            }
+            save_peers();
+        }
+        xSemaphoreGive(peers_mutex_);
+    }
+}
+
 void EspNow::tx_manager_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
@@ -1181,14 +1239,14 @@ void EspNow::tx_manager_task(void *arg)
     std::optional<PendingAck> pending_ack_msg;
     uint8_t phy_send_fail_count = 0;
 
-    TimerHandle_t ack_timeout_timer = xTimerCreate(
+    self->ack_timeout_timer_handle_ = xTimerCreate(
         "ack_timeout", pdMS_TO_TICKS(LOGICAL_ACK_TIMEOUT_MS), pdFALSE,
         self->tx_manager_task_handle_, [](TimerHandle_t xTimer) {
             xTaskNotify(static_cast<TaskHandle_t>(pvTimerGetTimerID(xTimer)),
                         NOTIFY_ACK_TIMEOUT, eSetBits);
         });
 
-    if (ack_timeout_timer == nullptr) {
+    if (self->ack_timeout_timer_handle_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create ack_timeout_timer.");
         vTaskDelete(nullptr); // Abort task
     }
@@ -1220,8 +1278,11 @@ void EspNow::tx_manager_task(void *arg)
             // TIMEOUT)
             if (xTaskNotifyWait(0,
                                 NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING |
-                                    NOTIFY_PAIRING_TIMEOUT,
+                                    NOTIFY_PAIRING_TIMEOUT | NOTIFY_STOP,
                                 &notifications, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                if (notifications & NOTIFY_STOP) {
+                    goto exit;
+                }
                 if (notifications & NOTIFY_HEARTBEAT) {
                     self->send_heartbeat();
                 }
@@ -1273,7 +1334,7 @@ void EspNow::tx_manager_task(void *arg)
                                .retries_left    = MAX_LOGICAL_RETRIES,
                                .packet          = packet_to_send};
 
-                xTimerStart(ack_timeout_timer, 0);
+                xTimerStart(self->ack_timeout_timer_handle_, 0);
                 current_state = TxState::WAITING_FOR_ACK;
             }
             else {
@@ -1286,13 +1347,17 @@ void EspNow::tx_manager_task(void *arg)
         {
             if (xTaskNotifyWait(0,
                                 NOTIFY_LOGICAL_ACK | NOTIFY_PHYSICAL_FAIL |
-                                    NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT,
+                                    NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT |
+                                    NOTIFY_STOP,
                                 &notifications, pdMS_TO_TICKS(1000)) == pdPASS) {
+                if (notifications & NOTIFY_STOP) {
+                    goto exit;
+                }
                 if (notifications & NOTIFY_LOGICAL_ACK) {
                     ESP_LOGD(TAG, "ACK received. Returning to IDLE.");
                     phy_send_fail_count = 0;
                     pending_ack_msg.reset();
-                    xTimerStop(ack_timeout_timer, 0);
+                    xTimerStop(self->ack_timeout_timer_handle_, 0);
                     current_state = TxState::IDLE;
                 }
                 else if (notifications & NOTIFY_PHYSICAL_FAIL) {
@@ -1305,7 +1370,7 @@ void EspNow::tx_manager_task(void *arg)
                                  "SCANNING state.");
                         phy_send_fail_count = 0;
                         pending_ack_msg.reset();
-                        xTimerStop(ack_timeout_timer, 0);
+                        xTimerStop(self->ack_timeout_timer_handle_, 0);
                         current_state = TxState::SCANNING;
                     }
                 }
@@ -1348,7 +1413,7 @@ void EspNow::tx_manager_task(void *arg)
                 self->send_packet(pending_ack_msg->packet.dest_mac,
                                   pending_ack_msg->packet.data,
                                   pending_ack_msg->packet.len);
-                xTimerStart(ack_timeout_timer, 0);
+                xTimerStart(self->ack_timeout_timer_handle_, 0);
                 current_state = TxState::WAITING_FOR_ACK;
             }
             else {
@@ -1439,4 +1504,8 @@ void EspNow::tx_manager_task(void *arg)
             break;
         }
     }
+
+exit:
+    ESP_LOGI(TAG, "tx_manager_task exiting.");
+    vTaskDelete(NULL);
 }
