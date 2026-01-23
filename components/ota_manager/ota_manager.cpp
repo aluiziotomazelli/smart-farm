@@ -1,5 +1,6 @@
 #include "ota_manager.hpp"
 #include "esp_https_ota.h"
+#include "espnow.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -191,6 +192,9 @@ void OtaManager::otaTask(void *pvParameters)
 
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "OTA successful! Restarting...");
+
+        // Deinitialize components to release resources
+        EspNow::instance().deinit();
 
         // Post OTA finished event (though restart will happen immediately)
         esp_event_post(APP_OTA_EVENT, OTA_EVT_FINISHED, nullptr, 0, 0);

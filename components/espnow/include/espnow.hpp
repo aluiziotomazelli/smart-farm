@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_now.h"
+#include "espnow_storage.hpp"
 #include "protocol_messages.hpp"
 #include "protocol_types.hpp"
 #include <cstdint>
@@ -79,6 +80,7 @@ public:
     static constexpr int MAX_PEERS = 19;
 
     esp_err_t init(const EspNowConfig &config);
+    esp_err_t deinit();
     esp_err_t send_data(NodeId dest_node_id,
                         PayloadType payload_type,
                         const void *payload,
@@ -141,6 +143,7 @@ private:
 
     // --- Private Members ---
     EspNowConfig config_{};
+    EspNowStorage storage_;
     std::vector<PeerInfo> peers_;
     SemaphoreHandle_t peers_mutex_   = nullptr;
     SemaphoreHandle_t pairing_mutex_ = nullptr;
@@ -173,6 +176,11 @@ private:
     bool find_peer_mac(NodeId node_id, uint8_t *mac);
     uint32_t get_time_ms() const;
 
+    // Persistence helpers
+    EspNowStorage::Peer info_to_storage(const PeerInfo &info);
+    PeerInfo storage_to_info(const EspNowStorage::Peer &storage);
+    void save_peers();
+
     // Protocol Message Processing
     void handle_pair_request(const RxPacket &packet);
     void handle_pair_response(const RxPacket &packet);
@@ -193,7 +201,7 @@ private:
     static void esp_now_recv_cb(const esp_now_recv_info_t *info,
                                 const uint8_t *data,
                                 int len);
-    static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
+    static void esp_now_send_cb(const uint8_t *mac_addr,
                                 esp_now_send_status_t status);
     // static void esp_now_send_cb(const esp_now_send_info_t *tx_info,
     // esp_now_send_status_t status);

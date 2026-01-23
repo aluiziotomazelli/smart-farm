@@ -46,43 +46,78 @@ EspNow::EspNow()
 
 EspNow::~EspNow()
 {
+    deinit();
+    if (singleton_mutex_ != nullptr) {
+        vSemaphoreDelete(singleton_mutex_);
+        singleton_mutex_ = nullptr;
+    }
+    ESP_LOGI(TAG, "Resources released.");
+}
+
+esp_err_t EspNow::deinit()
+{
+    if (!is_initialized_) {
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Deinitializing EspNow component...");
+
     if (rx_dispatch_task_handle_ != nullptr) {
         vTaskDelete(rx_dispatch_task_handle_);
+        rx_dispatch_task_handle_ = nullptr;
     }
     if (transport_worker_task_handle_ != nullptr) {
         vTaskDelete(transport_worker_task_handle_);
+        transport_worker_task_handle_ = nullptr;
     }
     if (tx_manager_task_handle_ != nullptr) {
         vTaskDelete(tx_manager_task_handle_);
+        tx_manager_task_handle_ = nullptr;
     }
     if (heartbeat_timer_handle_ != nullptr) {
         xTimerDelete(heartbeat_timer_handle_, portMAX_DELAY);
+        heartbeat_timer_handle_ = nullptr;
     }
+    if (pairing_timer_handle_ != nullptr) {
+        xTimerDelete(pairing_timer_handle_, portMAX_DELAY);
+        pairing_timer_handle_ = nullptr;
+    }
+    if (pairing_timeout_timer_handle_ != nullptr) {
+        xTimerDelete(pairing_timeout_timer_handle_, portMAX_DELAY);
+        pairing_timeout_timer_handle_ = nullptr;
+    }
+
     if (rx_dispatch_queue_ != nullptr) {
         vQueueDelete(rx_dispatch_queue_);
+        rx_dispatch_queue_ = nullptr;
     }
     if (transport_worker_queue_ != nullptr) {
         vQueueDelete(transport_worker_queue_);
+        transport_worker_queue_ = nullptr;
     }
     if (tx_queue_ != nullptr) {
         vQueueDelete(tx_queue_);
+        tx_queue_ = nullptr;
     }
-    if (is_initialized_) {
-        esp_now_deinit();
-    }
+
+    esp_now_deinit();
+
     if (peers_mutex_ != nullptr) {
         vSemaphoreDelete(peers_mutex_);
+        peers_mutex_ = nullptr;
     }
     if (pairing_mutex_ != nullptr) {
         vSemaphoreDelete(pairing_mutex_);
+        pairing_mutex_ = nullptr;
     }
     if (ack_mutex_ != nullptr) {
         vSemaphoreDelete(ack_mutex_);
+        ack_mutex_ = nullptr;
     }
-    if (singleton_mutex_ != nullptr) {
-        vSemaphoreDelete(singleton_mutex_);
-    }
-    ESP_LOGI(TAG, "Resources released.");
+
+    is_initialized_ = false;
+    ESP_LOGI(TAG, "EspNow component deinitialized.");
+    return ESP_OK;
 }
 
 // --- Public API ---
@@ -99,6 +134,17 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     }
 
     config_ = config;
+
+    // Persistence: Load peers and channel
+    std::vector<EspNowStorage::Peer> stored_peers;
+    uint8_t stored_channel;
+    bool has_stored_data = false;
+    if (storage_.load(stored_channel, stored_peers) == ESP_OK) {
+        config_.wifi_channel = stored_channel;
+        has_stored_data      = true;
+        ESP_LOGI(TAG, "Persistence: Loaded channel %d and %d peers", stored_channel,
+                 (int)stored_peers.size());
+    }
 
     ESP_ERROR_CHECK(esp_now_init());
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_recv_cb));
@@ -151,6 +197,32 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     }
 
     is_initialized_ = true;
+
+    // Restore peers from storage
+    if (has_stored_data && !stored_peers.empty()) {
+        if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
+            for (const auto &sp : stored_peers) {
+                PeerInfo info = storage_to_info(sp);
+
+                esp_now_peer_info_t peer_info = {};
+                memcpy(peer_info.peer_addr, info.mac, 6);
+                peer_info.channel    = info.channel;
+                peer_info.encrypt    = false;
+                esp_err_t add_result = esp_now_add_peer(&peer_info);
+                if (add_result == ESP_OK) {
+                    peers_.push_back(info);
+                    ESP_LOGI(TAG, "Persistence: Restored peer " MACSTR,
+                             MAC2STR(info.mac));
+                }
+                else {
+                    ESP_LOGE(TAG, "Persistence: Failed to restore peer " MACSTR ": %s",
+                             MAC2STR(info.mac), esp_err_to_name(add_result));
+                }
+            }
+            xSemaphoreGive(peers_mutex_);
+        }
+    }
+
     ESP_LOGI(TAG, "EspNow component initialized successfully.");
 
     if (!config_.is_master && config_.heartbeat_interval_ms > 0) {
@@ -477,6 +549,7 @@ esp_err_t EspNow::remove_peer_internal(NodeId node_id)
              static_cast<uint8_t>(node_id));
 
     peers_.erase(it);
+    save_peers();
     return ESP_OK;
 }
 
@@ -529,6 +602,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
 
             peers_.erase(it);
             peers_.insert(peers_.begin(), updated_peer);
+            save_peers();
             return ESP_OK;
         }
     }
@@ -561,6 +635,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
     new_peer.last_seen_ms = get_time_ms();
     new_peer.paired       = true;
     peers_.insert(peers_.begin(), new_peer);
+    save_peers();
 
     ESP_LOGI(TAG, "New peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %" PRIu8 ") added.",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
@@ -590,12 +665,12 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const esp_now_send_info_t *tx_info,
+void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
                              esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_FAIL) {
         ESP_LOGW(TAG, "ESP-NOW send failed to MAC " MACSTR,
-                 MAC2STR(tx_info->des_addr));
+                 MAC2STR(mac_addr));
         // Notify the TX manager task about the physical layer failure.
         xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                     eSetBits);
@@ -877,6 +952,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
                      "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32
                      " ms.",
                      static_cast<uint8_t>(it->node_id), it->heartbeat_interval_ms);
+            save_peers();
         }
         xSemaphoreGive(peers_mutex_);
     }
@@ -988,6 +1064,7 @@ void EspNow::transport_worker_task(void *arg)
                 // scan loop channel is correct.
                 uint8_t current_channel;
                 esp_wifi_get_channel(&current_channel, nullptr);
+                self->config_.wifi_channel = current_channel;
                 self->add_peer(header->sender_node_id, packet.src_mac,
                                current_channel, header->sender_type);
 
@@ -1059,6 +1136,40 @@ void EspNow::periodic_heartbeat_cb(TimerHandle_t xTimer)
 uint32_t EspNow::get_time_ms() const
 {
     return esp_timer_get_time() / 1000;
+}
+
+EspNowStorage::Peer EspNow::info_to_storage(const PeerInfo &info)
+{
+    EspNowStorage::Peer storage;
+    memcpy(storage.mac, info.mac, 6);
+    storage.type                  = info.type;
+    storage.node_id               = info.node_id;
+    storage.channel               = info.channel;
+    storage.paired                = info.paired;
+    storage.heartbeat_interval_ms = info.heartbeat_interval_ms;
+    return storage;
+}
+
+EspNow::PeerInfo EspNow::storage_to_info(const EspNowStorage::Peer &storage)
+{
+    PeerInfo info;
+    memcpy(info.mac, storage.mac, 6);
+    info.type                  = storage.type;
+    info.node_id               = storage.node_id;
+    info.channel               = storage.channel;
+    info.last_seen_ms          = 0; // Relative to current boot
+    info.paired                = storage.paired;
+    info.heartbeat_interval_ms = storage.heartbeat_interval_ms;
+    return info;
+}
+
+void EspNow::save_peers()
+{
+    std::vector<EspNowStorage::Peer> storage_peers;
+    for (const auto &p : peers_) {
+        storage_peers.push_back(info_to_storage(p));
+    }
+    storage_.save(config_.wifi_channel, storage_peers);
 }
 
 void EspNow::tx_manager_task(void *arg)
