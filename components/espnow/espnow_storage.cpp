@@ -12,8 +12,8 @@ static const char *TAG           = "EspNowStorage";
 static const char *NVS_NAMESPACE = "espnow_store";
 static const char *NVS_KEY       = "persist_data";
 
-// RTC memory variable - must be static or global
-static RTC_DATA_ATTR EspNowStorage::PersistentData rtc_storage;
+// RTC memory variable definition
+RTC_DATA_ATTR EspNowStorage::PersistentData EspNowStorage::rtc_storage;
 
 EspNowStorage::EspNowStorage()
 {

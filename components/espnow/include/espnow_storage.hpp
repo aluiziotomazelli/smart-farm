@@ -63,6 +63,7 @@ public:
     };
 
 private:
+    static PersistentData rtc_storage;
     esp_err_t init_nvs();
     uint32_t calculate_crc(const PersistentData &data);
 };
