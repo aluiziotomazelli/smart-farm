@@ -244,7 +244,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
 
     ESP_LOGI(TAG, "EspNow component initialized successfully.");
 
-    if (!config_.is_master && config_.heartbeat_interval_ms > 0) {
+    if (config_.node_type != NodeType::HUB && config_.heartbeat_interval_ms > 0) {
         ESP_LOGI(TAG, "Starting heartbeat timer with interval: %" PRIu32 " ms.",
                  config_.heartbeat_interval_ms);
         heartbeat_timer_handle_ =
@@ -414,7 +414,7 @@ esp_err_t EspNow::start_pairing(uint32_t timeout_ms)
         pairing_timeout_timer_handle_ = nullptr;
     }
 
-    if (config_.is_master) {
+    if (config_.node_type == NodeType::HUB) {
         pairing_timeout_timer_handle_ =
             xTimerCreate("pairing_timeout", pdMS_TO_TICKS(timeout_ms), pdFALSE, this,
                          pairing_timer_cb);
@@ -877,7 +877,7 @@ void EspNow::send_heartbeat()
 
 void EspNow::handle_heartbeat(const RxPacket &packet)
 {
-    if (!config_.is_master) {
+    if (config_.node_type != NodeType::HUB) {
         return;
     }
 
@@ -932,7 +932,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     bool is_active = is_pairing_active_;
     xSemaphoreGive(pairing_mutex_);
 
-    if (!config_.is_master || !is_active) {
+    if (config_.node_type != NodeType::HUB || !is_active) {
         return;
     }
 
@@ -1005,7 +1005,7 @@ void EspNow::handle_pair_response(const RxPacket &packet)
     }
 
     // Ignore if we are the master or not in pairing mode
-    if (config_.is_master || !is_pairing_active_) {
+    if (config_.node_type == NodeType::HUB || !is_pairing_active_) {
         xSemaphoreGive(pairing_mutex_);
         return;
     }
@@ -1275,7 +1275,7 @@ void EspNow::tx_manager_task(void *arg)
                 if (notifications & NOTIFY_PAIRING_TIMEOUT) {
                     if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) ==
                         pdTRUE) {
-                        if (self->config_.is_master) {
+                        if (self->config_.node_type == NodeType::HUB) {
                             self->is_pairing_active_ = false;
                             ESP_LOGI(TAG,
                                      "Pairing timeout reached. Pairing stopped.");
@@ -1363,7 +1363,7 @@ void EspNow::tx_manager_task(void *arg)
                 if (notifications & NOTIFY_PAIRING_TIMEOUT) {
                     if (xSemaphoreTake(self->pairing_mutex_, pdMS_TO_TICKS(100)) ==
                         pdTRUE) {
-                        if (self->config_.is_master) {
+                        if (self->config_.node_type == NodeType::HUB) {
                             self->is_pairing_active_ = false;
                             ESP_LOGI(TAG,
                                      "Pairing timeout reached. Pairing stopped.");

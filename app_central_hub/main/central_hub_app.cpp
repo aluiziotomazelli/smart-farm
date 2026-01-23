@@ -170,7 +170,6 @@ void CentralHubApp::init()
     espnow_config.node_id      = NodeId::HUB;
     espnow_config.node_type    = NodeType::HUB;
     espnow_config.app_rx_queue = app_queue_;
-    espnow_config.is_master    = true;
 
     auto &espnow = EspNow::instance();
     if (espnow.init(espnow_config) != ESP_OK) {

@@ -21,7 +21,6 @@ struct EspNowConfig
     uint8_t wifi_channel;
     uint32_t ack_timeout_ms;
     uint32_t heartbeat_interval_ms;
-    bool is_master;
 
     uint32_t stack_size_rx_dispatch;
     uint32_t stack_size_transport_worker;
@@ -35,7 +34,6 @@ struct EspNowConfig
         , wifi_channel(DEFAULT_WIFI_CHANNEL)
         , ack_timeout_ms(DEFAULT_ACK_TIMEOUT_MS)
         , heartbeat_interval_ms(DEFAULT_HEARTBEAT_INTERVAL_MS)
-        , is_master(false)
         , stack_size_rx_dispatch(4096)
         , stack_size_transport_worker(5120)
         , stack_size_tx_manager(4096)
