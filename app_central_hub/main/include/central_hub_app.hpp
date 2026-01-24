@@ -12,12 +12,13 @@ public:
     CentralHubApp();
 
     void init();
+    void run();
 
 private:
     static constexpr uint32_t NOTIFY_PEER_CHECK = 0x01;
 
-    static void button_task_handler(void *arg);
-    void button_task();
+    // static void button_task_handler(void *arg);
+    // void button_task();
 
     static void peer_check_timer_cb(TimerHandle_t xTimer);
     TimerHandle_t peer_check_timer_handle_ = nullptr;

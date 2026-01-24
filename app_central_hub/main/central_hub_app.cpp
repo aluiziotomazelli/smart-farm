@@ -23,6 +23,7 @@ CentralHubApp::CentralHubApp()
     // Constructor is intentionally empty.
 }
 
+/*
 void CentralHubApp::button_task_handler(void *arg)
 {
     CentralHubApp *app = static_cast<CentralHubApp *>(arg);
@@ -44,17 +45,10 @@ void CentralHubApp::button_task()
     bool button_pressed          = false;
     TickType_t last_press_time   = 0;
     const TickType_t debounce_ms = 150;
-    uint32_t last_stack_check    = 0;
 
     while (true) {
         uint32_t notifications = 0;
 
-        uint32_t now = esp_timer_get_time() / 1000;
-        if (now - last_stack_check > 5000) {
-            last_stack_check = now;
-            ESP_LOGI(TAG, "[Stack] app_main: %u bytes free",
-                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
-        }
         // Wait for notifications with a 20ms timeout to keep polling the button
         if (xTaskNotifyWait(0, NOTIFY_PEER_CHECK, &notifications,
                             pdMS_TO_TICKS(20)) == pdPASS) {
@@ -123,6 +117,7 @@ void CentralHubApp::button_task()
         }
     }
 }
+*/
 
 void CentralHubApp::peer_check_timer_cb(TimerHandle_t xTimer)
 {
@@ -170,7 +165,6 @@ void CentralHubApp::init()
     espnow_config.node_id      = NodeId::HUB;
     espnow_config.node_type    = NodeType::HUB;
     espnow_config.app_rx_queue = app_queue_;
-    espnow_config.is_master    = true;
 
     auto &espnow = EspNow::instance();
     if (espnow.init(espnow_config) != ESP_OK) {
@@ -182,8 +176,10 @@ void CentralHubApp::init()
     ESP_LOGI(TAG, "ESP-NOW initialized as HUB. Node ID: %u",
              static_cast<uint8_t>(espnow_config.node_id));
 
+    /*
     xTaskCreate(button_task_handler, "app_main_task", 4096, this, 5,
                 &app_task_handle_);
+    */
 
     peer_check_timer_handle_ = xTimerCreate("peer_check_timer", pdMS_TO_TICKS(10000),
                                             pdTRUE, this, peer_check_timer_cb);
@@ -192,4 +188,23 @@ void CentralHubApp::init()
         return;
     }
     xTimerStart(peer_check_timer_handle_, 0);
+}
+
+void CentralHubApp::run()
+{
+    ESP_LOGI(TAG, "Starting CentralHubApp loop...");
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        ESP_LOGI(TAG, "Hub is running...");
+
+        auto &espnow       = EspNow::instance();
+        auto offline_peers = espnow.get_offline_peers();
+
+        if (!offline_peers.empty()) {
+            for (const auto &peer_id : offline_peers) {
+                ESP_LOGW(TAG, "Peer with ID %u is offline.",
+                         static_cast<uint8_t>(peer_id));
+            }
+        }
+    }
 }
