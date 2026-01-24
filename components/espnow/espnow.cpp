@@ -701,7 +701,7 @@ void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
         // Notify the TX manager task about the physical layer failure.
         // Note: logging from here is generally discouraged as it runs in Wi-Fi task context,
         // but it's useful for debugging physical layer issues.
-        ESP_LOGD(TAG, "esp_now_send_cb: physical layer failure for MAC " MACSTR, MAC2STR(mac_addr));
+        ESP_LOGI(TAG, "esp_now_send_cb: physical layer failure for MAC " MACSTR, MAC2STR(mac_addr));
         if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
             xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                         eSetBits);
@@ -809,21 +809,21 @@ void EspNow::handle_heartbeat_response(const RxPacket &packet)
 {
     const HeartbeatResponse *response =
         reinterpret_cast<const HeartbeatResponse *>(packet.data);
-    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
+    ESP_LOGI(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
              response->wifi_channel);
 }
 
 void EspNow::handle_scan_probe(const RxPacket &packet)
 {
     // Only HUB respond to scan probes
-    if (config_.node_id != NodeId::HUB) {
+    if (config_.node_type != NodeType::HUB) {
         return;
     }
 
     const MessageHeader *header =
         reinterpret_cast<const MessageHeader *>(packet.data);
 
-    ESP_LOGD(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.",
+    ESP_LOGI(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.",
              static_cast<uint8_t>(header->sender_node_id));
 
     TxPacket tx_packet;
@@ -839,8 +839,13 @@ void EspNow::handle_scan_probe(const RxPacket &packet)
     memcpy(tx_packet.data, &response_header, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue scan probe response.");
+    }
+    else {
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -891,7 +896,7 @@ void EspNow::handle_heartbeat(const RxPacket &packet)
 
         if (it != peers_.end()) {
             it->last_seen_ms = get_time_ms();
-            ESP_LOGD(TAG,
+            ESP_LOGI(TAG,
                      "Heartbeat received from Node ID %" PRIu8
                      ". Updated last_seen.",
                      static_cast<uint8_t>(sender_id));
@@ -912,6 +917,11 @@ void EspNow::handle_heartbeat(const RxPacket &packet)
             tx_packet.requires_ack = false;
             if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
                 ESP_LOGE(TAG, "Failed to queue heartbeat response.");
+            }
+            else {
+                if (tx_manager_task_handle_ != nullptr) {
+                    xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+                }
             }
         }
         else {
@@ -956,8 +966,13 @@ void EspNow::handle_pair_request(const RxPacket &packet)
         tx_packet.len = sizeof(response);
         memcpy(tx_packet.data, &response, tx_packet.len);
         tx_packet.requires_ack = false;
-    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
+        if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
             ESP_LOGE(TAG, "Failed to queue pair rejection response.");
+        }
+        else {
+            if (tx_manager_task_handle_ != nullptr) {
+                xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+            }
         }
         return;
     }
@@ -994,6 +1009,11 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     tx_packet.requires_ack = false;
     if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue pair acceptance response.");
+    }
+    else {
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -1321,8 +1341,14 @@ void EspNow::tx_manager_task(void *arg)
                 }
                 else if (notifications & NOTIFY_PHYSICAL_FAIL) {
                     phy_send_fail_count++;
-                    ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
-                             pending_ack_msg->sequence_number, phy_send_fail_count);
+                    if (pending_ack_msg) {
+                        ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
+                                 pending_ack_msg->sequence_number, phy_send_fail_count);
+                    }
+                    else {
+                        ESP_LOGW(TAG, "Physical send failed (no pending logical ACK). Count: %d",
+                                 phy_send_fail_count);
+                    }
                     if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
                         ESP_LOGE(TAG,
                                  "Max physical ACK failures reached. Triggering "
