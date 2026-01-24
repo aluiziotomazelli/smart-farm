@@ -700,16 +700,12 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const esp_now_send_info_t *info,
-                             esp_now_send_status_t status)
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *info, esp_now_send_status_t status)
 {
-    // Following user environment: using tx_status and WIFI_SEND_FAIL
-    // If these are not available in standard IDF, they must be provided by the environment.
     if (info->tx_status == WIFI_SEND_FAIL) {
-        // Notify the TX manager task about the physical layer failure.
         if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
-            xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
-                        eSetBits);
+            xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL, eSetBits);
+            ESP_EARLY_LOGW(TAG, "ESP-NOW send failed to " MACSTR, MAC2STR(info->des_addr));
         }
     }
 }
@@ -1418,8 +1414,7 @@ void EspNow::tx_manager_task(void *arg)
                     }
                 }
                 else if (notifications & NOTIFY_ACK_TIMEOUT) {
-                    phy_send_fail_count = 0;
-                    current_state       = TxState::RETRYING;
+                    current_state = TxState::RETRYING;
                 }
 
                 if (notifications & NOTIFY_PAIRING_TIMEOUT) {
