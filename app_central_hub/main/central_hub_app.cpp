@@ -193,7 +193,13 @@ void CentralHubApp::init()
 void CentralHubApp::run()
 {
     ESP_LOGI(TAG, "Starting CentralHubApp loop...");
+    EspNow::RxPacket packet;
     while (true) {
+        // Drain incoming messages
+        while (xQueueReceive(app_queue_, &packet, 0) == pdTRUE) {
+            ESP_LOGI(TAG, "Received packet in application queue.");
+        }
+
         vTaskDelay(pdMS_TO_TICKS(5000));
         ESP_LOGI(TAG, "Hub is running...");
 

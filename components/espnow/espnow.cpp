@@ -149,6 +149,13 @@ esp_err_t EspNow::init(const EspNowConfig &config)
 
     config_ = config;
 
+    // Ensure Wi-Fi mode is set before initializing ESP-NOW
+    wifi_mode_t mode;
+    if (esp_wifi_get_mode(&mode) != ESP_OK || mode == WIFI_MODE_NULL) {
+        ESP_LOGE(TAG, "Wi-Fi mode is NULL or not set. Initialize Wi-Fi before EspNow.");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     // Persistence: Load peers and channel
     std::vector<EspNowStorage::Peer> stored_peers;
     uint8_t stored_channel;
@@ -168,6 +175,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
     broadcast_peer.channel = config_.wifi_channel;
+    broadcast_peer.ifidx   = WIFI_IF_STA;
     broadcast_peer.encrypt = false;
     ESP_ERROR_CHECK(esp_now_add_peer(&broadcast_peer));
 
@@ -221,6 +229,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, info.mac, 6);
                 peer_info.channel    = info.channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t add_result = esp_now_add_peer(&peer_info);
                 if (add_result == ESP_OK) {
@@ -597,6 +606,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel    = channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t add_result = esp_now_add_peer(&peer_info);
                 if (add_result != ESP_OK) {
@@ -607,6 +617,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel    = channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t mod_result = esp_now_mod_peer(&peer_info);
                 if (mod_result != ESP_OK) {
@@ -639,6 +650,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
     esp_now_peer_info_t peer_info = {};
     memcpy(peer_info.peer_addr, mac, 6);
     peer_info.channel    = channel;
+    peer_info.ifidx      = WIFI_IF_STA;
     peer_info.encrypt    = false;
     esp_err_t add_result = esp_now_add_peer(&peer_info);
     if (add_result != ESP_OK) {
@@ -682,12 +694,11 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *info,
                              esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_FAIL) {
         // Notify the TX manager task about the physical layer failure.
-        // We avoid logging here as this callback runs in the Wi-Fi task context.
         if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
             xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                         eSetBits);
@@ -795,21 +806,21 @@ void EspNow::handle_heartbeat_response(const RxPacket &packet)
 {
     const HeartbeatResponse *response =
         reinterpret_cast<const HeartbeatResponse *>(packet.data);
-    ESP_LOGD(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
+    ESP_LOGI(TAG, "Heartbeat response received from Hub. Wifi Channel: %d",
              response->wifi_channel);
 }
 
 void EspNow::handle_scan_probe(const RxPacket &packet)
 {
     // Only HUB respond to scan probes
-    if (config_.node_id != NodeId::HUB) {
+    if (config_.node_type != NodeType::HUB) {
         return;
     }
 
     const MessageHeader *header =
         reinterpret_cast<const MessageHeader *>(packet.data);
 
-    ESP_LOGD(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.",
+    ESP_LOGI(TAG, "Received scan probe from Node ID %" PRIu8 ". Responding.",
              static_cast<uint8_t>(header->sender_node_id));
 
     TxPacket tx_packet;
@@ -825,8 +836,13 @@ void EspNow::handle_scan_probe(const RxPacket &packet)
     memcpy(tx_packet.data, &response_header, tx_packet.len);
     tx_packet.requires_ack = false;
 
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue scan probe response.");
+    }
+    else {
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -877,7 +893,7 @@ void EspNow::handle_heartbeat(const RxPacket &packet)
 
         if (it != peers_.end()) {
             it->last_seen_ms = get_time_ms();
-            ESP_LOGD(TAG,
+            ESP_LOGI(TAG,
                      "Heartbeat received from Node ID %" PRIu8
                      ". Updated last_seen.",
                      static_cast<uint8_t>(sender_id));
@@ -896,8 +912,13 @@ void EspNow::handle_heartbeat(const RxPacket &packet)
             tx_packet.len = sizeof(response);
             memcpy(tx_packet.data, &response, tx_packet.len);
             tx_packet.requires_ack = false;
-            if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+            if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
                 ESP_LOGE(TAG, "Failed to queue heartbeat response.");
+            }
+            else {
+                if (tx_manager_task_handle_ != nullptr) {
+                    xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+                }
             }
         }
         else {
@@ -942,8 +963,13 @@ void EspNow::handle_pair_request(const RxPacket &packet)
         tx_packet.len = sizeof(response);
         memcpy(tx_packet.data, &response, tx_packet.len);
         tx_packet.requires_ack = false;
-        if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+        if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
             ESP_LOGE(TAG, "Failed to queue pair rejection response.");
+        }
+        else {
+            if (tx_manager_task_handle_ != nullptr) {
+                xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+            }
         }
         return;
     }
@@ -978,8 +1004,13 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     tx_packet.len = sizeof(response);
     memcpy(tx_packet.data, &response, tx_packet.len);
     tx_packet.requires_ack = false;
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue pair acceptance response.");
+    }
+    else {
+        if (tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(tx_manager_task_handle_, NOTIFY_DATA, eSetBits);
+        }
     }
 }
 
@@ -1170,6 +1201,7 @@ void EspNow::update_wifi_channel(uint8_t channel)
             const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
             memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
             broadcast_peer.channel = channel;
+            broadcast_peer.ifidx   = WIFI_IF_STA;
             broadcast_peer.encrypt = false;
 
             esp_err_t err = esp_now_mod_peer(&broadcast_peer);
@@ -1306,16 +1338,26 @@ void EspNow::tx_manager_task(void *arg)
                 }
                 else if (notifications & NOTIFY_PHYSICAL_FAIL) {
                     phy_send_fail_count++;
-                    ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
-                             pending_ack_msg->sequence_number, phy_send_fail_count);
-                    if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
-                        ESP_LOGE(TAG,
-                                 "Max physical ACK failures reached. Triggering "
-                                 "SCANNING state.");
+                    if (pending_ack_msg) {
+                        ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
+                                 pending_ack_msg->sequence_number, phy_send_fail_count);
+
+                        if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
+                            ESP_LOGE(TAG,
+                                     "Max physical ACK failures reached. Triggering "
+                                     "SCANNING state.");
+                            phy_send_fail_count = 0;
+                            pending_ack_msg.reset();
+                            xTimerStop(self->ack_timeout_timer_handle_, 0);
+                            current_state = TxState::SCANNING;
+                        }
+                    }
+                    else {
+                        ESP_LOGW(TAG, "Physical send failed for non-ACK packet. Count: %d",
+                                 phy_send_fail_count);
+                        // For heartbeats/pairing, we don't trigger SCANNING here,
+                        // as they are periodic and will retry anyway.
                         phy_send_fail_count = 0;
-                        pending_ack_msg.reset();
-                        xTimerStop(self->ack_timeout_timer_handle_, 0);
-                        current_state = TxState::SCANNING;
                     }
                 }
                 else if (notifications & NOTIFY_ACK_TIMEOUT) {
