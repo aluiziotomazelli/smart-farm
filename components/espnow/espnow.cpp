@@ -386,6 +386,9 @@ esp_err_t EspNow::add_peer(NodeId node_id,
     esp_err_t result = ESP_FAIL;
     if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         result = add_peer_internal(node_id, mac, channel, type);
+        if (result == ESP_OK) {
+            save_peers();
+        }
         xSemaphoreGive(peers_mutex_);
     }
     return result;
@@ -453,6 +456,9 @@ esp_err_t EspNow::remove_peer(NodeId node_id)
     esp_err_t result = ESP_FAIL;
     if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         result = remove_peer_internal(node_id);
+        if (result == ESP_OK) {
+            save_peers();
+        }
         xSemaphoreGive(peers_mutex_);
     }
     return result;
@@ -568,7 +574,6 @@ esp_err_t EspNow::remove_peer_internal(NodeId node_id)
              static_cast<uint8_t>(node_id));
 
     peers_.erase(it);
-    save_peers();
     return ESP_OK;
 }
 
@@ -621,7 +626,6 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
 
             peers_.erase(it);
             peers_.insert(peers_.begin(), updated_peer);
-            save_peers();
             return ESP_OK;
         }
     }
@@ -654,7 +658,6 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
     new_peer.last_seen_ms = get_time_ms();
     new_peer.paired       = true;
     peers_.insert(peers_.begin(), new_peer);
-    save_peers();
 
     ESP_LOGI(TAG, "New peer %02X:%02X:%02X:%02X:%02X:%02X (ID: %" PRIu8 ") added.",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
