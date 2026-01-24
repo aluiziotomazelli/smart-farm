@@ -149,11 +149,11 @@ esp_err_t EspNow::init(const EspNowConfig &config)
 
     config_ = config;
 
-    // Ensure Wi-Fi mode is set so ESP-NOW can bind to an interface
+    // Ensure Wi-Fi mode is set before initializing ESP-NOW
     wifi_mode_t mode;
-    if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_NULL) {
-        ESP_LOGI(TAG, "Wi-Fi mode is NULL, setting to STA");
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    if (esp_wifi_get_mode(&mode) != ESP_OK || mode == WIFI_MODE_NULL) {
+        ESP_LOGE(TAG, "Wi-Fi mode is NULL or not set. Initialize Wi-Fi before EspNow.");
+        return ESP_ERR_INVALID_STATE;
     }
 
     // Persistence: Load peers and channel

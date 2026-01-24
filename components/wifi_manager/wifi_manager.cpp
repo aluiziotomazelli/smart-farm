@@ -290,6 +290,7 @@ void WiFiManager::wifiTask(void *pvParameters)
             switch (cmd.id) {
             case CommandId::START:
                 self->current_state_ = State::STARTING;
+                esp_wifi_set_mode(WIFI_MODE_STA);
                 esp_wifi_start();
                 break;
             case CommandId::STOP:
