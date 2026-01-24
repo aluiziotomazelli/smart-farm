@@ -8,6 +8,7 @@ list(APPEND EXTRA_COMPONENT_DIRS "../components/sensor_floatswitch")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/sensor_ultrasonic")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/common")
 list(APPEND EXTRA_COMPONENT_DIRS "../components/core")
+list(APPEND EXTRA_COMPONENT_DIRS "../components/espnow")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(unit-test-app)
