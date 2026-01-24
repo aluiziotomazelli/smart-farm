@@ -113,6 +113,7 @@ private:
     static constexpr uint32_t NOTIFY_ACK_TIMEOUT     = 0x40;
     static constexpr uint32_t NOTIFY_PAIRING_TIMEOUT = 0x80;
     static constexpr uint32_t NOTIFY_STOP            = 0x100;
+    static constexpr uint32_t NOTIFY_LINK_ALIVE      = 0x200;
 
     // --- FSM and TX Task Structures ---
     struct TxPacket
