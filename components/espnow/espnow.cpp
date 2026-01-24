@@ -694,14 +694,11 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *info,
                              esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_FAIL) {
         // Notify the TX manager task about the physical layer failure.
-        // Note: logging from here is generally discouraged as it runs in Wi-Fi task context,
-        // but it's useful for debugging physical layer issues.
-        ESP_LOGI(TAG, "esp_now_send_cb: physical layer failure for MAC " MACSTR, MAC2STR(mac_addr));
         if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
             xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                         eSetBits);
@@ -1344,19 +1341,23 @@ void EspNow::tx_manager_task(void *arg)
                     if (pending_ack_msg) {
                         ESP_LOGW(TAG, "Physical ACK failed for seq %u. Count: %d",
                                  pending_ack_msg->sequence_number, phy_send_fail_count);
+
+                        if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
+                            ESP_LOGE(TAG,
+                                     "Max physical ACK failures reached. Triggering "
+                                     "SCANNING state.");
+                            phy_send_fail_count = 0;
+                            pending_ack_msg.reset();
+                            xTimerStop(self->ack_timeout_timer_handle_, 0);
+                            current_state = TxState::SCANNING;
+                        }
                     }
                     else {
-                        ESP_LOGW(TAG, "Physical send failed (no pending logical ACK). Count: %d",
+                        ESP_LOGW(TAG, "Physical send failed for non-ACK packet. Count: %d",
                                  phy_send_fail_count);
-                    }
-                    if (phy_send_fail_count >= MAX_LOGICAL_RETRIES) {
-                        ESP_LOGE(TAG,
-                                 "Max physical ACK failures reached. Triggering "
-                                 "SCANNING state.");
+                        // For heartbeats/pairing, we don't trigger SCANNING here,
+                        // as they are periodic and will retry anyway.
                         phy_send_fail_count = 0;
-                        pending_ack_msg.reset();
-                        xTimerStop(self->ack_timeout_timer_handle_, 0);
-                        current_state = TxState::SCANNING;
                     }
                 }
                 else if (notifications & NOTIFY_ACK_TIMEOUT) {
