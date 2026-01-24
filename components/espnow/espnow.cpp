@@ -171,6 +171,9 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     ESP_ERROR_CHECK(esp_now_register_recv_cb(esp_now_recv_cb));
     ESP_ERROR_CHECK(esp_now_register_send_cb(esp_now_send_cb));
 
+    // Ensure Wi-Fi hardware is on the configured channel
+    ESP_ERROR_CHECK(esp_wifi_set_channel(config_.wifi_channel, WIFI_SECOND_CHAN_NONE));
+
     esp_now_peer_info_t broadcast_peer = {};
     const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
