@@ -12,11 +12,6 @@
 // Logging TAG
 static const char *TAG = "EspNow";
 
-// Stack monitoring interval (ms)
-// TODO: Removed stack monitoring and logging and restore portMAX_DELAY blocking
-// waits
-#define STACK_MONITOR_INTERVAL_MS 5000
-
 // Singleton static members
 EspNow *EspNow::instance_ptr_              = nullptr;
 SemaphoreHandle_t EspNow::singleton_mutex_ = nullptr;
@@ -705,17 +700,11 @@ void EspNow::rx_dispatch_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
-    uint32_t last_stack_check = 0;
 
     ESP_LOGI(TAG, "rx_dispatch_task started.");
 
     while (true) {
-        uint32_t notifications = 0;
-        if (xTaskNotifyWait(0, NOTIFY_STOP, &notifications, 0) == pdTRUE) {
-            if (notifications & NOTIFY_STOP) break;
-        }
-
-        if (xQueueReceive(self->rx_dispatch_queue_, &packet, pdMS_TO_TICKS(500)) ==
+        if (xQueueReceive(self->rx_dispatch_queue_, &packet, portMAX_DELAY) ==
             pdTRUE) {
             // CRC Validation
             if (packet.len < CRC_SIZE) {
@@ -769,13 +758,6 @@ void EspNow::rx_dispatch_task(void *arg)
                          static_cast<int>(header->msg_type));
                 break;
             }
-        }
-
-        uint32_t now = self->get_time_ms();
-        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
-            last_stack_check = now;
-            ESP_LOGI(TAG, "[Stack] rx_dispatch: %u bytes free",
-                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
     ESP_LOGI(TAG, "rx_dispatch_task exiting.");
@@ -1047,18 +1029,12 @@ void EspNow::transport_worker_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     RxPacket packet;
-    uint32_t last_stack_check = 0;
 
     ESP_LOGI(TAG, "transport_worker_task started.");
 
     while (true) {
-        uint32_t notifications = 0;
-        if (xTaskNotifyWait(0, NOTIFY_STOP, &notifications, 0) == pdTRUE) {
-            if (notifications & NOTIFY_STOP) break;
-        }
-
         if (xQueueReceive(self->transport_worker_queue_, &packet,
-                          pdMS_TO_TICKS(500)) == pdTRUE) {
+                          portMAX_DELAY) == pdTRUE) {
             if (packet.len < sizeof(MessageHeader) + CRC_SIZE) {
                 continue;
             }
@@ -1111,13 +1087,6 @@ void EspNow::transport_worker_task(void *arg)
             default:
                 break;
             }
-        }
-
-        uint32_t now = self->get_time_ms();
-        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
-            last_stack_check = now;
-            ESP_LOGI(TAG, "[Stack] transport_worker: %u bytes free",
-                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
         }
     }
     ESP_LOGI(TAG, "transport_worker_task exiting.");
@@ -1235,19 +1204,10 @@ void EspNow::tx_manager_task(void *arg)
         vTaskDelete(nullptr); // Abort task
     }
 
-    uint32_t last_stack_check = 0;
-
     ESP_LOGI(TAG, "tx_manager_task started.");
 
     while (true) {
         uint32_t notifications = 0;
-
-        uint32_t now = self->get_time_ms();
-        if (now - last_stack_check > STACK_MONITOR_INTERVAL_MS) {
-            last_stack_check = now;
-            ESP_LOGI(TAG, "[Stack] tx_manager: %u bytes free",
-                     (unsigned int)uxTaskGetStackHighWaterMark(NULL));
-        }
 
         switch (current_state) {
         case TxState::IDLE:
@@ -1263,7 +1223,7 @@ void EspNow::tx_manager_task(void *arg)
             if (xTaskNotifyWait(0,
                                 NOTIFY_DATA | NOTIFY_HEARTBEAT | NOTIFY_PAIRING |
                                     NOTIFY_PAIRING_TIMEOUT | NOTIFY_STOP,
-                                &notifications, pdMS_TO_TICKS(1000)) == pdTRUE) {
+                                &notifications, portMAX_DELAY) == pdTRUE) {
                 if (notifications & NOTIFY_STOP) {
                     goto exit;
                 }
@@ -1333,7 +1293,7 @@ void EspNow::tx_manager_task(void *arg)
                                 NOTIFY_LOGICAL_ACK | NOTIFY_PHYSICAL_FAIL |
                                     NOTIFY_ACK_TIMEOUT | NOTIFY_PAIRING_TIMEOUT |
                                     NOTIFY_STOP,
-                                &notifications, pdMS_TO_TICKS(1000)) == pdPASS) {
+                                &notifications, portMAX_DELAY) == pdPASS) {
                 if (notifications & NOTIFY_STOP) {
                     goto exit;
                 }
