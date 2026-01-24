@@ -180,9 +180,9 @@ esp_err_t EspNow::init(const EspNowConfig &config)
         return ESP_FAIL;
     }
 
-    rx_dispatch_queue_      = xQueueCreate(20, sizeof(RxPacket));
-    transport_worker_queue_ = xQueueCreate(10, sizeof(RxPacket));
-    tx_queue_               = xQueueCreate(10, sizeof(TxPacket));
+    rx_dispatch_queue_      = xQueueCreate(30, sizeof(RxPacket));
+    transport_worker_queue_ = xQueueCreate(20, sizeof(RxPacket));
+    tx_queue_               = xQueueCreate(20, sizeof(TxPacket));
     if (rx_dispatch_queue_ == nullptr || transport_worker_queue_ == nullptr ||
         tx_queue_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create internal queues.");
@@ -382,7 +382,7 @@ esp_err_t EspNow::add_peer(NodeId node_id,
     if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         result = add_peer_internal(node_id, mac, channel, type);
         if (result == ESP_OK) {
-            save_peers();
+            save_peers(true);
         }
         xSemaphoreGive(peers_mutex_);
     }
@@ -452,7 +452,7 @@ esp_err_t EspNow::remove_peer(NodeId node_id)
     if (xSemaphoreTake(peers_mutex_, portMAX_DELAY) == pdTRUE) {
         result = remove_peer_internal(node_id);
         if (result == ESP_OK) {
-            save_peers();
+            save_peers(true);
         }
         xSemaphoreGive(peers_mutex_);
     }
@@ -963,7 +963,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
                      "Updated heartbeat interval for Node ID %" PRIu8 " to %" PRIu32
                      " ms.",
                      static_cast<uint8_t>(it->node_id), it->heartbeat_interval_ms);
-            save_peers();
+            save_peers(false);
         }
 
         // Prepare accepted response
@@ -1149,13 +1149,13 @@ EspNow::PeerInfo EspNow::storage_to_info(const EspNowStorage::Peer &storage)
     return info;
 }
 
-void EspNow::save_peers()
+void EspNow::save_peers(bool force_nvs_commit)
 {
     std::vector<EspNowStorage::Peer> storage_peers;
     for (const auto &p : peers_) {
         storage_peers.push_back(info_to_storage(p));
     }
-    storage_.save(config_.wifi_channel, storage_peers);
+    storage_.save(config_.wifi_channel, storage_peers, force_nvs_commit);
 }
 
 void EspNow::update_wifi_channel(uint8_t channel)
@@ -1177,7 +1177,7 @@ void EspNow::update_wifi_channel(uint8_t channel)
                 ESP_LOGE(TAG, "Failed to update broadcast peer channel: %s",
                          esp_err_to_name(err));
             }
-            save_peers();
+            save_peers(true);
         }
         xSemaphoreGive(peers_mutex_);
     }

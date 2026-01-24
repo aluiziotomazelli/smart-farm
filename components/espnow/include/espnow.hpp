@@ -179,7 +179,7 @@ private:
     // Persistence helpers
     EspNowStorage::Peer info_to_storage(const PeerInfo &info);
     PeerInfo storage_to_info(const EspNowStorage::Peer &storage);
-    void save_peers();
+    void save_peers(bool force_nvs_commit = false);
     void update_wifi_channel(uint8_t channel);
 
     // Protocol Message Processing

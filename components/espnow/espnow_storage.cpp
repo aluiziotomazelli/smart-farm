@@ -117,7 +117,7 @@ esp_err_t EspNowStorage::load(uint8_t &wifi_channel, std::vector<Peer> &peers)
     }
 }
 
-esp_err_t EspNowStorage::save(uint8_t wifi_channel, const std::vector<Peer> &peers)
+esp_err_t EspNowStorage::save(uint8_t wifi_channel, const std::vector<Peer> &peers, bool force_nvs_commit)
 {
     PersistentData data;
     memset(&data, 0, sizeof(PersistentData));
@@ -132,11 +132,20 @@ esp_err_t EspNowStorage::save(uint8_t wifi_channel, const std::vector<Peer> &pee
 
     data.crc = calculate_crc(data);
 
-    // 1. Save to RTC
-    memcpy(&rtc_storage, &data, sizeof(PersistentData));
-    ESP_LOGI(TAG, "Saved data to RTC");
+    // 1. Check if change is real compared to RTC
+    bool is_dirty = (memcmp(&rtc_storage, &data, sizeof(PersistentData)) != 0);
 
-    // 2. Save to NVS
+    // 2. Save to RTC
+    if (is_dirty) {
+        memcpy(&rtc_storage, &data, sizeof(PersistentData));
+        ESP_LOGI(TAG, "Saved data to RTC");
+    }
+
+    if (!is_dirty && !force_nvs_commit) {
+        return ESP_OK;
+    }
+
+    // 3. Save to NVS
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         return err;

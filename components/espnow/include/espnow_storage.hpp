@@ -45,9 +45,10 @@ public:
      *
      * @param wifi_channel Current wifi channel.
      * @param peers Current peer list.
+     * @param force_nvs_commit If true, forces a save to NVS even if data seems unchanged.
      * @return ESP_OK if saved successfully, error otherwise.
      */
-    esp_err_t save(uint8_t wifi_channel, const std::vector<Peer> &peers);
+    esp_err_t save(uint8_t wifi_channel, const std::vector<Peer> &peers, bool force_nvs_commit = true);
 
     /**
      * @brief Internal structure for persistent data.
