@@ -24,8 +24,14 @@ void AppSlave::init()
     ESP_LOGI(TAG, "Initializing AppSlave...");
 
     auto &wifi = WiFiManager::instance();
-    wifi.init();
-    wifi.start();
+    if (wifi.init() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize WiFiManager");
+        return;
+    }
+    if (wifi.start() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WiFiManager");
+        return;
+    }
 
     app_queue_ = xQueueCreate(10, sizeof(EspNow::RxPacket));
     if (app_queue_ == nullptr) {
@@ -46,11 +52,18 @@ void AppSlave::init()
 
 void AppSlave::run()
 {
-    ESP_LOGI(TAG, "Running AppSlave...");
+    ESP_LOGI(TAG, "Starting AppSlave...");
     auto &espnow = EspNow::instance();
     espnow.start_pairing();
 
+    EspNow::RxPacket packet;
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Drain incoming messages
+        while (xQueueReceive(app_queue_, &packet, 0) == pdTRUE) {
+            ESP_LOGI(TAG, "Received packet in application queue.");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        ESP_LOGI(TAG, "Running AppSlave...");
     }
 }

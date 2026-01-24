@@ -149,6 +149,13 @@ esp_err_t EspNow::init(const EspNowConfig &config)
 
     config_ = config;
 
+    // Ensure Wi-Fi mode is set so ESP-NOW can bind to an interface
+    wifi_mode_t mode;
+    if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_NULL) {
+        ESP_LOGI(TAG, "Wi-Fi mode is NULL, setting to STA");
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    }
+
     // Persistence: Load peers and channel
     std::vector<EspNowStorage::Peer> stored_peers;
     uint8_t stored_channel;
@@ -168,6 +175,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
     broadcast_peer.channel = config_.wifi_channel;
+    broadcast_peer.ifidx   = WIFI_IF_STA;
     broadcast_peer.encrypt = false;
     ESP_ERROR_CHECK(esp_now_add_peer(&broadcast_peer));
 
@@ -221,6 +229,7 @@ esp_err_t EspNow::init(const EspNowConfig &config)
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, info.mac, 6);
                 peer_info.channel    = info.channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t add_result = esp_now_add_peer(&peer_info);
                 if (add_result == ESP_OK) {
@@ -597,6 +606,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel    = channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t add_result = esp_now_add_peer(&peer_info);
                 if (add_result != ESP_OK) {
@@ -607,6 +617,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
                 esp_now_peer_info_t peer_info = {};
                 memcpy(peer_info.peer_addr, mac, 6);
                 peer_info.channel    = channel;
+                peer_info.ifidx      = WIFI_IF_STA;
                 peer_info.encrypt    = false;
                 esp_err_t mod_result = esp_now_mod_peer(&peer_info);
                 if (mod_result != ESP_OK) {
@@ -639,6 +650,7 @@ esp_err_t EspNow::add_peer_internal(NodeId node_id,
     esp_now_peer_info_t peer_info = {};
     memcpy(peer_info.peer_addr, mac, 6);
     peer_info.channel    = channel;
+    peer_info.ifidx      = WIFI_IF_STA;
     peer_info.encrypt    = false;
     esp_err_t add_result = esp_now_add_peer(&peer_info);
     if (add_result != ESP_OK) {
@@ -687,7 +699,9 @@ void EspNow::esp_now_send_cb(const uint8_t *mac_addr,
 {
     if (status == ESP_NOW_SEND_FAIL) {
         // Notify the TX manager task about the physical layer failure.
-        // We avoid logging here as this callback runs in the Wi-Fi task context.
+        // Note: logging from here is generally discouraged as it runs in Wi-Fi task context,
+        // but it's useful for debugging physical layer issues.
+        ESP_LOGD(TAG, "esp_now_send_cb: physical layer failure for MAC " MACSTR, MAC2STR(mac_addr));
         if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
             xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
                         eSetBits);
@@ -896,7 +910,7 @@ void EspNow::handle_heartbeat(const RxPacket &packet)
             tx_packet.len = sizeof(response);
             memcpy(tx_packet.data, &response, tx_packet.len);
             tx_packet.requires_ack = false;
-            if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+            if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
                 ESP_LOGE(TAG, "Failed to queue heartbeat response.");
             }
         }
@@ -942,7 +956,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
         tx_packet.len = sizeof(response);
         memcpy(tx_packet.data, &response, tx_packet.len);
         tx_packet.requires_ack = false;
-        if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
             ESP_LOGE(TAG, "Failed to queue pair rejection response.");
         }
         return;
@@ -978,7 +992,7 @@ void EspNow::handle_pair_request(const RxPacket &packet)
     tx_packet.len = sizeof(response);
     memcpy(tx_packet.data, &response, tx_packet.len);
     tx_packet.requires_ack = false;
-    if (xQueueSend(tx_queue_, &tx_packet, 0) != pdTRUE) {
+    if (xQueueSend(tx_queue_, &tx_packet, pdMS_TO_TICKS(10)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to queue pair acceptance response.");
     }
 }
@@ -1170,6 +1184,7 @@ void EspNow::update_wifi_channel(uint8_t channel)
             const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
             memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
             broadcast_peer.channel = channel;
+            broadcast_peer.ifidx   = WIFI_IF_STA;
             broadcast_peer.encrypt = false;
 
             esp_err_t err = esp_now_mod_peer(&broadcast_peer);
