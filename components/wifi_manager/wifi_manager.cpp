@@ -95,7 +95,10 @@ esp_err_t WiFiManager::init()
         ESP_LOGW(TAG, "Event loop already created.");
     }
 
-    sta_netif_ptr_ = esp_netif_create_default_wifi_sta();
+    sta_netif_ptr_ = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta_netif_ptr_ == nullptr) {
+        sta_netif_ptr_ = esp_netif_create_default_wifi_sta();
+    }
     if (sta_netif_ptr_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create default STA netif");
         return ESP_FAIL;
@@ -103,11 +106,14 @@ esp_err_t WiFiManager::init()
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     err                    = esp_wifi_init(&cfg);
-    if (err != ESP_OK) {
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_wifi_init: %s", esp_err_to_name(err));
         esp_netif_destroy(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
         return err;
+    }
+    if (err == ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "WiFi stack already initialized.");
     }
 
     err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
@@ -227,6 +233,9 @@ esp_err_t WiFiManager::deinit()
                 vTaskDelay(pdMS_TO_TICKS(10));
                 retry++;
             }
+            if (task_handle_ == nullptr) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
         }
 
         if (task_handle_ != nullptr) {
@@ -260,11 +269,6 @@ esp_err_t WiFiManager::deinit()
     if (wifi_event_group_ != nullptr) {
         vEventGroupDelete(wifi_event_group_);
         wifi_event_group_ = nullptr;
-    }
-
-    esp_err_t err = esp_event_loop_delete_default();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "Failed to delete default event loop: %s", esp_err_to_name(err));
     }
 
     xSemaphoreTake(state_mutex_, portMAX_DELAY);
@@ -555,8 +559,8 @@ void WiFiManager::wifiTask(void *pvParameters)
 
             case CommandId::EXIT:
                 ESP_LOGI(TAG, "WiFi Task exiting...");
-                self->task_handle_ = nullptr;
                 xSemaphoreGive(self->state_mutex_);
+                self->task_handle_ = nullptr;
                 vTaskDelete(NULL);
                 return; // Should not reach here
             }
