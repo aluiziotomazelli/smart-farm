@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_event.h"
+#include "esp_netif.h"
 #include <cstdint>
 #include <string>
 #include "freertos/FreeRTOS.h"
@@ -147,6 +148,7 @@ private:
         DISCONNECT,
         HANDLE_EVENT_WIFI,
         HANDLE_EVENT_IP,
+        EXIT,
     };
 
     struct Command
@@ -174,6 +176,8 @@ private:
 
     esp_event_handler_instance_t wifi_event_instance_;
     esp_event_handler_instance_t ip_event_instance_;
+    esp_netif_t *sta_netif_ptr_;
+
     static void wifiEventHandler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
