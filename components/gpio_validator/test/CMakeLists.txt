@@ -1,9 +1,8 @@
-idf_component_register(
-    SRCS 
-        "test_gpio_validator.cpp"
-    INCLUDE_DIRS 
-        "."
-    REQUIRES 
-        gpio_validator
-        unity
-)
+# The following lines of boilerplate have to be in your project's CMakeLists
+# file in this exact order for cmake to work correctly
+cmake_minimum_required(VERSION 3.16)
+
+set(EXTRA_COMPONENT_DIRS "..")
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(test_gpio_validator)

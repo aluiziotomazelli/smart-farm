@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "test_power_control.cpp"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        unity
+        power_control
+        gpio_validator
+    WHOLE_ARCHIVE
+)

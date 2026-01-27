@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esp_err.h"
 #include "protocol_types.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -85,7 +86,7 @@ public:
      *
      * @return true if initialization succeeded, false otherwise.
      */
-    bool init();
+    esp_err_t init();
 
     /**
      * @brief Performs a complete distance measurement cycle.

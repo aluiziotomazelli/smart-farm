@@ -2,10 +2,10 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_rom_crc.h"
-#include <cinttypes>
 #include "nvs.h"
 #include "nvs_flash.h"
 #include <algorithm>
+#include <cinttypes>
 #include <cstring>
 
 static const char *TAG           = "EspNowStorage";
@@ -91,33 +91,40 @@ esp_err_t EspNowStorage::load(uint8_t &wifi_channel, std::vector<Peer> &peers)
     err         = nvs_get_blob(handle, NVS_KEY, &nvs_data, &size);
     nvs_close(handle);
 
-    if (err == ESP_OK && size == sizeof(PersistentData)) {
-        calculated_crc = calculate_crc(nvs_data);
-        if (nvs_data.magic == ESPNOW_STORAGE_MAGIC &&
-            nvs_data.version == ESPNOW_STORAGE_VERSION &&
-            nvs_data.crc == calculated_crc) {
-            ESP_LOGI(TAG, "Loaded data from NVS");
-            wifi_channel = nvs_data.wifi_channel;
-            peers.clear();
-            for (int i = 0; i < nvs_data.num_peers; ++i) {
-                peers.push_back(nvs_data.peers[i]);
-            }
-            // Update RTC for next time
-            memcpy(&rtc_storage, &nvs_data, sizeof(PersistentData));
-            return ESP_OK;
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS data not found: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (size != sizeof(PersistentData)) {
+        ESP_LOGW(TAG, "NVS data has wrong size: %zu (expected: %zu)", size,
+                 sizeof(PersistentData));
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    calculated_crc = calculate_crc(nvs_data);
+    if (nvs_data.magic == ESPNOW_STORAGE_MAGIC &&
+        nvs_data.version == ESPNOW_STORAGE_VERSION &&
+        nvs_data.crc == calculated_crc) {
+        ESP_LOGI(TAG, "Loaded data from NVS");
+        wifi_channel = nvs_data.wifi_channel;
+        peers.clear();
+        for (int i = 0; i < nvs_data.num_peers; ++i) {
+            peers.push_back(nvs_data.peers[i]);
         }
-        else {
-            ESP_LOGE(TAG, "NVS data corrupted");
-            return ESP_FAIL;
-        }
+        // Update RTC for next time
+        memcpy(&rtc_storage, &nvs_data, sizeof(PersistentData));
+        return ESP_OK;
     }
     else {
-        ESP_LOGW(TAG, "NVS data not found or wrong size: %s", esp_err_to_name(err));
-        return err;
+        ESP_LOGE(TAG, "NVS data corrupted");
+        return ESP_FAIL;
     }
 }
 
-esp_err_t EspNowStorage::save(uint8_t wifi_channel, const std::vector<Peer> &peers, bool force_nvs_commit)
+esp_err_t EspNowStorage::save(uint8_t wifi_channel,
+                              const std::vector<Peer> &peers,
+                              bool force_nvs_commit)
 {
     PersistentData data;
     memset(&data, 0, sizeof(PersistentData));
@@ -172,3 +179,28 @@ esp_err_t EspNowStorage::save(uint8_t wifi_channel, const std::vector<Peer> &pee
 
     return err;
 }
+
+#if UNIT_TESTING
+void EspNowStorage::test_reset_rtc()
+{
+    ESP_LOGD(TAG, "Test: Resetting RTC storage");
+    memset(&rtc_storage, 0, sizeof(PersistentData));
+}
+
+EspNowStorage::PersistentData &EspNowStorage::test_get_rtc()
+{
+    return rtc_storage;
+}
+
+void EspNowStorage::test_inject_rtc(const PersistentData &data)
+{
+    ESP_LOGD(TAG, "Test: Injecting data into RTC storage");
+    memcpy(&rtc_storage, &data, sizeof(PersistentData));
+}
+
+uint32_t EspNowStorage::test_calculate_crc(const PersistentData &data)
+{
+    size_t length = offsetof(PersistentData, crc);
+    return esp_rom_crc32_le(0, reinterpret_cast<const uint8_t *>(&data), length);
+}
+#endif

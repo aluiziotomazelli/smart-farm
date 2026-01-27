@@ -1,11 +1,10 @@
-idf_component_register(
-    SRCS 
-        "test_ultrasonic_sensor.cpp"
-    INCLUDE_DIRS 
-        "."
-    REQUIRES 
-        unity
-        sensor_ultrasonic
-)
+# The following lines of boilerplate have to be in your project's CMakeLists
+# file in this exact order for cmake to work correctly
+cmake_minimum_required(VERSION 3.16)
 
-target_compile_definitions(${COMPONENT_LIB} PUBLIC -DUNIT_TEST)
+list(APPEND EXTRA_COMPONENT_DIRS "..")
+list(APPEND EXTRA_COMPONENT_DIRS "../../gpio_validator")
+list(APPEND EXTRA_COMPONENT_DIRS "../../common")
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(test_sensor_ultrasonic)

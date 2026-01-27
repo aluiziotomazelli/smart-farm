@@ -1,10 +1,9 @@
-idf_component_register(
-    SRCS 
-        "test_power_control.cpp"
-    INCLUDE_DIRS 
-        "."
-    REQUIRES 
-        unity
-        power_control
-        gpio_validator
-)
+# The following lines of boilerplate have to be in your project's CMakeLists
+# file in this exact order for cmake to work correctly
+cmake_minimum_required(VERSION 3.16)
+
+list(APPEND EXTRA_COMPONENT_DIRS "..")
+list(APPEND EXTRA_COMPONENT_DIRS "../../gpio_validator")
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(test_power_control)

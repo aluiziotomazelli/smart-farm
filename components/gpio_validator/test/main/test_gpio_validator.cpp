@@ -1,7 +1,8 @@
-// gpio_validator_test.cpp
+// test_gpio_validator.cpp
 #include "esp_log.h"
 #include "gpio_validator.hpp"
 #include "unity.h"
+#include "unity_test_runner.h"
 
 static const char *TAG = "GpioValidatorTest";
 
@@ -33,6 +34,10 @@ static const gpio_num_t FLASH_PINS[]      = {GPIO_NUM_12, GPIO_NUM_13, GPIO_NUM_
 static const gpio_num_t INPUT_ONLY_PINS[] = {}; // Not aplicable for ESP32-C3
 static const gpio_num_t WARNING_PINS[]    = {GPIO_NUM_2, GPIO_NUM_8, GPIO_NUM_9,
                                              GPIO_NUM_18, GPIO_NUM_19};
+#else
+static const gpio_num_t FLASH_PINS[]      = {};
+static const gpio_num_t INPUT_ONLY_PINS[] = {};
+static const gpio_num_t WARNING_PINS[]    = {};
 #endif
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))

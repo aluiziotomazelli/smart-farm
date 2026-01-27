@@ -1,16 +1,23 @@
 {
-    "idf.espIdfPath": "/home/german/dev/esp/esp-idf",
-    "idf.toolsPath": "/home/german/.espressif",
-    "idf.customExtraVars": {
-        "IDF_TARGET": "esp32s3"
-    },
-    "idf.openOcdConfigs": [
-        "board/esp32s3-builtin.cfg"
-    ],
-    "clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
-    "clangd.arguments": [
-        "--background-index",
-        "--query-driver=/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32s3-elf-g++,/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc",
-        "--compile-commands-dir=/home/german/dev/workspaces/smart-farm/app_central_hub/build"
-    ]
+  "clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--log=verbose",
+    "--header-insertion=never",
+    "--compile-commands-dir=${workspaceFolder}/build",
+    "--query-driver=/home/german/.espressif/tools/**/bin/*",
+    // "--query-driver=/home/german/.espressif/tools/xtensa-esp-elf/**/bin/xtensa-esp32s3-elf-gcc"
+  ],
+  // esp-idf
+  "idf.espIdfPath": "/home/german/dev/esp/esp-idf",
+  "idf.toolsPath": "/home/german/.espressif",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+  "idf.cmakeCompilerArgs": [
+    "-DEXTRA_COMPONENT_DIRS=../components"
+  ],
+  "idf.adapterTargetName": "esp32s3",
+  "idf.port": "/dev/ttyACM0",
+  "idf.flashType": "JTAG"
 }

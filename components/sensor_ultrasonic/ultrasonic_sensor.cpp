@@ -1,4 +1,5 @@
 #include "ultrasonic_sensor.hpp"
+#include "gpio_validator.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
@@ -46,11 +47,17 @@ UltrasonicSensor::UltrasonicSensor(gpio_num_t trig_pin,
     }
 }
 
-bool UltrasonicSensor::init()
+esp_err_t UltrasonicSensor::init()
 {
     ESP_LOGD(TAG, "Initializing GPIO interface for UltrasonicSensor");
 
     // Configure TRIG pin as output
+    esp_err_t ret;
+    ret = GpioValidator::validate(trig_pin_, GpioValidator::Mode::OUTPUT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to validate TRIG pin");
+        return ret;
+    }
     gpio_reset_pin(trig_pin_);
     gpio_config_t io_conf = {
         .pin_bit_mask = 1ULL << trig_pin_,
@@ -59,14 +66,20 @@ bool UltrasonicSensor::init()
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
-    if (gpio_config(&io_conf) != ESP_OK) {
+    ret = gpio_config(&io_conf);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure TRIG pin");
-        return false;
+        return ret;
     }
     ESP_LOGI(TAG, "TRIG pin configured");
     gpio_set_level(trig_pin_, 0);
 
     // Configure ECHO pin as input
+    ret = GpioValidator::validate(echo_pin_, GpioValidator::Mode::OUTPUT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to validate ECHO pin");
+        return ret;
+    }
     gpio_reset_pin(echo_pin_);
     io_conf = {
         .pin_bit_mask = 1ULL << echo_pin_,
@@ -75,19 +88,24 @@ bool UltrasonicSensor::init()
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
-    if (gpio_config(&io_conf) != ESP_OK) {
+    ret = gpio_config(&io_conf);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure ECHO pin");
-        return false;
+        return ret;
     }
 
     // Configure ECHO pin as output, set it to low, pull it to ground
     // and clear sensor noise from any residual interference
-    gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
+    ret = gpio_set_direction(echo_pin_, GPIO_MODE_OUTPUT);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure ECHO pin");
+        return ret;
+    }
     gpio_set_level(echo_pin_, 0);
 
     ESP_LOGI(TAG, "ECHO pin configured");
 
-    return true;
+    return ESP_OK;
 }
 
 bool UltrasonicSensor::readRaw_cm_(float &cm, UsFailure &out_failure)

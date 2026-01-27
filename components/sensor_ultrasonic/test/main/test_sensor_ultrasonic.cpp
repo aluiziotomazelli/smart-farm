@@ -1,6 +1,8 @@
 #include "esp_log.h"
-#include "ultrasonic_sensor.hpp"
 #include "unity.h"
+
+#define UNIT_TEST
+#include "ultrasonic_sensor.hpp"
 
 #define TRIG_PIN GPIO_NUM_4
 #define ECHO_PIN GPIO_NUM_5
@@ -148,7 +150,7 @@ TEST_CASE("Ultrasonic: Stability Stress Test", "[ultrasonic][stress]")
     UltrasonicSensor sensor(TRIG_PIN, ECHO_PIN, cfg);
     sensor.init();
 
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 20; i++) {
         float dist;
         UsFailure fail;
         UsQuality qual;

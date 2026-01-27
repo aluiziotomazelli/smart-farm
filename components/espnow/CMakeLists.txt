@@ -16,3 +16,8 @@ idf_component_register(
     PRIV_REQUIRES
         esp_common
 )
+
+# Conditional compilation for unit testing
+# if(CONFIG_UNIT_TESTING)
+#     target_compile_definitions(${COMPONENT_LIB} INTERFACE "-DCONFIG_UNIT_TESTING=1")
+# endif()

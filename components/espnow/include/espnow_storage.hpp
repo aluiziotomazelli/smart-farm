@@ -2,7 +2,9 @@
 
 #include "esp_err.h"
 #include "protocol_types.hpp"
+
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 /**
@@ -67,7 +69,17 @@ public:
     };
 
 private:
-    static PersistentData rtc_storage;
     esp_err_t init_nvs();
     uint32_t calculate_crc(const PersistentData &data);
+    static PersistentData rtc_storage;
+
+    // #define UNIT_TESTING 1
+public:
+#if UNIT_TESTING
+    static void test_reset_rtc();
+    static PersistentData &test_get_rtc();
+    static void test_inject_rtc(const PersistentData &data);
+    static uint32_t test_calculate_crc(
+        const PersistentData &data); // também estático
+#endif
 };

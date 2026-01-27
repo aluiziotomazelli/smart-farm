@@ -154,10 +154,11 @@ void WaterTankApp::configureSleepPolicy(uint64_t timer_us)
         esp_sleep_enable_timer_wakeup(timer_us);
     }
 
-    // Use the new, safe method from FloatSwitch to decide if GPIO wakeup should be armed.
-    // This prevents wake-up loops.
+    // Use the new, safe method from FloatSwitch to decide if GPIO wakeup should be
+    // armed. This prevents wake-up loops.
     if (floatswitch.shouldEnableWakeup()) {
-        // The wakeup level (HIGH/LOW) depends on the physical connection (active_level).
+        // The wakeup level (HIGH/LOW) depends on the physical connection
+        // (active_level).
         esp_deepsleep_gpio_wake_up_mode_t wakeup_mode =
             (fs_cfg.active_level == FloatSwitch::ActiveLevel::HIGH)
                 ? ESP_GPIO_WAKEUP_GPIO_HIGH
@@ -242,7 +243,8 @@ void WaterTankApp::onEspNowReceive(uint8_t node_id,
                                    int len,
                                    int8_t rssi)
 {
-    ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id, rssi);
+    ESP_LOGI(TAG, "Received %d bytes from node %u (RSSI: %d dBm)", len, node_id,
+             rssi);
     // This device is a sensor, so it primarily sends data.
 }
 
@@ -368,8 +370,8 @@ void WaterTankApp::run()
         WaterLevelReport report = createWaterLevelReport();
 
         // 2. Update application state and statistics based on the new report.
-        storage_.updateStatus(report.level_permille, report.distance_cm, report.quality,
-                              report.failure);
+        storage_.updateStatus(report.level_permille, report.distance_cm,
+                              report.quality, report.failure);
 
         // 3. Update the operation mode (normal vs. backup).
         updateOperationMode();
@@ -399,7 +401,8 @@ void WaterTankApp::run()
                  app_stats.level_permille, app_stats.last_distance_cm,
                  (int)app_stats.quality, (int)app_stats.failure,
                  (int)app_stats.fill_state);
-        ESP_LOGI(TAG, "Stats - Total: %lu, OK: %lu, WEAK: %lu, INV: %lu, Timeout: %lu",
+        ESP_LOGI(TAG,
+                 "Stats - Total: %lu, OK: %lu, WEAK: %lu, INV: %lu, Timeout: %lu",
                  app_stats.measure_count, app_stats.ok_count, app_stats.weak_count,
                  app_stats.invalid_count, app_stats.timeout_count);
         ESP_LOGI(TAG, "Core - Boot: %lu, Crash: %lu", core_data.boot_count,
@@ -407,7 +410,8 @@ void WaterTankApp::run()
         ESP_LOGI(TAG, "Mode - Backup: %s, Consecutive Fails: %u",
                  app_stats.backup_mode_active ? "YES" : "NO",
                  app_stats.consecutive_failures);
-        ESP_LOGI(TAG, "Entering deep sleep for %lu seconds", core_data.sleep_interval_s);
+        ESP_LOGI(TAG, "Entering deep sleep for %lu seconds",
+                 core_data.sleep_interval_s);
 
         vTaskDelay(pdMS_TO_TICKS(2000));
         // esp_deep_sleep_start();

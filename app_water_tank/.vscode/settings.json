@@ -1,16 +1,27 @@
 {
-  "idf.espIdfPath": "/home/german/dev/esp/esp-idf",
-  "idf.toolsPath": "/home/german/.espressif",
-  "idf.customExtraVars": {
-    "IDF_TARGET": "esp32s3"
-  },
   "clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
   "clangd.arguments": [
     "--background-index",
     "--query-driver=/home/german/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-g++,/home/german/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-gcc",
     "--compile-commands-dir=/home/german/dev/workspaces/smart-farm/app_water_tank/build"
   ],
+  // c/c++
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.cStandard": "c11",
+  "files.associations": {
+    "*.h": "c"
+  },
+  // esp-idf
+  "idf.espIdfPath": "/home/german/dev/esp/esp-idf",
+  "idf.toolsPath": "/home/german/.espressif",
+  "idf.cmakeCompilerArgs": [
+    "-DEXTRA_COMPONENT_DIRS=../components"
+  ],
+  "idf.adapterTargetName": "esp32c3",
+  "idf.port": "/dev/ttyACM0",
+  "idf.flashType": "JTAG",
   "idf.openOcdConfigs": [
-    "board/esp32s3-builtin.cfg"
-  ]
+    "board/esp32c3-builtin.cfg"
+  ],
 }

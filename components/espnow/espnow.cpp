@@ -152,7 +152,8 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     // Ensure Wi-Fi mode is set before initializing ESP-NOW
     wifi_mode_t mode;
     if (esp_wifi_get_mode(&mode) != ESP_OK || mode == WIFI_MODE_NULL) {
-        ESP_LOGE(TAG, "Wi-Fi mode is NULL or not set. Initialize Wi-Fi before EspNow.");
+        ESP_LOGE(TAG,
+                 "Wi-Fi mode is NULL or not set. Initialize Wi-Fi before EspNow.");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -172,7 +173,8 @@ esp_err_t EspNow::init(const EspNowConfig &config)
     ESP_ERROR_CHECK(esp_now_register_send_cb(esp_now_send_cb));
 
     // Ensure Wi-Fi hardware is on the configured channel
-    ESP_ERROR_CHECK(esp_wifi_set_channel(config_.wifi_channel, WIFI_SECOND_CHAN_NONE));
+    ESP_ERROR_CHECK(
+        esp_wifi_set_channel(config_.wifi_channel, WIFI_SECOND_CHAN_NONE));
 
     esp_now_peer_info_t broadcast_peer = {};
     const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -242,7 +244,8 @@ esp_err_t EspNow::init(const EspNowConfig &config)
                              MAC2STR(info.mac));
                 }
                 else {
-                    ESP_LOGE(TAG, "Persistence: Failed to restore peer " MACSTR ": %s",
+                    ESP_LOGE(TAG,
+                             "Persistence: Failed to restore peer " MACSTR ": %s",
                              MAC2STR(info.mac), esp_err_to_name(add_result));
                 }
             }
@@ -373,9 +376,10 @@ std::vector<NodeId> EspNow::get_offline_peers() const
             if (peer.heartbeat_interval_ms > 0) {
                 uint32_t timeout =
                     peer.heartbeat_interval_ms * HEARTBEAT_OFFLINE_MULTIPLIER;
-                // Only consider offline if we have seen it at least once (last_seen_ms > 0)
-                // and the timeout has expired.
-                if (peer.last_seen_ms > 0 && (now_ms - peer.last_seen_ms > timeout)) {
+                // Only consider offline if we have seen it at least once
+                // (last_seen_ms > 0) and the timeout has expired.
+                if (peer.last_seen_ms > 0 &&
+                    (now_ms - peer.last_seen_ms > timeout)) {
                     offline_peers.push_back(peer.node_id);
                 }
             }
@@ -703,12 +707,16 @@ void EspNow::esp_now_recv_cb(const esp_now_recv_info_t *info,
     }
 }
 
-void EspNow::esp_now_send_cb(const esp_now_send_info_t *info, esp_now_send_status_t status)
+void EspNow::esp_now_send_cb(const esp_now_send_info_t *info,
+                             esp_now_send_status_t status)
 {
     if (info->tx_status == WIFI_SEND_FAIL) {
-        if (instance_ptr_ != nullptr && instance_ptr_->tx_manager_task_handle_ != nullptr) {
-            xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL, eSetBits);
-            ESP_EARLY_LOGW(TAG, "ESP-NOW send failed to " MACSTR, MAC2STR(info->des_addr));
+        if (instance_ptr_ != nullptr &&
+            instance_ptr_->tx_manager_task_handle_ != nullptr) {
+            xTaskNotify(instance_ptr_->tx_manager_task_handle_, NOTIFY_PHYSICAL_FAIL,
+                        eSetBits);
+            ESP_EARLY_LOGW(TAG, "ESP-NOW send failed to " MACSTR,
+                           MAC2STR(info->des_addr));
         }
     }
 }
@@ -1093,7 +1101,8 @@ void EspNow::transport_worker_task(void *arg)
             const MessageHeader *header =
                 reinterpret_cast<const MessageHeader *>(packet.data);
 
-            // Any valid protocol message proves the link is alive and we are on the correct channel
+            // Any valid protocol message proves the link is alive and we are on the
+            // correct channel
             xTaskNotify(self->tx_manager_task_handle_, NOTIFY_LINK_ALIVE, eSetBits);
 
             switch (header->msg_type) {
@@ -1222,7 +1231,7 @@ void EspNow::update_wifi_channel(uint8_t channel)
 
             // Update broadcast peer channel
             esp_now_peer_info_t broadcast_peer = {};
-            const uint8_t broadcast_mac[]      = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+            const uint8_t broadcast_mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
             memcpy(broadcast_peer.peer_addr, broadcast_mac, 6);
             broadcast_peer.channel = channel;
             broadcast_peer.ifidx   = WIFI_IF_STA;
@@ -1243,11 +1252,12 @@ void EspNow::tx_manager_task(void *arg)
 {
     EspNow *self = static_cast<EspNow *>(arg);
     TxPacket packet_to_send;
-    TxState current_state              = TxState::IDLE;
-    static uint16_t sequence_counter   = 0;
+    TxState current_state            = TxState::IDLE;
+    static uint16_t sequence_counter = 0;
     std::optional<PendingAck> pending_ack_msg;
-    uint8_t phy_send_fail_count        = 0; // Fails for the current message waiting for ACK
-    uint8_t phy_consecutive_fail_count = 0; // Total consecutive fails regardless of state
+    uint8_t phy_send_fail_count = 0; // Fails for the current message waiting for ACK
+    uint8_t phy_consecutive_fail_count =
+        0; // Total consecutive fails regardless of state
 
     self->ack_timeout_timer_handle_ = xTimerCreate(
         "ack_timeout", pdMS_TO_TICKS(LOGICAL_ACK_TIMEOUT_MS), pdFALSE,
@@ -1292,10 +1302,13 @@ void EspNow::tx_manager_task(void *arg)
 
                 if (notifications & NOTIFY_PHYSICAL_FAIL) {
                     phy_consecutive_fail_count++;
-                    ESP_LOGW(TAG, "Physical failure detected in IDLE. Consecutive count: %d",
-                             phy_consecutive_fail_count);
+                    ESP_LOGW(
+                        TAG,
+                        "Physical failure detected in IDLE. Consecutive count: %d",
+                        phy_consecutive_fail_count);
                     if (phy_consecutive_fail_count >= 3) {
-                        ESP_LOGE(TAG, "Consecutive physical failures reached limit. Starting SCANNING.");
+                        ESP_LOGE(TAG, "Consecutive physical failures reached limit. "
+                                      "Starting SCANNING.");
                         phy_consecutive_fail_count = 0;
                         current_state              = TxState::SCANNING;
                         break;
@@ -1390,11 +1403,16 @@ void EspNow::tx_manager_task(void *arg)
                     phy_send_fail_count++;
                     phy_consecutive_fail_count++;
                     if (pending_ack_msg) {
-                        ESP_LOGW(TAG, "Physical failure for seq %u. Current msg fails: %d, Consecutive: %d",
-                                 pending_ack_msg->sequence_number, phy_send_fail_count, phy_consecutive_fail_count);
+                        ESP_LOGW(TAG,
+                                 "Physical failure for seq %u. Current msg fails: "
+                                 "%d, Consecutive: %d",
+                                 pending_ack_msg->sequence_number,
+                                 phy_send_fail_count, phy_consecutive_fail_count);
 
-                        if (phy_send_fail_count >= MAX_LOGICAL_RETRIES || phy_consecutive_fail_count >= 3) {
-                            ESP_LOGE(TAG, "Triggering SCANNING state due to physical failures.");
+                        if (phy_send_fail_count >= MAX_LOGICAL_RETRIES ||
+                            phy_consecutive_fail_count >= 3) {
+                            ESP_LOGE(TAG, "Triggering SCANNING state due to "
+                                          "physical failures.");
                             phy_send_fail_count        = 0;
                             phy_consecutive_fail_count = 0;
                             pending_ack_msg.reset();
@@ -1403,10 +1421,13 @@ void EspNow::tx_manager_task(void *arg)
                         }
                     }
                     else {
-                        ESP_LOGW(TAG, "Physical send failed for non-ACK packet. Consecutive: %d",
+                        ESP_LOGW(TAG,
+                                 "Physical send failed for non-ACK packet. "
+                                 "Consecutive: %d",
                                  phy_consecutive_fail_count);
                         if (phy_consecutive_fail_count >= 3) {
-                            ESP_LOGE(TAG, "Consecutive physical failures reached limit. Starting SCANNING.");
+                            ESP_LOGE(TAG, "Consecutive physical failures reached "
+                                          "limit. Starting SCANNING.");
                             phy_consecutive_fail_count = 0;
                             phy_send_fail_count        = 0;
                             current_state              = TxState::SCANNING;
@@ -1505,13 +1526,13 @@ void EspNow::tx_manager_task(void *arg)
                     self->send_packet(probe_packet.dest_mac, probe_packet.data,
                                       probe_packet.len);
 
-                    if (xTaskNotifyWait(0, NOTIFY_HUB_FOUND | NOTIFY_LINK_ALIVE, &notifications,
-                                        pdMS_TO_TICKS(SCAN_CHANNEL_TIMEOUT_MS)) ==
-                        pdPASS) {
+                    if (xTaskNotifyWait(
+                            0, NOTIFY_HUB_FOUND | NOTIFY_LINK_ALIVE, &notifications,
+                            pdMS_TO_TICKS(SCAN_CHANNEL_TIMEOUT_MS)) == pdPASS) {
                         if (notifications & (NOTIFY_HUB_FOUND | NOTIFY_LINK_ALIVE)) {
                             ESP_LOGI(TAG, "Hub found on channel %d. Re-syncing.",
                                      channel);
-                            hub_found = true;
+                            hub_found                  = true;
                             phy_consecutive_fail_count = 0;
                             break;
                         }

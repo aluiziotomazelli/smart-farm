@@ -1,0 +1,4 @@
+# Linux target configurations
+# The 'driver' component is not available on Linux, so we may need to mock it
+# or adjust dependencies if the component under test uses it heavily.
+CONFIG_IDF_TARGET_LINUX=y

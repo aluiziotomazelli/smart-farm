@@ -11,7 +11,7 @@ idf_component_register(
         sensor_floatswitch
         core
         power_control
-        espnow_comm
+        # espnow_comm
         # ota_manager
-        common_types
+        # common_types
 )
