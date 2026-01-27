@@ -1,11 +1,12 @@
 #include "esp_heap_caps.h"
+#include "test_memory_helper.h"
 #include "unity.h"
 #include "unity_test_runner.h"
 #include <stdio.h>
 
 int test_memory_leak_threshold = -500;
 
-void set_memory_leak_threshold(int threshold)
+extern void set_memory_leak_threshold(int threshold)
 {
     test_memory_leak_threshold = threshold;
 }

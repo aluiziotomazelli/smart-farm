@@ -9,6 +9,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+
 /**
  * @class WiFiManager
  * @brief Singleton class for managing WiFi connections on ESP32.
@@ -49,10 +50,17 @@ public:
     WiFiManager &operator=(const WiFiManager &) = delete;
 
     /**
-     * @brief Initialize the WiFi stack, creates the event queue and the manager task.
+     * @brief Initialize the WiFi stack, creates the event queue and the manager
+     * task.
      * @return ESP_OK on success, error code on failure.
      */
     esp_err_t init();
+
+    /**
+     * @brief Deinitialize the WiFi stack, clean up resources.
+     * @return ESP_OK on success, error code on failure.
+     */
+    esp_err_t deinit();
 
     /**
      * @brief Start the WiFi station mode (synchronous).
@@ -126,6 +134,8 @@ private:
     WiFiManager();
     ~WiFiManager();
 
+    esp_err_t init_nvs();
+
     // --- Internal Machinery ---
 
     // Command structure for the queue
@@ -155,16 +165,23 @@ private:
     static constexpr EventBits_t CONNECTED_BIT      = BIT2;
     static constexpr EventBits_t DISCONNECTED_BIT   = BIT3;
     static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4;
-    static constexpr EventBits_t ALL_SYNC_BITS =
-        STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT | CONNECT_FAILED_BIT;
+    static constexpr EventBits_t ALL_SYNC_BITS      = STARTED_BIT | STOPPED_BIT |
+                                                 CONNECTED_BIT | DISCONNECTED_BIT |
+                                                 CONNECT_FAILED_BIT;
 
     // Task and event handlers
     static void wifiTask(void *pvParameters);
+
+    esp_event_handler_instance_t wifi_event_instance_;
+    esp_event_handler_instance_t ip_event_instance_;
     static void wifiEventHandler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
                                  void *data);
-    static void ipEventHandler(void *arg, esp_event_base_t base, int32_t id, void *data);
+    static void ipEventHandler(void *arg,
+                               esp_event_base_t base,
+                               int32_t id,
+                               void *data);
 
     // Helper to send a command to the queue
     esp_err_t sendCommand(const Command &cmd, bool is_async);

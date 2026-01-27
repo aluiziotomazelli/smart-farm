@@ -3,8 +3,6 @@
 #include "unity_test_runner.h"
 #include <stdio.h>
 
-#define UNIT_TEST
-
 #define TEST_MEMORY_LEAK_THRESHOLD (-500)
 
 static size_t before_free_8bit;

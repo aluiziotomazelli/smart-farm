@@ -20,6 +20,7 @@ def test_gpio_validator(dut: Dut) -> None:
         time.sleep(1)
         try:
             # We look for a unique part of the menu prompt
+            # dut.expect_exact('Enter test name or number', timeout=5)
             dut.expect_exact('the test menu, pick your combo', timeout=5)
             break
         except Exception:

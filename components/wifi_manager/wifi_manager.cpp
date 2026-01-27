@@ -46,11 +46,31 @@ WiFiManager::~WiFiManager()
 // Public API
 // =================================================================================================
 
+esp_err_t WiFiManager::init_nvs()
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS partition invalid, erasing");
+        err = nvs_flash_erase();
+        if (err != ESP_OK) {
+            return err;
+        }
+        err = nvs_flash_init();
+    }
+    return err;
+}
+
 esp_err_t WiFiManager::init()
 {
     if (getState() != State::UNINITIALIZED) {
         ESP_LOGI(TAG, "Already initialized.");
         return ESP_OK;
+    }
+
+    esp_err_t err = init_nvs();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
+        return err;
     }
 
     ESP_LOGI(TAG, "Initializing network stack...");
@@ -65,9 +85,11 @@ esp_err_t WiFiManager::init()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiManager::wifiEventHandler, this, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(
-        IP_EVENT, ESP_EVENT_ANY_ID, &WiFiManager::ipEventHandler, this, nullptr));
+        WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiManager::wifiEventHandler, this,
+        &wifi_event_instance_));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID,
+                                                        &WiFiManager::ipEventHandler,
+                                                        this, &ip_event_instance_));
 
     command_queue_    = xQueueCreate(10, sizeof(Command));
     wifi_event_group_ = xEventGroupCreate();
@@ -85,6 +107,74 @@ esp_err_t WiFiManager::init()
 
     current_state_ = State::INITIALIZED;
     ESP_LOGI(TAG, "WiFi Manager initialized.");
+    return ESP_OK;
+}
+
+esp_err_t WiFiManager::deinit()
+{
+    State current_state = getState();
+    ESP_LOGI(TAG, "Deinitializing WiFi Manager...");
+    if (current_state == State::UNINITIALIZED) {
+        ESP_LOGI(TAG, "Already uninitialized.");
+        return ESP_OK;
+    }
+
+    if (current_state >= State::STARTING) {
+        ESP_LOGI(TAG, "WiFi is running, stopping first...");
+
+        esp_err_t ret = stop(2000);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "WiFi stopped during deinit");
+        }
+        else {
+            ESP_LOGW(TAG, "WiFi failed to stop during deinit");
+            return ret;
+        }
+    }
+
+    esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                          wifi_event_instance_);
+    esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID,
+                                          ip_event_instance_);
+
+    if (task_handle_ != nullptr) {
+        ESP_LOGI(TAG, "Stopping WiFi task...");
+        vTaskDelete(task_handle_);
+        task_handle_ = nullptr;
+        ESP_LOGI(TAG, "WiFi task terminated.");
+    }
+
+    esp_err_t ret = esp_wifi_deinit();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi stack deinitialized.");
+    }
+    else if (ret == ESP_ERR_WIFI_NOT_INIT) {
+        ESP_LOGI(TAG, "WiFi stack was already deinitialized.");
+        ret = ESP_OK; // Not an error
+    }
+    else {
+        ESP_LOGW(TAG, "WiFi stack deinit failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    if (wifi_netif_ != nullptr) {
+        esp_netif_destroy(wifi_netif_);
+        wifi_netif_ = nullptr;
+    }
+
+    if (command_queue_ != nullptr) {
+        vQueueDelete(command_queue_);
+        command_queue_ = nullptr;
+    }
+    if (wifi_event_group_ != nullptr) {
+        vEventGroupDelete(wifi_event_group_);
+        wifi_event_group_ = nullptr;
+    }
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    current_state_ = State::UNINITIALIZED;
+    xSemaphoreGive(state_mutex_);
+
+    ESP_LOGI(TAG, "WiFi Manager deinitialized.");
     return ESP_OK;
 }
 
@@ -139,8 +229,8 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
     }
 
     EventBits_t bits =
-        xEventGroupWaitBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT, pdTRUE,
-                            pdFALSE, pdMS_TO_TICKS(timeout_ms));
+        xEventGroupWaitBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT,
+                            pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & CONNECTED_BIT) {
         return ESP_OK;
@@ -153,7 +243,8 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
     }
 }
 
-esp_err_t WiFiManager::connect_async(const std::string &ssid, const std::string &password)
+esp_err_t WiFiManager::connect_async(const std::string &ssid,
+                                     const std::string &password)
 {
     ESP_LOGI(TAG, "API: Requesting to connect (async)...");
     Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
@@ -170,8 +261,9 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
         return ESP_FAIL;
     }
 
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT, pdTRUE,
-                                           pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    EventBits_t bits =
+        xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT, pdTRUE, pdFALSE,
+                            pdMS_TO_TICKS(timeout_ms));
 
     if (bits & DISCONNECTED_BIT) {
         return ESP_OK;
@@ -270,7 +362,10 @@ void WiFiManager::wifiEventHandler(void *arg,
     xQueueSendFromISR(self->command_queue_, &cmd, nullptr);
 }
 
-void WiFiManager::ipEventHandler(void *arg, esp_event_base_t base, int32_t id, void *data)
+void WiFiManager::ipEventHandler(void *arg,
+                                 esp_event_base_t base,
+                                 int32_t id,
+                                 void *data)
 {
     WiFiManager *self = static_cast<WiFiManager *>(arg);
     Command cmd       = {.id = CommandId::HANDLE_EVENT_IP, .event_id = id};
