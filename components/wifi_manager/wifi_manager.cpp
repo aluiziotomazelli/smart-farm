@@ -65,14 +65,19 @@ esp_err_t WiFiManager::init_nvs()
 
 esp_err_t WiFiManager::init()
 {
-    if (getState() != State::UNINITIALIZED) {
-        ESP_LOGI(TAG, "Already initialized.");
+    xSemaphoreTake(state_mutex_, portMAX_DELAY);
+    if (current_state_ != State::UNINITIALIZED) {
+        xSemaphoreGive(state_mutex_);
+        ESP_LOGI(TAG, "Already initialized or initializing.");
         return ESP_OK;
     }
+    current_state_ = State::INITIALIZING;
+    xSemaphoreGive(state_mutex_);
 
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
 
@@ -80,6 +85,7 @@ esp_err_t WiFiManager::init()
     err = esp_netif_init();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_netif_init: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -89,6 +95,7 @@ esp_err_t WiFiManager::init()
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to create event loop: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -101,6 +108,7 @@ esp_err_t WiFiManager::init()
     }
     if (sta_netif_ptr_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create default STA netif");
+        deinit();
         return ESP_FAIL;
     }
 
@@ -108,8 +116,7 @@ esp_err_t WiFiManager::init()
     err                    = esp_wifi_init(&cfg);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_wifi_init: %s", esp_err_to_name(err));
-        esp_netif_destroy(sta_netif_ptr_);
-        sta_netif_ptr_ = nullptr;
+        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -121,9 +128,7 @@ esp_err_t WiFiManager::init()
                                               &wifi_event_instance_);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register WIFI handler: %s", esp_err_to_name(err));
-        esp_wifi_deinit();
-        esp_netif_destroy(sta_netif_ptr_);
-        sta_netif_ptr_ = nullptr;
+        deinit();
         return err;
     }
 
@@ -132,12 +137,7 @@ esp_err_t WiFiManager::init()
                                               &ip_event_instance_);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register IP handler: %s", esp_err_to_name(err));
-        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                              wifi_event_instance_);
-        wifi_event_instance_ = nullptr;
-        esp_wifi_deinit();
-        esp_netif_destroy(sta_netif_ptr_);
-        sta_netif_ptr_ = nullptr;
+        deinit();
         return err;
     }
 
@@ -145,23 +145,7 @@ esp_err_t WiFiManager::init()
     wifi_event_group_ = xEventGroupCreate();
     if (!command_queue_ || !wifi_event_group_) {
         ESP_LOGE(TAG, "Failed to create queue or event group");
-        if (command_queue_) {
-            vQueueDelete(command_queue_);
-            command_queue_ = nullptr;
-        }
-        if (wifi_event_group_) {
-            vEventGroupDelete(wifi_event_group_);
-            wifi_event_group_ = nullptr;
-        }
-        esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID,
-                                              ip_event_instance_);
-        ip_event_instance_ = nullptr;
-        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                              wifi_event_instance_);
-        wifi_event_instance_ = nullptr;
-        esp_wifi_deinit();
-        esp_netif_destroy(sta_netif_ptr_);
-        sta_netif_ptr_ = nullptr;
+        deinit();
         return ESP_ERR_NO_MEM;
     }
 
@@ -169,19 +153,7 @@ esp_err_t WiFiManager::init()
         xTaskCreate(wifiTask, "wifi_task", 4096, this, 5, &task_handle_);
     if (task_created != pdPASS) {
         ESP_LOGE(TAG, "Failed to create wifi task");
-        vQueueDelete(command_queue_);
-        command_queue_ = nullptr;
-        vEventGroupDelete(wifi_event_group_);
-        wifi_event_group_ = nullptr;
-        esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID,
-                                              ip_event_instance_);
-        ip_event_instance_ = nullptr;
-        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                              wifi_event_instance_);
-        wifi_event_instance_ = nullptr;
-        esp_wifi_deinit();
-        esp_netif_destroy(sta_netif_ptr_);
-        sta_netif_ptr_ = nullptr;
+        deinit();
         return ESP_ERR_NO_MEM;
     }
 
@@ -227,7 +199,8 @@ esp_err_t WiFiManager::deinit()
     if (task_handle_ != nullptr) {
         ESP_LOGI(TAG, "Stopping WiFi task...");
         Command cmd = {.id = CommandId::EXIT};
-        if (xQueueSend(command_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (command_queue_ != nullptr &&
+            xQueueSend(command_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
             int retry = 0;
             while (task_handle_ != nullptr && retry < 100) {
                 vTaskDelay(pdMS_TO_TICKS(10));

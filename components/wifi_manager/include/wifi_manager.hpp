@@ -28,6 +28,7 @@ public:
     enum class State
     {
         UNINITIALIZED,
+        INITIALIZING,
         INITIALIZED,
         STARTING,
         STARTED,
