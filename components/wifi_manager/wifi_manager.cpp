@@ -77,6 +77,7 @@ esp_err_t WiFiManager::init()
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
 
@@ -86,6 +87,7 @@ esp_err_t WiFiManager::init()
     }
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_netif_init: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -95,6 +97,7 @@ esp_err_t WiFiManager::init()
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to create event loop: %s", esp_err_to_name(err));
+        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -237,8 +240,7 @@ esp_err_t WiFiManager::deinit()
     }
 
     if (sta_netif_ptr_ != nullptr) {
-        esp_netif_destroy_default_wifi(sta_netif_ptr_);
-        // esp_netif_destroy(sta_netif_ptr_);
+        esp_netif_destroy(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
     }
 
