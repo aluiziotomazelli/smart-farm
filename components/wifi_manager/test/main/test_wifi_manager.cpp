@@ -453,8 +453,8 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
     printf("Calling connect() after init() but before start()...\n");
     esp_err_t err = wm.connect("SSID", "PASS", 1000);
     printf("Connect returned: %s\n", esp_err_to_name(err));
-    // Deve retornar erro ou timeout, mas não travar
-    TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
+    // Deve retornar ESP_FAIL imediatamente devido à rejeição por estado inválido
+    TEST_ASSERT_EQUAL(ESP_FAIL, err);
 
     wm.deinit();
 }

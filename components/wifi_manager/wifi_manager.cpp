@@ -270,17 +270,21 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
     ESP_LOGI(TAG, "API: Requesting to start WiFi...");
     Command cmd = {.id = CommandId::START};
 
-    xEventGroupClearBits(wifi_event_group_, STARTED_BIT);
+    xEventGroupClearBits(wifi_event_group_, STARTED_BIT | START_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
     if (err != ESP_OK) {
         return err;
     }
 
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, STARTED_BIT, pdTRUE,
-                                           pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    EventBits_t bits =
+        xEventGroupWaitBits(wifi_event_group_, STARTED_BIT | START_FAILED_BIT, pdTRUE,
+                            pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & STARTED_BIT) {
         return ESP_OK;
+    }
+    if (bits & START_FAILED_BIT) {
+        return ESP_FAIL;
     }
     return ESP_ERR_TIMEOUT;
 }
@@ -294,17 +298,21 @@ esp_err_t WiFiManager::stop(uint32_t timeout_ms)
     ESP_LOGI(TAG, "API: Requesting to stop WiFi...");
     Command cmd = {.id = CommandId::STOP};
 
-    xEventGroupClearBits(wifi_event_group_, STOPPED_BIT);
+    xEventGroupClearBits(wifi_event_group_, STOPPED_BIT | STOP_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
     if (err != ESP_OK) {
         return err;
     }
 
-    EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, STOPPED_BIT, pdTRUE,
-                                           pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    EventBits_t bits =
+        xEventGroupWaitBits(wifi_event_group_, STOPPED_BIT | STOP_FAILED_BIT, pdTRUE,
+                            pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & STOPPED_BIT) {
         return ESP_OK;
+    }
+    if (bits & STOP_FAILED_BIT) {
+        return ESP_FAIL;
     }
     return ESP_ERR_TIMEOUT;
 }
@@ -362,18 +370,21 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
     ESP_LOGI(TAG, "API: Requesting to disconnect...");
     Command cmd = {.id = CommandId::DISCONNECT};
 
-    xEventGroupClearBits(wifi_event_group_, DISCONNECTED_BIT);
+    xEventGroupClearBits(wifi_event_group_, DISCONNECTED_BIT | CONNECT_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
     if (err != ESP_OK) {
         return err;
     }
 
     EventBits_t bits =
-        xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT, pdTRUE, pdFALSE,
-                            pdMS_TO_TICKS(timeout_ms));
+        xEventGroupWaitBits(wifi_event_group_, DISCONNECTED_BIT | CONNECT_FAILED_BIT,
+                            pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
 
     if (bits & DISCONNECTED_BIT) {
         return ESP_OK;
+    }
+    if (bits & CONNECT_FAILED_BIT) {
+        return ESP_FAIL;
     }
     return ESP_ERR_TIMEOUT;
 }
@@ -491,32 +502,58 @@ void WiFiManager::wifiTask(void *pvParameters)
             xSemaphoreTake(self->state_mutex_, portMAX_DELAY);
 
             switch (cmd.id) {
-            case CommandId::START:
+            case CommandId::START: {
+                State s = self->current_state_;
+                if (s >= State::STARTED && s <= State::DISCONNECTED) {
+                    ESP_LOGI(TAG, "Already started (state: %d)", (int)s);
+                    xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
+                    break;
+                }
                 self->current_state_ = State::STARTING;
                 if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to set wifi mode: %s",
-                             esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to set wifi mode: %s", esp_err_to_name(err));
+                    self->current_state_ = s;
+                    xEventGroupSetBits(self->wifi_event_group_, START_FAILED_BIT);
                 }
-                if ((err = esp_wifi_start()) != ESP_OK) {
+                else if ((err = esp_wifi_start()) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start wifi: %s", esp_err_to_name(err));
+                    self->current_state_ = s;
+                    xEventGroupSetBits(self->wifi_event_group_, START_FAILED_BIT);
                 }
                 break;
-            case CommandId::STOP:
+            }
+            case CommandId::STOP: {
+                State s = self->current_state_;
+                if (s == State::STOPPED || s == State::INITIALIZED) {
+                    ESP_LOGI(TAG, "Already stopped (state: %d)", (int)s);
+                    xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
+                    break;
+                }
                 self->current_state_ = State::STOPPING;
                 if ((err = esp_wifi_stop()) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to stop wifi: %s", esp_err_to_name(err));
+                    self->current_state_ = s;
+                    xEventGroupSetBits(self->wifi_event_group_, STOP_FAILED_BIT);
                 }
                 break;
-            case CommandId::CONNECT:
-                {
-                    State s = self->current_state_;
-                    if (s == State::CONNECTING || s == State::CONNECTED_NO_IP ||
-                        s == State::CONNECTED_GOT_IP) {
-                        ESP_LOGW(TAG, "Already connecting or connected (state: %d)",
-                                 (int)s);
-                        break;
-                    }
+            }
+            case CommandId::CONNECT: {
+                State s = self->current_state_;
+                if (s == State::CONNECTED_GOT_IP) {
+                    ESP_LOGI(TAG, "Already connected.");
+                    xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
+                    break;
                 }
+                if (s < State::STARTED || s >= State::STOPPING) {
+                    ESP_LOGE(TAG, "WiFi not started. Cannot connect (state: %d)", (int)s);
+                    xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
+                    break;
+                }
+                if (s == State::CONNECTING || s == State::CONNECTED_NO_IP) {
+                    ESP_LOGW(TAG, "Connection already in progress (state: %d)", (int)s);
+                    break;
+                }
+
                 self->current_state_ = State::CONNECTING;
                 {
                     wifi_config_t wifi_config = {};
@@ -524,24 +561,36 @@ void WiFiManager::wifiTask(void *pvParameters)
                             sizeof(wifi_config.sta.ssid) - 1);
                     strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
                             sizeof(wifi_config.sta.password) - 1);
-                    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) !=
-                        ESP_OK) {
+                    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) != ESP_OK) {
                         ESP_LOGE(TAG, "Failed to set wifi config: %s",
                                  esp_err_to_name(err));
+                        self->current_state_ = s;
+                        xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
                     }
-                    if ((err = esp_wifi_connect()) != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to connect wifi: %s",
-                                 esp_err_to_name(err));
+                    else if ((err = esp_wifi_connect()) != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to connect wifi: %s", esp_err_to_name(err));
+                        self->current_state_ = s;
+                        xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
                     }
                 }
                 break;
-            case CommandId::DISCONNECT:
+            }
+            case CommandId::DISCONNECT: {
+                State s = self->current_state_;
+                if (s == State::DISCONNECTED || s == State::STOPPED ||
+                    s == State::INITIALIZED) {
+                    ESP_LOGI(TAG, "Already disconnected (state: %d)", (int)s);
+                    xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
+                    break;
+                }
                 self->current_state_ = State::DISCONNECTING;
                 if ((err = esp_wifi_disconnect()) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to disconnect wifi: %s",
-                             esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to disconnect wifi: %s", esp_err_to_name(err));
+                    self->current_state_ = s;
+                    xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
                 }
                 break;
+            }
 
             case CommandId::HANDLE_EVENT_WIFI:
                 switch (cmd.event_id) {

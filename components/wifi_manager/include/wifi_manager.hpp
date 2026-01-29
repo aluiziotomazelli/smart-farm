@@ -168,9 +168,12 @@ private:
     static constexpr EventBits_t CONNECTED_BIT      = BIT2;
     static constexpr EventBits_t DISCONNECTED_BIT   = BIT3;
     static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4;
+    static constexpr EventBits_t START_FAILED_BIT   = BIT5;
+    static constexpr EventBits_t STOP_FAILED_BIT    = BIT6;
     static constexpr EventBits_t ALL_SYNC_BITS      = STARTED_BIT | STOPPED_BIT |
                                                  CONNECTED_BIT | DISCONNECTED_BIT |
-                                                 CONNECT_FAILED_BIT;
+                                                 CONNECT_FAILED_BIT | START_FAILED_BIT |
+                                                 STOP_FAILED_BIT;
 
     // Task and event handlers
     static void wifiTask(void *pvParameters);
