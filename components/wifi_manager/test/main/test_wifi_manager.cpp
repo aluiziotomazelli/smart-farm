@@ -236,3 +236,74 @@ TEST_CASE("test_state_transitions", "[wifi][state]")
 
     printf(" State test passed!\n");
 }
+
+TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
+{
+    printf("\n=== Testing NVS Auto-repair ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+
+    // 1. Garante que está desinicializado
+    wm.deinit();
+    nvs_flash_deinit();
+
+    // 2. Apaga o flash completamente para forçar re-inicialização
+    printf("Erasing NVS flash...\n");
+    esp_err_t err = nvs_flash_erase();
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    // 3. Tenta inicializar o WiFiManager
+    // O init() chama init_nvs() que deve lidar com o flash limpo
+    printf("Initializing WiFiManager after NVS erase...\n");
+    err = wm.init();
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    // 4. Verifica se conseguimos usar o NVS agora
+    err = wm.storeCredentials("RepairSSID", "RepairPass");
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    printf("✓ NVS auto-repair test passed!\n");
+    wm.deinit();
+}
+
+TEST_CASE("test_credentials_deep", "[wifi][nvs]")
+{
+    printf("\n=== Testing Credentials Deep ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+
+    // 1. Teste de limites (Max Lengths)
+    // SSID: 32 chars, Password: 64 chars
+    std::string max_ssid(32, 'S');
+    std::string max_pass(64, 'P');
+
+    printf("Testing max length credentials...\n");
+    esp_err_t err = wm.storeCredentials(max_ssid, max_pass);
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    std::string read_ssid, read_pass;
+    err = wm.loadCredentials(read_ssid, read_pass);
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+    TEST_ASSERT_EQUAL_STRING(max_ssid.c_str(), read_ssid.c_str());
+    TEST_ASSERT_EQUAL_STRING(max_pass.c_str(), read_pass.c_str());
+
+    // 2. Teste de Persistência entre Deinit/Init
+    printf("Testing persistence across deinit/init...\n");
+    std::string p_ssid = "PersistSSID";
+    std::string p_pass = "PersistPass";
+    wm.storeCredentials(p_ssid, p_pass);
+
+    wm.deinit();
+    // Re-inicializa
+    wm.init();
+
+    std::string check_ssid, check_pass;
+    TEST_ASSERT_TRUE(wm.hasCredentials());
+    wm.loadCredentials(check_ssid, check_pass);
+    TEST_ASSERT_EQUAL_STRING(p_ssid.c_str(), check_ssid.c_str());
+    TEST_ASSERT_EQUAL_STRING(p_pass.c_str(), check_pass.c_str());
+
+    printf("✓ Credentials deep test passed!\n");
+    wm.deinit();
+}
