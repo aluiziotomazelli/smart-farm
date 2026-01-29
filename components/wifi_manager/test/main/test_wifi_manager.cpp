@@ -307,3 +307,116 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     printf("✓ Credentials deep test passed!\n");
     wm.deinit();
 }
+
+TEST_CASE("test_wifi_start_stop", "[wifi][state]")
+{
+    printf("\n=== Testing WiFi Start/Stop ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+
+    // 1. Test Start
+    printf("Calling start()...\n");
+    esp_err_t err = wm.start(5000);
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    // 2. Test Stop
+    printf("Calling stop()...\n");
+    err = wm.stop(5000);
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+
+    printf("✓ Start/Stop test passed!\n");
+    wm.deinit();
+}
+
+TEST_CASE("test_wifi_connect_timeout", "[wifi][connect]")
+{
+    printf("\n=== Testing WiFi Connect Timeout ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+    wm.start();
+
+    printf("Calling connect() with non-existent SSID and 2s timeout...\n");
+    // Usamos um SSID que provavelmente não existe
+    int64_t start_time = esp_timer_get_time();
+    esp_err_t err = wm.connect("NonExistentSSID_12345", "wrong_password", 2000);
+    int64_t end_time = esp_timer_get_time();
+
+    printf("Connect returned after %lld ms\n", (end_time - start_time) / 1000);
+
+    TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
+
+    // Verificamos o estado - deve permanecer em CONNECTING ou mudar para DISCONNECTED se falhou
+    WiFiManager::State state = wm.getState();
+    printf("State after timeout: %d\n", (int)state);
+
+    // De acordo com a implementação atual, ele deve estar em CONNECTING pois a wifiTask
+    // ainda está tentando conectar via esp_wifi_connect()
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, state);
+
+    wm.deinit();
+}
+
+TEST_CASE("test_wifi_queue_stress", "[wifi][stress]")
+{
+    printf("\n=== Testing WiFi Queue Stress ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+
+    // Satura a fila com comandos assíncronos
+    printf("Saturating command queue (size 10)...\n");
+    int sent_count = 0;
+    int fail_count = 0;
+    for (int i = 0; i < 20; i++) {
+        esp_err_t err = wm.connect_async("StressSSID", "password");
+        if (err == ESP_OK) {
+            sent_count++;
+        } else {
+            fail_count++;
+        }
+    }
+
+    printf("Sent: %d, Failed: %d\n", sent_count, fail_count);
+
+    // Deve ter havido pelo menos uma falha se enviamos 20 e a fila é 10
+    TEST_ASSERT_GREATER_THAN(0, fail_count);
+
+    // Aguarda um pouco para processar
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // O sistema deve continuar funcional
+    TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
+}
+
+static void connect_task(void *pvParameters)
+{
+    const char *ssid = (const char *)pvParameters;
+    WiFiManager &wm  = WiFiManager::instance();
+    printf("Task connecting to %s...\n", ssid);
+    esp_err_t err = wm.connect(ssid, "password", 1000);
+    printf("Task %s finished with error: %d\n", ssid, err);
+    vTaskDelete(NULL);
+}
+
+TEST_CASE("test_wifi_concurrency", "[wifi][concurrency]")
+{
+    printf("\n=== Testing WiFi Concurrency ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+    wm.start();
+
+    printf("Launching two concurrent connect tasks...\n");
+    xTaskCreate(connect_task, "conn_1", 4096, (void *)"SSID_A", 5, NULL);
+    xTaskCreate(connect_task, "conn_2", 4096, (void *)"SSID_B", 5, NULL);
+
+    // Aguarda os timeouts/processamento
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // Verifica que o manager não travou e consegue lidar com deinit
+    TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
+}
