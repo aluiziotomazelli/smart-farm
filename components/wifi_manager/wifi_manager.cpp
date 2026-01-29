@@ -263,7 +263,7 @@ esp_err_t WiFiManager::deinit()
 
 esp_err_t WiFiManager::start(uint32_t timeout_ms)
 {
-    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_ || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -291,7 +291,7 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
 
 esp_err_t WiFiManager::stop(uint32_t timeout_ms)
 {
-    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_ || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -321,7 +321,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
                                const std::string &password,
                                uint32_t timeout_ms)
 {
-    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_ || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -352,7 +352,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
 esp_err_t WiFiManager::connect_async(const std::string &ssid,
                                      const std::string &password)
 {
-    if (getState() == State::UNINITIALIZED) {
+    if (getState() == State::UNINITIALIZED || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -363,11 +363,11 @@ esp_err_t WiFiManager::connect_async(const std::string &ssid,
 
 esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
 {
-    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_ || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "API: Requesting to disconnect...");
+    ESP_LOGI(TAG, "API: Requesting to disconnect (sync)...");
     Command cmd = {.id = CommandId::DISCONNECT};
 
     xEventGroupClearBits(wifi_event_group_, DISCONNECTED_BIT | CONNECT_FAILED_BIT);
@@ -387,6 +387,17 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
         return ESP_FAIL;
     }
     return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t WiFiManager::disconnect_async()
+{
+    if (getState() == State::UNINITIALIZED || !command_queue_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "API: Requesting to disconnect (async)...");
+    Command cmd = {.id = CommandId::DISCONNECT};
+    return sendCommand(cmd, true);
 }
 
 WiFiManager::State WiFiManager::getState() const

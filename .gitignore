@@ -29,5 +29,5 @@ app_*/sdkconfig
 .clangd
 **/.cache/
 *.log
-**/secrets
-**/secrets.*
+**/secrets.h
+**/secrets.hpp

@@ -105,6 +105,12 @@ public:
     esp_err_t disconnect(uint32_t timeout_ms = 5000);
 
     /**
+     * @brief Disconnect from the current WiFi network (asynchronous).
+     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     */
+    esp_err_t disconnect_async();
+
+    /**
      * @brief Get the current state of the WiFi manager.
      * @return The current State enum value.
      */
