@@ -72,11 +72,23 @@ public:
     esp_err_t start(uint32_t timeout_ms = 5000);
 
     /**
+     * @brief Start the WiFi station mode (asynchronous).
+     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     */
+    esp_err_t start_async();
+
+    /**
      * @brief Stop the WiFi station mode (synchronous).
      * @param timeout_ms Maximum time to wait for the operation to complete.
      * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
      */
     esp_err_t stop(uint32_t timeout_ms = 5000);
+
+    /**
+     * @brief Stop the WiFi station mode (asynchronous).
+     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     */
+    esp_err_t stop_async();
 
     /**
      * @brief Connect to a WiFi network (synchronous).

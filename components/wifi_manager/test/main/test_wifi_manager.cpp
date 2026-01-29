@@ -367,11 +367,12 @@ TEST_CASE("11. test_wifi_connect_timeout", "[wifi][connect]")
 
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
 
-    // Verify state - should remain in CONNECTING as wifiTask is still trying
+    // Verify state - with rollback it should transition to DISCONNECTED
+    vTaskDelay(pdMS_TO_TICKS(500));
     WiFiManager::State state = wm.getState();
-    printf("State after timeout: %d\n", (int)state);
+    printf("State after timeout and rollback: %d\n", (int)state);
 
-    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, state);
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, state);
 
     wm.deinit();
 }
@@ -617,5 +618,112 @@ TEST_CASE("18. test_wifi_disconnect_async", "[wifi][connect][real]")
     TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, state_after_disconnect);
 
     printf("✓ Async disconnect test passed!\n");
+    wm.deinit();
+}
+
+/**
+ * 19. Test Rapid start/stop cycles
+ */
+TEST_CASE("19. test_wifi_rapid_start_stop", "[wifi][stress]")
+{
+    printf("\n=== Testing Rapid start/stop cycles ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    for (int i = 0; i < 10; i++) {
+        printf("Cycle %d/10\n", i + 1);
+        TEST_ASSERT_EQUAL(ESP_OK, wm.start(5000));
+        TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+        TEST_ASSERT_EQUAL(ESP_OK, wm.stop(5000));
+        TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    }
+
+    wm.deinit();
+}
+
+/**
+ * 20. Test Connection rollback on timeout
+ */
+TEST_CASE("20. test_wifi_connect_rollback", "[wifi][connect]")
+{
+    printf("\n=== Testing Connection rollback on timeout ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start();
+
+    printf("Calling connect() with 1s timeout (forcing timeout)...\n");
+    esp_err_t err = wm.connect("NonExistentSSID_999", "password", 1000);
+    TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
+
+    printf("Waiting for rollback to DISCONNECTED...\n");
+    int retry = 0;
+    while (wm.getState() == WiFiManager::State::CONNECTING && retry < 20) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retry++;
+    }
+
+    WiFiManager::State final_state = wm.getState();
+    printf("State after rollback: %d\n", (int)final_state);
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, final_state);
+
+    wm.deinit();
+}
+
+/**
+ * 21. Test Start rollback on timeout
+ */
+TEST_CASE("21. test_wifi_start_rollback", "[wifi][state]")
+{
+    printf("\n=== Testing Start rollback on timeout ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    printf("Calling start() with 1ms timeout (forcing timeout)...\n");
+    esp_err_t err = wm.start(1);
+    TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    WiFiManager::State final_state = wm.getState();
+    printf("State after rollback: %d\n", (int)final_state);
+    TEST_ASSERT(final_state == WiFiManager::State::STOPPED ||
+                final_state == WiFiManager::State::INITIALIZED);
+
+    wm.deinit();
+}
+
+/**
+ * 22. Test WiFi Start/Stop (Async)
+ */
+TEST_CASE("22. test_wifi_start_stop_async", "[wifi][state]")
+{
+    printf("\n=== Testing WiFi Start/Stop (Async) ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    printf("Calling start_async()...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start_async());
+
+    int retry = 0;
+    while (wm.getState() != WiFiManager::State::STARTED && retry < 50) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retry++;
+    }
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    printf("Calling stop_async()...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop_async());
+
+    retry = 0;
+    while (wm.getState() != WiFiManager::State::STOPPED && retry < 50) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retry++;
+    }
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+
     wm.deinit();
 }

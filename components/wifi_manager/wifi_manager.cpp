@@ -181,30 +181,13 @@ esp_err_t WiFiManager::deinit()
         return ESP_OK;
     }
 
+    // 1. Stop WiFi if it is running
     if (current_state >= State::STARTING && current_state < State::STOPPING) {
         ESP_LOGI(TAG, "WiFi is running, stopping first...");
-
-        esp_err_t ret = stop(2000);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "WiFi stopped during deinit");
-        }
-        else {
-            ESP_LOGW(TAG, "WiFi failed to stop during deinit: %s",
-                     esp_err_to_name(ret));
-        }
+        stop(2000);
     }
 
-    if (wifi_event_instance_ != nullptr) {
-        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                              wifi_event_instance_);
-        wifi_event_instance_ = nullptr;
-    }
-    if (ip_event_instance_ != nullptr) {
-        esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID,
-                                              ip_event_instance_);
-        ip_event_instance_ = nullptr;
-    }
-
+    // 2. Terminate the manager task
     if (task_handle_ != nullptr) {
         ESP_LOGI(TAG, "Stopping WiFi task...");
         Command cmd = {.id = CommandId::EXIT};
@@ -228,6 +211,7 @@ esp_err_t WiFiManager::deinit()
         ESP_LOGI(TAG, "WiFi task terminated.");
     }
 
+    // 3. Deinitialize the WiFi stack
     esp_err_t ret = esp_wifi_deinit();
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "WiFi stack deinitialized.");
@@ -239,11 +223,28 @@ esp_err_t WiFiManager::deinit()
         ESP_LOGW(TAG, "WiFi stack deinit failed: %s", esp_err_to_name(ret));
     }
 
+    // 4. Destroy the default STA netif
     if (sta_netif_ptr_ != nullptr) {
         esp_netif_destroy(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
     }
 
+    // 5. Unregister event handlers
+    if (wifi_event_instance_ != nullptr) {
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                              wifi_event_instance_);
+        wifi_event_instance_ = nullptr;
+    }
+    if (ip_event_instance_ != nullptr) {
+        esp_event_handler_instance_unregister(IP_EVENT, ESP_EVENT_ANY_ID,
+                                              ip_event_instance_);
+        ip_event_instance_ = nullptr;
+    }
+
+    // 6. Delete the default event loop (optional for some apps, but good for sequential tests)
+    esp_event_loop_delete_default();
+
+    // 7. Clean up RTOS objects
     if (command_queue_ != nullptr) {
         vQueueDelete(command_queue_);
         command_queue_ = nullptr;
@@ -286,7 +287,21 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
     if (bits & START_FAILED_BIT) {
         return ESP_FAIL;
     }
+
+    ESP_LOGW(TAG, "Start timed out, cancelling...");
+    stop_async();
     return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t WiFiManager::start_async()
+{
+    if (getState() == State::UNINITIALIZED || !command_queue_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "API: Requesting to start WiFi (async)...");
+    Command cmd = {.id = CommandId::START};
+    return sendCommand(cmd, true);
 }
 
 esp_err_t WiFiManager::stop(uint32_t timeout_ms)
@@ -317,6 +332,17 @@ esp_err_t WiFiManager::stop(uint32_t timeout_ms)
     return ESP_ERR_TIMEOUT;
 }
 
+esp_err_t WiFiManager::stop_async()
+{
+    if (getState() == State::UNINITIALIZED || !command_queue_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "API: Requesting to stop WiFi (async)...");
+    Command cmd = {.id = CommandId::STOP};
+    return sendCommand(cmd, true);
+}
+
 esp_err_t WiFiManager::connect(const std::string &ssid,
                                const std::string &password,
                                uint32_t timeout_ms)
@@ -345,6 +371,8 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
         return ESP_FAIL;
     }
     else {
+        ESP_LOGW(TAG, "Connect timed out, cancelling attempt...");
+        disconnect_async();
         return ESP_ERR_TIMEOUT;
     }
 }
