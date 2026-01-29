@@ -77,7 +77,6 @@ esp_err_t WiFiManager::init()
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
-        deinit();
         return err;
     }
 
@@ -87,7 +86,6 @@ esp_err_t WiFiManager::init()
     }
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_netif_init: %s", esp_err_to_name(err));
-        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -225,7 +223,7 @@ esp_err_t WiFiManager::deinit()
 
     // 4. Destroy the default STA netif
     if (sta_netif_ptr_ != nullptr) {
-        esp_netif_destroy(sta_netif_ptr_);
+        esp_netif_destroy_default_wifi(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
     }
 
@@ -242,7 +240,7 @@ esp_err_t WiFiManager::deinit()
     }
 
     // 6. Delete the default event loop (optional for some apps, but good for sequential tests)
-    esp_event_loop_delete_default();
+    // esp_event_loop_delete_default();
 
     // 7. Clean up RTOS objects
     if (command_queue_ != nullptr) {
@@ -622,6 +620,15 @@ void WiFiManager::wifiTask(void *pvParameters)
                     xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
                     break;
                 }
+
+                if (s == State::CONNECTING) {
+                    ESP_LOGI(TAG, "Disconnect requested while connecting, forcing DISCONNECTED");
+                    esp_wifi_disconnect();
+                    self->current_state_ = State::DISCONNECTED;
+                    xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
+                    break;
+                }
+
                 self->current_state_ = State::DISCONNECTING;
                 if ((err = esp_wifi_disconnect()) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to disconnect wifi: %s", esp_err_to_name(err));
