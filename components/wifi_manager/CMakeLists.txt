@@ -8,11 +8,11 @@ idf_component_register(
                     
     REQUIRES 
         esp_event 
-    
+        esp_netif 
+        
     PRIV_REQUIRES 
         nvs_flash 
         esp_wifi 
-        esp_netif 
         freertos
         # common
 )

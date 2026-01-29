@@ -77,15 +77,15 @@ esp_err_t WiFiManager::init()
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
-        deinit();
         return err;
     }
 
-    ESP_LOGI(TAG, "Initializing network stack...");
     err = esp_netif_init();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Netif initialized.");
+    }
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to esp_netif_init: %s", esp_err_to_name(err));
-        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -95,7 +95,6 @@ esp_err_t WiFiManager::init()
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to create event loop: %s", esp_err_to_name(err));
-        deinit();
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
@@ -103,9 +102,15 @@ esp_err_t WiFiManager::init()
     }
 
     sta_netif_ptr_ = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    // If the STA netif already exists, use it
+    if (sta_netif_ptr_ != nullptr) {
+        ESP_LOGW(TAG, "Using default STA netif");
+    }
+    // If the STA netif doesn't exist, create it
     if (sta_netif_ptr_ == nullptr) {
         sta_netif_ptr_ = esp_netif_create_default_wifi_sta();
     }
+    // If the pointer to STA netif is still null, error out
     if (sta_netif_ptr_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create default STA netif");
         deinit();
@@ -181,7 +186,8 @@ esp_err_t WiFiManager::deinit()
             ESP_LOGI(TAG, "WiFi stopped during deinit");
         }
         else {
-            ESP_LOGW(TAG, "WiFi failed to stop during deinit: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "WiFi failed to stop during deinit: %s",
+                     esp_err_to_name(ret));
         }
     }
 
@@ -231,7 +237,8 @@ esp_err_t WiFiManager::deinit()
     }
 
     if (sta_netif_ptr_ != nullptr) {
-        esp_netif_destroy(sta_netif_ptr_);
+        esp_netif_destroy_default_wifi(sta_netif_ptr_);
+        // esp_netif_destroy(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
     }
 
@@ -461,7 +468,8 @@ void WiFiManager::wifiTask(void *pvParameters)
             case CommandId::START:
                 self->current_state_ = State::STARTING;
                 if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to set wifi mode: %s", esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to set wifi mode: %s",
+                             esp_err_to_name(err));
                 }
                 if ((err = esp_wifi_start()) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start wifi: %s", esp_err_to_name(err));
@@ -481,19 +489,22 @@ void WiFiManager::wifiTask(void *pvParameters)
                             sizeof(wifi_config.sta.ssid) - 1);
                     strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
                             sizeof(wifi_config.sta.password) - 1);
-                    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) != ESP_OK) {
+                    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) !=
+                        ESP_OK) {
                         ESP_LOGE(TAG, "Failed to set wifi config: %s",
                                  esp_err_to_name(err));
                     }
                     if ((err = esp_wifi_connect()) != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to connect wifi: %s", esp_err_to_name(err));
+                        ESP_LOGE(TAG, "Failed to connect wifi: %s",
+                                 esp_err_to_name(err));
                     }
                 }
                 break;
             case CommandId::DISCONNECT:
                 self->current_state_ = State::DISCONNECTING;
                 if ((err = esp_wifi_disconnect()) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to disconnect wifi: %s", esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to disconnect wifi: %s",
+                             esp_err_to_name(err));
                 }
                 break;
 

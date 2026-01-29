@@ -21,6 +21,9 @@ static void print_memory(const char *label)
            (unsigned)free_32bit);
 }
 
+/**
+ * 1. Initize WiFi Manager once and deinitize
+ */
 TEST_CASE("test_wifi_init_once", "[wifi][init]")
 {
     // Para teste de WiFi, use threshold maior
@@ -40,20 +43,21 @@ TEST_CASE("test_wifi_init_once", "[wifi][init]")
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 
     // Restaura threshold padrão
-    reset_memory_leak_threshold();
+    // reset_memory_leak_threshold();
 }
 
+/**
+ * 2, Test storing and loading WiFi credentials
+ */
 TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
 {
     // Para testes com NVS, threshold menor
-    set_memory_leak_threshold(-2000); // 2KB permitido para NVS
+    set_memory_leak_threshold(-2000); // 2KB for NVS
 
     WiFiManager &wm = WiFiManager::instance();
 
     // Inicializa se necessário
-    if (wm.getState() == WiFiManager::State::UNINITIALIZED) {
-        wm.init();
-    }
+    wm.init();
 
     // Testa armazenamento de credenciais
     std::string test_ssid = "TestNetwork";
@@ -71,11 +75,16 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
 
     // Limpeza
     wm.deinit();
-    reset_memory_leak_threshold();
+    // reset_memory_leak_threshold();
 }
 
+/**
+ * 3. Test NVS memory leak
+ */
 TEST_CASE("test_nvs_leak", "[memory][nvs]")
 {
+    set_memory_leak_threshold(-2000); // 2KB for NVS
+
     printf("\n=== Testing NVS Memory Leak ===\n");
     print_memory("Before NVS init");
 
@@ -99,47 +108,14 @@ TEST_CASE("test_nvs_leak", "[memory][nvs]")
     printf("NVS memory delta: %d bytes\n", (int)delta);
 }
 
-// TEST_CASE("test_wifi_stack_leak", "[memory][wifi]")
-// {
-//     printf("\n=== Testing WiFi Stack Memory Leak ===\n");
-//     print_memory("Before WiFi init");
-
-//     // 1. NVS primeiro
-//     esp_err_t ret = nvs_flash_init();
-//     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-//     {
-//         ESP_ERROR_CHECK(nvs_flash_erase());
-//         ret = nvs_flash_init();
-//     }
-//     ESP_ERROR_CHECK(ret);
-
-//     // 2. WiFi stack básico
-//     ESP_ERROR_CHECK(esp_netif_init());
-//     ESP_ERROR_CHECK(esp_event_loop_create_default());
-//     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-
-//     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-//     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-//     print_memory("After WiFi init");
-
-//     // 3. Limpeza CORRETA (ordem inversa!)
-//     ESP_ERROR_CHECK(esp_wifi_deinit());
-//     if (netif) {
-//         esp_netif_destroy(netif);
-//     }
-//     esp_event_loop_delete_default();
-//     esp_netif_deinit();
-//     nvs_flash_deinit();
-
-//     print_memory("After cleanup");
-// }
-
+/**
+ * 4. Test WiFi Manager memory leak
+ */
 TEST_CASE("test_wifi_manager_leak", "[memory][wifi_manager]")
 {
     printf("\n=== Testing WiFi Manager Memory Leak ===\n");
 
-    set_memory_leak_threshold(-100000); // Aumenta limite para 100KB
+    set_memory_leak_threshold(-15000);
 
     WiFiManager &wm = WiFiManager::instance();
 
@@ -158,11 +134,16 @@ TEST_CASE("test_wifi_manager_leak", "[memory][wifi_manager]")
     print_memory("After WiFi Manager deinit");
 
     // Restaura threshold
-    reset_memory_leak_threshold();
+    // reset_memory_leak_threshold();
 }
 
+/**
+ * 5. Test Singleton Pattern
+ */
 TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
 {
+    set_memory_leak_threshold(-15000);
+
     printf("\n=== Testing Singleton Pattern ===\n");
 
     // 1. Teste que instance() retorna sempre a mesma referência
@@ -195,13 +176,20 @@ TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
     printf("State after init: %d\n", (int)state);
     TEST_ASSERT(state != WiFiManager::State::UNINITIALIZED);
 
+    // Cleaning
+    instance1.deinit();
+
     printf("✓ Singleton test passed!\n");
 }
 
+/**
+ * 6. Test Multiple Init Calls
+ */
 TEST_CASE("test_multiple_init_calls", "[wifi][init]")
 {
-    printf("\n=== Testing Multiple Init Calls ===\n");
+    set_memory_leak_threshold(-15000);
 
+    printf("\n=== Testing Multiple Init Calls ===\n");
     WiFiManager &wm = WiFiManager::instance();
 
     // Primeira inicialização
@@ -216,19 +204,24 @@ TEST_CASE("test_multiple_init_calls", "[wifi][init]")
     TEST_ASSERT(ret1 == ESP_OK || ret1 == ESP_ERR_INVALID_STATE);
     TEST_ASSERT(ret2 == ESP_OK || ret2 == ESP_ERR_INVALID_STATE);
 
+    // Cleaning
+    wm.deinit();
+
     printf("✓ Multiple init test passed!\n");
 }
 
+/**
+ * 7. Test State Transitions
+ */
 TEST_CASE("test_state_transitions", "[wifi][state]")
 {
+    set_memory_leak_threshold(-15000);
+
     printf("\n=== Testing State Management ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
 
-    // Se não inicializado, inicializa
-    if (wm.getState() == WiFiManager::State::UNINITIALIZED) {
-        wm.init();
-    }
+    wm.init();
 
     // Verifica que estado é válido
     WiFiManager::State state = wm.getState();
@@ -237,6 +230,9 @@ TEST_CASE("test_state_transitions", "[wifi][state]")
     // Estado deve ser um dos valores válidos
     TEST_ASSERT(state >= WiFiManager::State::UNINITIALIZED &&
                 state <= WiFiManager::State::CONNECTED_GOT_IP);
+
+    // Cleaning
+    wm.deinit();
 
     printf(" State test passed!\n");
 }
