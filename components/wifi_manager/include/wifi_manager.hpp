@@ -32,13 +32,13 @@ public:
         INITIALIZED,
         STARTING,
         STARTED,
-        STOPPING,
-        STOPPED,
         CONNECTING,
         CONNECTED_NO_IP,
         CONNECTED_GOT_IP,
         DISCONNECTING,
         DISCONNECTED,
+        STOPPING,
+        STOPPED,
     };
 
     /**

@@ -9,6 +9,8 @@ idf_component_register(
         unity 
         wifi_manager
         nvs_flash
+        esp_timer
+        esp_wifi
     WHOLE_ARCHIVE
 )
 

@@ -181,7 +181,7 @@ esp_err_t WiFiManager::deinit()
         return ESP_OK;
     }
 
-    if (current_state >= State::STARTING) {
+    if (current_state >= State::STARTING && current_state < State::STOPPING) {
         ESP_LOGI(TAG, "WiFi is running, stopping first...");
 
         esp_err_t ret = stop(2000);
@@ -484,6 +484,15 @@ void WiFiManager::wifiTask(void *pvParameters)
                 }
                 break;
             case CommandId::CONNECT:
+                {
+                    State s = self->current_state_;
+                    if (s == State::CONNECTING || s == State::CONNECTED_NO_IP ||
+                        s == State::CONNECTED_GOT_IP) {
+                        ESP_LOGW(TAG, "Already connecting or connected (state: %d)",
+                                 (int)s);
+                        break;
+                    }
+                }
                 self->current_state_ = State::CONNECTING;
                 {
                     wifi_config_t wifi_config = {};

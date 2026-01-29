@@ -1,5 +1,7 @@
 // test_wifi.c
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "unity.h"
 #include <stdio.h>
@@ -366,23 +368,25 @@ TEST_CASE("test_wifi_queue_stress", "[wifi][stress]")
 
     WiFiManager &wm = WiFiManager::instance();
     wm.init();
+    wm.start();
 
     // Satura a fila com comandos assíncronos
-    printf("Saturating command queue (size 10)...\n");
+    printf("Saturating command queue (size 10) with 100 commands...\n");
     int sent_count = 0;
     int fail_count = 0;
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 100; i++) {
         esp_err_t err = wm.connect_async("StressSSID", "password");
         if (err == ESP_OK) {
             sent_count++;
-        } else {
+        }
+        else {
             fail_count++;
         }
     }
 
     printf("Sent: %d, Failed: %d\n", sent_count, fail_count);
 
-    // Deve ter havido pelo menos uma falha se enviamos 20 e a fila é 10
+    // Deve ter havido falhas pois a fila tem tamanho 10 e enviamos 100 rapidamente
     TEST_ASSERT_GREATER_THAN(0, fail_count);
 
     // Aguarda um pouco para processar
