@@ -263,12 +263,17 @@ esp_err_t WiFiManager::deinit()
 
 esp_err_t WiFiManager::start(uint32_t timeout_ms)
 {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "API: Requesting to start WiFi...");
     Command cmd = {.id = CommandId::START};
 
     xEventGroupClearBits(wifi_event_group_, STARTED_BIT);
-    if (sendCommand(cmd, false) != ESP_OK) {
-        return ESP_FAIL;
+    esp_err_t err = sendCommand(cmd, false);
+    if (err != ESP_OK) {
+        return err;
     }
 
     EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, STARTED_BIT, pdTRUE,
@@ -282,12 +287,17 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
 
 esp_err_t WiFiManager::stop(uint32_t timeout_ms)
 {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "API: Requesting to stop WiFi...");
     Command cmd = {.id = CommandId::STOP};
 
     xEventGroupClearBits(wifi_event_group_, STOPPED_BIT);
-    if (sendCommand(cmd, false) != ESP_OK) {
-        return ESP_FAIL;
+    esp_err_t err = sendCommand(cmd, false);
+    if (err != ESP_OK) {
+        return err;
     }
 
     EventBits_t bits = xEventGroupWaitBits(wifi_event_group_, STOPPED_BIT, pdTRUE,
@@ -303,12 +313,17 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
                                const std::string &password,
                                uint32_t timeout_ms)
 {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "API: Requesting to connect (sync)...");
     Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
 
     xEventGroupClearBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT);
-    if (sendCommand(cmd, false) != ESP_OK) {
-        return ESP_FAIL;
+    esp_err_t err = sendCommand(cmd, false);
+    if (err != ESP_OK) {
+        return err;
     }
 
     EventBits_t bits =
@@ -329,6 +344,10 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
 esp_err_t WiFiManager::connect_async(const std::string &ssid,
                                      const std::string &password)
 {
+    if (getState() == State::UNINITIALIZED) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "API: Requesting to connect (async)...");
     Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
     return sendCommand(cmd, true);
@@ -336,12 +355,17 @@ esp_err_t WiFiManager::connect_async(const std::string &ssid,
 
 esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
 {
+    if (getState() == State::UNINITIALIZED || !wifi_event_group_) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "API: Requesting to disconnect...");
     Command cmd = {.id = CommandId::DISCONNECT};
 
     xEventGroupClearBits(wifi_event_group_, DISCONNECTED_BIT);
-    if (sendCommand(cmd, false) != ESP_OK) {
-        return ESP_FAIL;
+    esp_err_t err = sendCommand(cmd, false);
+    if (err != ESP_OK) {
+        return err;
     }
 
     EventBits_t bits =

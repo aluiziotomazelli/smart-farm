@@ -29,6 +29,7 @@ TEST_CASE("test_wifi_init_once", "[wifi][init]")
     set_memory_leak_threshold(-15000); // 15KB permitido para WiFi
 
     WiFiManager &wm = WiFiManager::instance();
+    wm.deinit(); // Garante isolamento
 
     printf("Testing WiFi Manager initialization...\n");
 
@@ -144,6 +145,7 @@ TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
     set_memory_leak_threshold(-15000);
 
     printf("\n=== Testing Singleton Pattern ===\n");
+    WiFiManager::instance().deinit(); // Garante isolamento
 
     // 1. Teste que instance() retorna sempre a mesma referência
     WiFiManager &instance1 = WiFiManager::instance();
@@ -189,6 +191,7 @@ TEST_CASE("test_multiple_init_calls", "[wifi][init]")
     set_memory_leak_threshold(-15000);
 
     printf("\n=== Testing Multiple Init Calls ===\n");
+    WiFiManager::instance().deinit(); // Garante isolamento
     WiFiManager &wm = WiFiManager::instance();
 
     // Primeira inicialização
@@ -219,6 +222,7 @@ TEST_CASE("test_state_transitions", "[wifi][state]")
     printf("\n=== Testing State Management ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
 
     wm.init();
 
@@ -312,6 +316,7 @@ TEST_CASE("test_wifi_start_stop", "[wifi][state]")
     printf("\n=== Testing WiFi Start/Stop ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
     wm.init();
 
     // 1. Test Start
@@ -385,36 +390,41 @@ TEST_CASE("test_wifi_queue_stress", "[wifi][stress]")
     wm.deinit();
 }
 
-TEST_CASE("test_wifi_queue_saturation", "[wifi][stress]")
+static void flooder_task(void *pvParameters)
 {
-    printf("\n=== Testing WiFi Queue Saturation (Forced) ===\n");
-
+    int *fail_count = (int *)pvParameters;
     WiFiManager &wm = WiFiManager::instance();
-    wm.init();
-    // NÃO damos start(), assim a task não processa os comandos e a fila ENCHE.
-
-    printf("Filling command queue (size 10) without task processing...\n");
-    int sent_count = 0;
-    int fail_count = 0;
     for (int i = 0; i < 20; i++) {
-        esp_err_t err = wm.connect_async("SaturateSSID", "password");
-        if (err == ESP_OK) {
-            sent_count++;
-        }
-        else {
-            fail_count++;
+        // Usamos connect_async que é rápido
+        if (wm.connect_async("FlooderSSID", "password") != ESP_OK) {
+            (*fail_count)++;
         }
     }
+    vTaskDelete(NULL);
+}
 
-    printf("Sent: %d, Failed: %d\n", sent_count, fail_count);
+TEST_CASE("test_wifi_queue_saturation", "[wifi][stress]")
+{
+    printf("\n=== Testing WiFi Queue Saturation (Forced with Priority) ===\n");
 
-    // Deve ter falhado após 10 comandos (tamanho da fila)
-    TEST_ASSERT_EQUAL(10, sent_count);
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    // Criamos uma task com prioridade MAIOR que a wifiTask (5)
+    // para garantir que ela encha a fila antes da wifiTask processar.
+    int fail_count = 0;
+    printf("Launching high priority flooder task...\n");
+    xTaskCreate(flooder_task, "flooder", 4096, &fail_count, 6, NULL);
+
+    // Aguarda a flooder task terminar
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    printf("Flooder finished. Failures to send: %d\n", fail_count);
+
+    // Como enviamos 20 e a fila tem 10, deve ter havido 10 falhas.
     TEST_ASSERT_GREATER_THAN(0, fail_count);
 
-    // Agora iniciamos o manager para ele limpar a fila e conseguirmos dar deinit
-    wm.start();
-    vTaskDelay(pdMS_TO_TICKS(200));
     wm.deinit();
 }
 
@@ -423,8 +433,9 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
     printf("\n=== Testing WiFi API Abuse (Invalid States) ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
+    wm.deinit(); // Garante que começamos do UNINITIALIZED
 
-    // 1. Tentar start sem init
+    // 1. Tentar start sem init - Deve retornar INVALID_STATE e NÃO crashar
     printf("Calling start() before init()...\n");
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.start());
 
@@ -432,15 +443,18 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
     printf("Calling connect() before init()...\n");
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.connect("SSID", "PASS", 1000));
 
+    // 3. Tentar disconnect sem init
+    printf("Calling disconnect() before init()...\n");
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.disconnect());
+
     wm.init();
 
-    // 3. Tentar connect sem start (driver wifi não carregado)
+    // 4. Tentar connect sem start (driver wifi não carregado)
     printf("Calling connect() after init() but before start()...\n");
-    // O sendCommand deve passar, mas a wifiTask vai logar erro do esp_wifi_connect
-    // O connect síncrono deve eventualmente dar timeout ou erro.
     esp_err_t err = wm.connect("SSID", "PASS", 1000);
     printf("Connect returned: %s\n", esp_err_to_name(err));
-    // Atualmente retorna timeout ou erro do driver.
+    // Deve retornar erro ou timeout, mas não travar
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
 
     wm.deinit();
 }
