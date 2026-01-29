@@ -26,11 +26,13 @@ WiFiManager::WiFiManager()
     , wifi_event_group_(nullptr)
     , current_state_(State::UNINITIALIZED)
 {
+    // Mutex is created once and persists for the lifetime of the singleton
     state_mutex_ = xSemaphoreCreateMutex();
 }
 
 WiFiManager::~WiFiManager()
 {
+    // Cleanup if the object is ever destroyed (singleton usually lasts until shutdown)
     if (task_handle_ != nullptr) {
         vTaskDelete(task_handle_);
     }
@@ -51,6 +53,7 @@ WiFiManager::~WiFiManager()
 
 esp_err_t WiFiManager::init_nvs()
 {
+    // NVS is required for the WiFi driver to store internal configurations/calibration
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS partition invalid, erasing");
@@ -71,15 +74,18 @@ esp_err_t WiFiManager::init()
         ESP_LOGI(TAG, "Already initialized or initializing.");
         return ESP_OK;
     }
+    // Set to INITIALIZING to prevent concurrent init calls
     current_state_ = State::INITIALIZING;
     xSemaphoreGive(state_mutex_);
 
+    // Global NVS init - not rolled back by deinit() as it's shared across the system
     esp_err_t err = init_nvs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(err));
         return err;
     }
 
+    // Global Netif init - allowed to fail if already initialized by another component
     err = esp_netif_init();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Netif initialized.");
@@ -92,32 +98,32 @@ esp_err_t WiFiManager::init()
         ESP_LOGW(TAG, "Netif already initialized.");
     }
 
+    // Default event loop is shared - we don't delete it in deinit() to avoid breaking others
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "Failed to create event loop: %s", esp_err_to_name(err));
-        deinit();
+        deinit(); // Component-specific setup failed, clean up allocated members
         return err;
     }
     if (err == ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "Event loop already created.");
     }
 
+    // Check if the WiFi station interface already exists (idempotency)
     sta_netif_ptr_ = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    // If the STA netif already exists, use it
     if (sta_netif_ptr_ != nullptr) {
-        ESP_LOGW(TAG, "Using default STA netif");
+        ESP_LOGW(TAG, "Using existing default STA netif");
     }
-    // If the STA netif doesn't exist, create it
     if (sta_netif_ptr_ == nullptr) {
         sta_netif_ptr_ = esp_netif_create_default_wifi_sta();
     }
-    // If the pointer to STA netif is still null, error out
     if (sta_netif_ptr_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create default STA netif");
         deinit();
         return ESP_FAIL;
     }
 
+    // Initialize the WiFi driver stack
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     err                    = esp_wifi_init(&cfg);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
@@ -129,6 +135,7 @@ esp_err_t WiFiManager::init()
         ESP_LOGW(TAG, "WiFi stack already initialized.");
     }
 
+    // Register event handlers with instance pointers for the static callbacks
     err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                               &WiFiManager::wifiEventHandler, this,
                                               &wifi_event_instance_);
@@ -147,6 +154,7 @@ esp_err_t WiFiManager::init()
         return err;
     }
 
+    // RTOS resources for communication between the API and the internal task
     command_queue_    = xQueueCreate(10, sizeof(Command));
     wifi_event_group_ = xEventGroupCreate();
     if (!command_queue_ || !wifi_event_group_) {
@@ -155,6 +163,7 @@ esp_err_t WiFiManager::init()
         return ESP_ERR_NO_MEM;
     }
 
+    // Launch the consumer task that executes all driver operations
     BaseType_t task_created =
         xTaskCreate(wifiTask, "wifi_task", 4096, this, 5, &task_handle_);
     if (task_created != pdPASS) {
@@ -179,28 +188,31 @@ esp_err_t WiFiManager::deinit()
         return ESP_OK;
     }
 
-    // 1. Stop WiFi if it is running
+    // 1. Ensure WiFi is stopped before deinitializing the stack
     if (current_state >= State::STARTING && current_state < State::STOPPING) {
         ESP_LOGI(TAG, "WiFi is running, stopping first...");
         stop(2000);
     }
 
-    // 2. Terminate the manager task
+    // 2. Terminate the manager task gracefully using the EXIT command
     if (task_handle_ != nullptr) {
         ESP_LOGI(TAG, "Stopping WiFi task...");
         Command cmd = {.id = CommandId::EXIT};
         if (command_queue_ != nullptr &&
             xQueueSend(command_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Wait for the task to self-delete and nullify its handle
             int retry = 0;
             while (task_handle_ != nullptr && retry < 100) {
                 vTaskDelay(pdMS_TO_TICKS(10));
                 retry++;
             }
+            // Small safety delay to ensure FreeRTOS has finished task cleanup
             if (task_handle_ == nullptr) {
                 vTaskDelay(pdMS_TO_TICKS(50));
             }
         }
 
+        // Forced deletion if graceful exit fails
         if (task_handle_ != nullptr) {
             ESP_LOGW(TAG, "WiFi task did not exit gracefully, deleting...");
             vTaskDelete(task_handle_);
@@ -209,7 +221,7 @@ esp_err_t WiFiManager::deinit()
         ESP_LOGI(TAG, "WiFi task terminated.");
     }
 
-    // 3. Deinitialize the WiFi stack
+    // 3. Deinit the driver stack
     esp_err_t ret = esp_wifi_deinit();
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "WiFi stack deinitialized.");
@@ -221,13 +233,13 @@ esp_err_t WiFiManager::deinit()
         ESP_LOGW(TAG, "WiFi stack deinit failed: %s", esp_err_to_name(ret));
     }
 
-    // 4. Destroy the default STA netif
+    // 4. Specifically destroy the default wifi sta netif to allow reuse after re-init
     if (sta_netif_ptr_ != nullptr) {
         esp_netif_destroy_default_wifi(sta_netif_ptr_);
         sta_netif_ptr_ = nullptr;
     }
 
-    // 5. Unregister event handlers
+    // 5. Unregister event handlers to prevent calling deleted instance members
     if (wifi_event_instance_ != nullptr) {
         esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                               wifi_event_instance_);
@@ -239,10 +251,10 @@ esp_err_t WiFiManager::deinit()
         ip_event_instance_ = nullptr;
     }
 
-    // 6. Delete the default event loop (optional for some apps, but good for sequential tests)
+    // 6. Delete the default event loop (DISABLED: usually too global to delete)
     // esp_event_loop_delete_default();
 
-    // 7. Clean up RTOS objects
+    // 7. Clean up internal RTOS synchronization objects
     if (command_queue_ != nullptr) {
         vQueueDelete(command_queue_);
         command_queue_ = nullptr;
@@ -275,6 +287,7 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
         return err;
     }
 
+    // Wait for the Task to set the success or failure bit
     EventBits_t bits =
         xEventGroupWaitBits(wifi_event_group_, STARTED_BIT | START_FAILED_BIT, pdTRUE,
                             pdFALSE, pdMS_TO_TICKS(timeout_ms));
@@ -286,6 +299,7 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
         return ESP_FAIL;
     }
 
+    // Rollback: if we timed out waiting for the driver, try to stop it to reset state
     ESP_LOGW(TAG, "Start timed out, cancelling...");
     stop_async();
     return ESP_ERR_TIMEOUT;
@@ -358,6 +372,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
         return err;
     }
 
+    // Wait for either the GOT_IP event (SUCCESS) or a DISCONNECT/ERROR event (FAIL)
     EventBits_t bits =
         xEventGroupWaitBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT,
                             pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
@@ -369,6 +384,7 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
         return ESP_FAIL;
     }
     else {
+        // Rollback: if timeout occurs, cancel the driver connection attempt
         ESP_LOGW(TAG, "Connect timed out, cancelling attempt...");
         disconnect_async();
         return ESP_ERR_TIMEOUT;
@@ -428,6 +444,7 @@ esp_err_t WiFiManager::disconnect_async()
 
 WiFiManager::State WiFiManager::getState() const
 {
+    // The Mutex ensures that we don't read the state while the Task is mid-transition
     xSemaphoreTake(state_mutex_, portMAX_DELAY);
     State state = current_state_;
     xSemaphoreGive(state_mutex_);
@@ -494,10 +511,12 @@ bool WiFiManager::hasCredentials()
 
 esp_err_t WiFiManager::sendCommand(const Command &cmd, bool is_async)
 {
+    // Basic safety check: don't even try to queue if we're not initialized
     if (getState() == State::UNINITIALIZED) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Synchronous calls wait forever for a slot, async fail immediately if queue full
     TickType_t timeout = is_async ? 0 : portMAX_DELAY;
     if (xQueueSend(command_queue_, &cmd, timeout) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to send command to queue (full?)");
@@ -512,6 +531,7 @@ void WiFiManager::wifiEventHandler(void *arg,
                                    void *data)
 
 {
+    // Bridge from the system event loop back to our managed task
     WiFiManager *self = static_cast<WiFiManager *>(arg);
     Command cmd       = {.id = CommandId::HANDLE_EVENT_WIFI, .event_id = id};
     xQueueSendFromISR(self->command_queue_, &cmd, nullptr);
@@ -534,13 +554,16 @@ void WiFiManager::wifiTask(void *pvParameters)
     esp_err_t err;
 
     for (;;) {
+        // Block until a command (from API) or an event (from ISR/Handlers) arrives
         if (xQueueReceive(self->command_queue_, &cmd, portMAX_DELAY) == pdTRUE) {
-            // State is locked only during modification
+
+            // The state mutex is held for the duration of a command processing
             xSemaphoreTake(self->state_mutex_, portMAX_DELAY);
 
             switch (cmd.id) {
             case CommandId::START: {
                 State s = self->current_state_;
+                // Filter redundant start calls
                 if (s >= State::STARTED && s <= State::DISCONNECTED) {
                     ESP_LOGI(TAG, "Already started (state: %d)", (int)s);
                     xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
@@ -549,7 +572,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                 self->current_state_ = State::STARTING;
                 if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to set wifi mode: %s", esp_err_to_name(err));
-                    self->current_state_ = s;
+                    self->current_state_ = s; // Rollback to previous state on immediate failure
                     xEventGroupSetBits(self->wifi_event_group_, START_FAILED_BIT);
                 }
                 else if ((err = esp_wifi_start()) != ESP_OK) {
@@ -576,6 +599,7 @@ void WiFiManager::wifiTask(void *pvParameters)
             }
             case CommandId::CONNECT: {
                 State s = self->current_state_;
+                // Basic state validation before attempting a connect
                 if (s == State::CONNECTED_GOT_IP) {
                     ESP_LOGI(TAG, "Already connected.");
                     xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
@@ -621,6 +645,8 @@ void WiFiManager::wifiTask(void *pvParameters)
                     break;
                 }
 
+                // SPECIAL CASE: Rollback during early connect phase.
+                // The driver might not emit a DISCONNECTED event if we call disconnect before the link is established.
                 if (s == State::CONNECTING) {
                     ESP_LOGI(TAG, "Disconnect requested while connecting, forcing DISCONNECTED");
                     esp_wifi_disconnect();
@@ -639,6 +665,7 @@ void WiFiManager::wifiTask(void *pvParameters)
             }
 
             case CommandId::HANDLE_EVENT_WIFI:
+                // Handle events from the WiFi driver and transition states accordingly
                 switch (cmd.event_id) {
                 case WIFI_EVENT_STA_START:
                     ESP_LOGI(TAG, "Task Event: STA_START");
@@ -657,6 +684,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                 case WIFI_EVENT_STA_DISCONNECTED:
                     ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED");
                     self->current_state_ = State::DISCONNECTED;
+                    // Signaling failure here allows the sync connect() to stop waiting and return error
                     xEventGroupSetBits(self->wifi_event_group_,
                                        DISCONNECTED_BIT | CONNECT_FAILED_BIT);
                     break;
@@ -673,8 +701,9 @@ void WiFiManager::wifiTask(void *pvParameters)
 
             case CommandId::EXIT:
                 ESP_LOGI(TAG, "WiFi Task exiting...");
+                // Mutex must be released before the task disappears
                 xSemaphoreGive(self->state_mutex_);
-                self->task_handle_ = nullptr;
+                self->task_handle_ = nullptr; // Signal to deinit() that we are gone
                 vTaskDelete(NULL);
                 return; // Should not reach here
             }
