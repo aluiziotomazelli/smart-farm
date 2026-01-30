@@ -212,75 +212,91 @@ public:
     bool hasCredentials();
 
 private:
+    // Private constructor for singleton
     WiFiManager();
+    // Private destructor
     ~WiFiManager();
 
+    // Internal helper to initialize NVS flash partition
     esp_err_t init_nvs();
 
     // --- Internal Machinery ---
 
-    // Command structure for the queue
+    // Internal command IDs for the manager task queue
     enum class CommandId
     {
-        START,
-        STOP,
-        CONNECT,
-        DISCONNECT,
-        HANDLE_EVENT_WIFI,
-        HANDLE_EVENT_IP,
-        EXIT,
+        START,             // Request to start WiFi driver
+        STOP,              // Request to stop WiFi driver
+        CONNECT,           // Request to connect to an AP
+        DISCONNECT,        // Request to disconnect from an AP
+        HANDLE_EVENT_WIFI, // Bridge for WiFi system events
+        HANDLE_EVENT_IP,   // Bridge for IP system events
+        EXIT,              // Request to terminate the manager task
     };
 
+    // Structure used to pass commands and data to the internal task
     struct Command
     {
-        CommandId id;
-        // For CONNECT
-        std::string ssid;
-        std::string password;
-        // For event handling
-        int32_t event_id;
+        CommandId id;         // The operation requested
+        std::string ssid;     // SSID for CONNECT commands
+        std::string password; // Password for CONNECT commands
+        int32_t event_id;     // Event ID for HANDLE_EVENT_* commands
     };
 
 private:
-    // Event bits for synchronization
-    static constexpr EventBits_t STARTED_BIT        = BIT0;
-    static constexpr EventBits_t STOPPED_BIT        = BIT1;
-    static constexpr EventBits_t CONNECTED_BIT      = BIT2;
-    static constexpr EventBits_t DISCONNECTED_BIT   = BIT3;
-    static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4;
-    static constexpr EventBits_t START_FAILED_BIT   = BIT5;
-    static constexpr EventBits_t STOP_FAILED_BIT    = BIT6;
+    // FreeRTOS Event Group bits for synchronization between the API and the task
+    static constexpr EventBits_t STARTED_BIT        = BIT0; // WiFi driver started
+    static constexpr EventBits_t STOPPED_BIT        = BIT1; // WiFi driver stopped
+    static constexpr EventBits_t CONNECTED_BIT      = BIT2; // Got IP address
+    static constexpr EventBits_t DISCONNECTED_BIT   = BIT3; // Disconnected from AP
+    static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4; // Connection attempt failed
+    static constexpr EventBits_t START_FAILED_BIT   = BIT5; // Driver start failed
+    static constexpr EventBits_t STOP_FAILED_BIT    = BIT6; // Driver stop failed
+
+    // Mask for all synchronization bits
     static constexpr EventBits_t ALL_SYNC_BITS =
         STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT |
         CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT;
 
-    // Task and event handlers
+    // Main FreeRTOS task loop that executes driver operations
     static void wifiTask(void *pvParameters);
 
+    // Opaque handles for ESP-IDF event handler registrations
     esp_event_handler_instance_t wifi_event_instance_;
     esp_event_handler_instance_t ip_event_instance_;
+
+    // Pointer to the default ESP-IDF station network interface
     esp_netif_t *sta_netif_ptr_;
 
+    // Static callback for WiFi system events (bridged to task)
     static void wifiEventHandler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
                                  void *data);
+
+    // Static callback for IP system events (bridged to task)
     static void ipEventHandler(void *arg,
                                esp_event_base_t base,
                                int32_t id,
                                void *data);
 
-    // Helper to send a command to the queue
+    // Private helper to post commands to the internal queue
     esp_err_t sendCommand(const Command &cmd, bool is_async);
 
 private:
-    // RTOS objects
+    // FreeRTOS Task handle for the manager loop
     TaskHandle_t task_handle_;
-    QueueHandle_t command_queue_;
-    EventGroupHandle_t wifi_event_group_;
-    mutable SemaphoreHandle_t state_mutex_; // Protects current_state_
 
-    // State variable
+    // FreeRTOS Queue handle for command passing
+    QueueHandle_t command_queue_;
+
+    // FreeRTOS Event Group handle for API synchronization
+    EventGroupHandle_t wifi_event_group_;
+
+    // Mutex to protect 'current_state_' access across tasks
+    mutable SemaphoreHandle_t state_mutex_;
+
+    // The current thread-protected internal state
     State current_state_;
 
 #ifdef UNIT_TEST
