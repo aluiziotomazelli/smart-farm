@@ -201,7 +201,8 @@ esp_err_t WiFiManager::deinit()
     // 2. Terminate the manager task gracefully using the EXIT command
     if (task_handle_ != nullptr) {
         ESP_LOGI(TAG, "Stopping WiFi task...");
-        Command cmd = {.id = CommandId::EXIT};
+        Command cmd = {};
+        cmd.id      = CommandId::EXIT;
         if (command_queue_ != nullptr &&
             xQueueSend(command_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
             // Wait for the task to self-delete and nullify its handle
@@ -285,7 +286,8 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
     }
 
     ESP_LOGI(TAG, "API: Requesting to start WiFi...");
-    Command cmd = {.id = CommandId::START};
+    Command cmd = {};
+    cmd.id      = CommandId::START;
 
     xEventGroupClearBits(wifi_event_group_, STARTED_BIT | START_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
@@ -319,7 +321,8 @@ esp_err_t WiFiManager::start_async()
     }
 
     ESP_LOGI(TAG, "API: Requesting to start WiFi (async)...");
-    Command cmd = {.id = CommandId::START};
+    Command cmd = {};
+    cmd.id      = CommandId::START;
     return sendCommand(cmd, true);
 }
 
@@ -331,7 +334,8 @@ esp_err_t WiFiManager::stop(uint32_t timeout_ms)
     }
 
     ESP_LOGI(TAG, "API: Requesting to stop WiFi...");
-    Command cmd = {.id = CommandId::STOP};
+    Command cmd = {};
+    cmd.id      = CommandId::STOP;
 
     xEventGroupClearBits(wifi_event_group_, STOPPED_BIT | STOP_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
@@ -359,7 +363,8 @@ esp_err_t WiFiManager::stop_async()
     }
 
     ESP_LOGI(TAG, "API: Requesting to stop WiFi (async)...");
-    Command cmd = {.id = CommandId::STOP};
+    Command cmd = {};
+    cmd.id      = CommandId::STOP;
     return sendCommand(cmd, true);
 }
 
@@ -373,7 +378,10 @@ esp_err_t WiFiManager::connect(const std::string &ssid,
     }
 
     ESP_LOGI(TAG, "API: Requesting to connect (sync)...");
-    Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
+    Command cmd = {};
+    cmd.id      = CommandId::CONNECT;
+    cmd.ssid    = ssid;
+    cmd.password = password;
 
     xEventGroupClearBits(wifi_event_group_, CONNECTED_BIT | CONNECT_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
@@ -408,7 +416,10 @@ esp_err_t WiFiManager::connect_async(const std::string &ssid,
     }
 
     ESP_LOGI(TAG, "API: Requesting to connect (async)...");
-    Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
+    Command cmd = {};
+    cmd.id      = CommandId::CONNECT;
+    cmd.ssid    = ssid;
+    cmd.password = password;
     return sendCommand(cmd, true);
 }
 
@@ -420,7 +431,8 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
     }
 
     ESP_LOGI(TAG, "API: Requesting to disconnect (sync)...");
-    Command cmd = {.id = CommandId::DISCONNECT};
+    Command cmd = {};
+    cmd.id      = CommandId::DISCONNECT;
 
     xEventGroupClearBits(wifi_event_group_, DISCONNECTED_BIT | CONNECT_FAILED_BIT);
     esp_err_t err = sendCommand(cmd, false);
@@ -448,7 +460,8 @@ esp_err_t WiFiManager::disconnect_async()
     }
 
     ESP_LOGI(TAG, "API: Requesting to disconnect (async)...");
-    Command cmd = {.id = CommandId::DISCONNECT};
+    Command cmd = {};
+    cmd.id      = CommandId::DISCONNECT;
     return sendCommand(cmd, true);
 }
 
@@ -545,7 +558,9 @@ void WiFiManager::wifiEventHandler(void *arg,
 {
     // Bridge from the system event loop back to our managed task
     WiFiManager *self = static_cast<WiFiManager *>(arg);
-    Command cmd       = {.id = CommandId::HANDLE_EVENT_WIFI, .event_id = id};
+    Command cmd       = {};
+    cmd.id            = CommandId::HANDLE_EVENT_WIFI;
+    cmd.event_id      = id;
     xQueueSendFromISR(self->command_queue_, &cmd, nullptr);
 }
 
@@ -555,7 +570,9 @@ void WiFiManager::ipEventHandler(void *arg,
                                  void *data)
 {
     WiFiManager *self = static_cast<WiFiManager *>(arg);
-    Command cmd       = {.id = CommandId::HANDLE_EVENT_IP, .event_id = id};
+    Command cmd       = {};
+    cmd.id            = CommandId::HANDLE_EVENT_IP;
+    cmd.event_id      = id;
     xQueueSendFromISR(self->command_queue_, &cmd, nullptr);
 }
 
@@ -744,13 +761,15 @@ void WiFiManager::wifiTask(void *pvParameters)
 
 esp_err_t WiFiManager::testHelper_sendStartCommand(bool is_async)
 {
-    Command cmd = {.id = CommandId::START};
+    Command cmd = {};
+    cmd.id      = CommandId::START;
     return sendCommand(cmd, is_async);
 }
 
 esp_err_t WiFiManager::testHelper_sendStopCommand(bool is_async)
 {
-    Command cmd = {.id = CommandId::STOP};
+    Command cmd = {};
+    cmd.id      = CommandId::STOP;
     return sendCommand(cmd, is_async);
 }
 
@@ -758,22 +777,18 @@ esp_err_t WiFiManager::testHelper_sendConnectCommand(const std::string &ssid,
                                                      const std::string &password,
                                                      bool is_async)
 {
-    Command cmd = {.id = CommandId::CONNECT, .ssid = ssid, .password = password};
+    Command cmd  = {};
+    cmd.id       = CommandId::CONNECT;
+    cmd.ssid     = ssid;
+    cmd.password = password;
     return sendCommand(cmd, is_async);
 }
 
 esp_err_t WiFiManager::testHelper_sendDisconnectCommand(bool is_async)
 {
-    Command cmd = {.id = CommandId::DISCONNECT};
+    Command cmd = {};
+    cmd.id      = CommandId::DISCONNECT;
     return sendCommand(cmd, is_async);
-}
-
-WiFiManager::State WiFiManager::testHelper_getInternalState() const
-{
-    xSemaphoreTake(state_mutex_, portMAX_DELAY);
-    State s = current_state_;
-    xSemaphoreGive(state_mutex_);
-    return s;
 }
 
 uint32_t WiFiManager::testHelper_getQueuePendingCount() const

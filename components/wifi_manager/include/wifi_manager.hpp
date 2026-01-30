@@ -27,7 +27,7 @@ class WiFiManagerTestAccessor;
 class WiFiManager
 {
 #ifdef UNIT_TEST
-    friend class WiFiManagerAcessor;
+    friend class WiFiManagerTestAccessor;
 #endif
 
 public:
@@ -241,9 +241,6 @@ private:
                                             const std::string &password,
                                             bool is_async);
     esp_err_t testHelper_sendDisconnectCommand(bool is_async);
-
-    // Helper para verificar estado interno (opcional)
-    State testHelper_getInternalState() const;
 
     // Helper para verificar fila (opcional)
     uint32_t testHelper_getQueuePendingCount() const;

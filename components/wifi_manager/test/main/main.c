@@ -44,6 +44,13 @@ void tearDown(void)
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+/**
+ * @brief Weak function for component-specific warmup.
+ * Override this in your test files to perform one-time allocations (WiFi/NVS init, etc.)
+ * before the memory leak tracking starts.
+ */
+void __attribute__((weak)) test_warmup(void) {}
+
 void app_main(void)
 {
     // Disable Task Watchdog to avoid triggers in QEMU/Unity menu loop
@@ -51,6 +58,9 @@ void app_main(void)
 
     // Give some time for QEMU UART to stabilize
     vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Perform component-specific warmup
+    test_warmup();
 
     unity_run_menu();
 }

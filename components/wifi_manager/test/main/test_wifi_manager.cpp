@@ -12,6 +12,19 @@
 
 static const char *TAG = "test_wifi";
 
+extern "C" void test_warmup(void)
+{
+    printf("\n=== WiFiManager Warmup ===\n");
+    printf("Pre-allocating WiFi, NVS and Netif internal buffers...\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.init();
+    wm.start(5000);
+    wm.stop(5000);
+    wm.deinit();
+    printf("Warmup complete. Memory state stabilized.\n");
+    printf("==========================\n\n");
+}
+
 static void print_memory(const char *label)
 {
     size_t free_8bit  = heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -25,8 +38,8 @@ static void print_memory(const char *label)
  */
 TEST_CASE("test_wifi_init_once", "[wifi][init]")
 {
-    // Use larger threshold for WiFi
-    set_memory_leak_threshold(-15000); // 15KB allowed for WiFi
+    // Stricter threshold after warmup
+    set_memory_leak_threshold(-2000);
 
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit(); // Ensure isolation
@@ -114,7 +127,7 @@ TEST_CASE("test_wifi_manager_leak", "[memory][wifi_manager]")
 {
     printf("\n=== Testing WiFi Manager Memory Leak ===\n");
 
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
 
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
@@ -142,7 +155,7 @@ TEST_CASE("test_wifi_manager_leak", "[memory][wifi_manager]")
  */
 TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
 
     printf("\n=== Testing Singleton Pattern ===\n");
     WiFiManager::instance().deinit(); // Ensure isolation
@@ -188,7 +201,7 @@ TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
  */
 TEST_CASE("test_multiple_init_calls", "[wifi][init]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
 
     printf("\n=== Testing Multiple Init Calls ===\n");
     WiFiManager::instance().deinit(); // Ensure isolation
@@ -217,7 +230,7 @@ TEST_CASE("test_multiple_init_calls", "[wifi][init]")
  */
 TEST_CASE("test_state_transitions", "[wifi][state]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
 
     printf("\n=== Testing State Management ===\n");
 
@@ -245,7 +258,7 @@ TEST_CASE("test_state_transitions", "[wifi][state]")
  */
 TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing NVS Auto-repair ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -278,7 +291,7 @@ TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
  */
 TEST_CASE("test_credentials_deep", "[wifi][nvs]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing Credentials Deep ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -325,7 +338,7 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
  */
 TEST_CASE("test_wifi_start_stop", "[wifi][state]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Start/Stop ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -353,7 +366,7 @@ TEST_CASE("test_wifi_start_stop", "[wifi][state]")
  */
 TEST_CASE("test_wifi_connect_timeout", "[wifi][connect]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Connect Timeout ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -386,7 +399,7 @@ TEST_CASE("test_wifi_connect_timeout", "[wifi][connect]")
  */
 TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Queue Spam Robustness ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -417,7 +430,7 @@ TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
  */
 TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi API Abuse (Invalid States) ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -462,7 +475,7 @@ static void connect_task(void *pvParameters)
  */
 TEST_CASE("test_wifi_concurrency", "[wifi][concurrency]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Concurrency ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -486,7 +499,7 @@ TEST_CASE("test_wifi_concurrency", "[wifi][concurrency]")
  */
 TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing Real WiFi Connection (Async) ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -525,7 +538,7 @@ TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
  */
 TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi with Wrong Password ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -554,7 +567,7 @@ TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
  */
 TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Reconnection (Manual) ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -597,7 +610,7 @@ TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
  */
 TEST_CASE("test_wifi_disconnect_async", "[wifi][connect][real]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Disconnect (Async) ===\n");
 
     WiFiManager &wm = WiFiManager::instance();
@@ -638,7 +651,7 @@ TEST_CASE("test_wifi_disconnect_async", "[wifi][connect][real]")
  */
 TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing Rapid start/stop cycles ===\n");
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
@@ -660,7 +673,7 @@ TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
  */
 TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing Connection rollback on timeout ===\n");
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
@@ -690,7 +703,7 @@ TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
  */
 TEST_CASE("test_wifi_start_rollback", "[wifi][state]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing Start rollback on timeout ===\n");
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
@@ -715,7 +728,7 @@ TEST_CASE("test_wifi_start_rollback", "[wifi][state]")
  */
 TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
 {
-    set_memory_leak_threshold(-15000);
+    set_memory_leak_threshold(-2000);
     printf("\n=== Testing WiFi Start/Stop (Async) ===\n");
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();

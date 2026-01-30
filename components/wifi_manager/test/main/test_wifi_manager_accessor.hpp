@@ -44,7 +44,7 @@ public:
     // Teste de estado interno
     WiFiManager::State test_getInternalState()
     {
-        return wifi_manager_.testHelper_getInternalState();
+        return wifi_manager_.getState();
     }
 
     // Teste de fila
