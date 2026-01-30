@@ -3,6 +3,7 @@
 
 #ifdef UNIT_TEST
 
+#include "esp_wifi.h"
 #include "wifi_manager.hpp"
 
 class WiFiManagerTestAccessor
@@ -56,6 +57,14 @@ public:
     bool test_isQueueFull()
     {
         return wifi_manager_.testHelper_isQueueFull();
+    }
+
+    void test_simulateDisconnect(uint8_t reason)
+    {
+        wifi_event_sta_disconnected_t disconn = {};
+        disconn.reason                        = reason;
+        WiFiManager::wifiEventHandler(&wifi_manager_, WIFI_EVENT,
+                                      WIFI_EVENT_STA_DISCONNECTED, &disconn);
     }
 
     uint32_t test_getQueueCapacity()

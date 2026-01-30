@@ -10,6 +10,7 @@ The `WiFiManager` simplifies WiFi operations on the ESP32 by wrapping the low-le
 
 - **Singleton Pattern**: Easy access from anywhere in the application.
 - **Dedicated Task**: WiFi operations are decoupled from the main application thread.
+- **Automatic Reconnection**: Built-in exponential backoff retry loop for accidental disconnections.
 - **Automatic Rollback**: Handles timeouts and connection failures gracefully.
 - **Thread-Safe**: Uses Mutexes and Queues for concurrency protection.
 - **Persistent Credentials**: Built-in methods for storing/loading credentials in NVS.

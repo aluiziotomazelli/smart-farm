@@ -51,10 +51,12 @@ public:
         CONNECTING,       ///< Attempting to connect to an AP.
         CONNECTED_NO_IP,  ///< Connected to AP, waiting for DHCP/Static IP.
         CONNECTED_GOT_IP, ///< Successfully connected and has an IP address.
-        DISCONNECTING,    ///< In the process of disconnecting from the AP.
-        DISCONNECTED,     ///< Not connected to any AP.
-        STOPPING,         ///< In the process of stopping the WiFi driver.
-        STOPPED,          ///< WiFi driver stopped.
+        DISCONNECTING,     ///< In the process of disconnecting from the AP.
+        DISCONNECTED,      ///< Not connected to any AP.
+        WAITING_RECONNECT, ///< Waiting for backoff timer to retry connection.
+        ERROR_CREDENTIALS, ///< Last connection failed due to invalid credentials.
+        STOPPING,          ///< In the process of stopping the WiFi driver.
+        STOPPED,           ///< WiFi driver stopped.
     };
 
     /**
@@ -241,6 +243,7 @@ private:
         std::string ssid;     // SSID for CONNECT commands
         std::string password; // Password for CONNECT commands
         int32_t event_id;     // Event ID for HANDLE_EVENT_* commands
+        uint8_t reason;       // Reason code for DISCONNECTED events
     };
 
 private:
@@ -298,6 +301,12 @@ private:
 
     // The current thread-protected internal state
     State current_state_;
+
+    // Reconnection tracking
+    std::string current_ssid_;
+    std::string current_password_;
+    uint32_t retry_count_;
+    uint64_t next_reconnect_ms_;
 
 #ifdef UNIT_TEST
     friend class WiFiManagerTestAccessor;

@@ -565,8 +565,14 @@ TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
     WiFiManager::State state = wm.getState();
     printf("State after failed connection: %d\n", (int)state);
 
-    // State should reflect not connected
+    // State should reflect not connected and specifically credential error if the driver reported it
     TEST_ASSERT_NOT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, state);
+
+    // Note: Some routers might just timeout instead of sending a clear AUTH_FAIL.
+    // If it did send AUTH_FAIL, it should be in ERROR_CREDENTIALS.
+    if (err != ESP_ERR_TIMEOUT) {
+        TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, state);
+    }
 
     wm.deinit();
 }

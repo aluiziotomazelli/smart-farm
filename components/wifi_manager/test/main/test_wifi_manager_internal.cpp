@@ -1,5 +1,6 @@
 // components/wifi_manager/test/main/test_wifi_manager_internal.cpp
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "unity.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -129,6 +130,57 @@ TEST_CASE("test_internal_stress_with_monitoring", "[wifi][internal][stress]")
 
     TEST_ASSERT_EQUAL(0, accessor.test_getQueuePendingCount());
     TEST_ASSERT(accessor.test_getInternalState() >= WiFiManager::State::STARTED);
+
+    wm.deinit();
+}
+
+/**
+ * @brief Test: Reconnection Logic and Backoff
+ *
+ * Verifies that the manager correctly identifies terminal (AUTH_FAIL)
+ * vs temporary failures and enters the correct states.
+ */
+TEST_CASE("test_internal_reconnection_logic", "[wifi][internal][reconnect]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: Reconnection Logic ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start();
+
+    WiFiManagerTestAccessor accessor(wm);
+
+    // 1. Simulate a connection attempt
+    printf("Simulating CONNECT command...\n");
+    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
+
+    // 2. Simulate AUTH_FAIL (Terminal)
+    printf("Simulating AUTH_FAIL...\n");
+    accessor.test_simulateDisconnect(WIFI_REASON_AUTH_FAIL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
+
+    // 3. Reset and try a temporary failure
+    printf("Resetting with new CONNECT...\n");
+    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
+
+    // 4. Simulate NO_AP_FOUND (Retryable)
+    printf("Simulating NO_AP_FOUND...\n");
+    accessor.test_simulateDisconnect(WIFI_REASON_NO_AP_FOUND);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
+
+    // 5. Verify manual interrupt
+    printf("Interrupting backoff with manual DISCONNECT...\n");
+    wm.disconnect_async();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
 
     wm.deinit();
 }

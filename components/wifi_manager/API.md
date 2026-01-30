@@ -73,6 +73,8 @@ Checks if credentials exist in NVS.
 | `STARTED` | WiFi driver is active in STA mode. |
 | `CONNECTED_GOT_IP` | Fully connected with a valid IP address. |
 | `DISCONNECTED` | WiFi is started but not connected to an AP. |
+| `WAITING_RECONNECT` | Waiting for backoff timer to retry connection. |
+| `ERROR_CREDENTIALS` | Connection failed due to invalid credentials (`AUTH_FAIL`). |
 | `...` | Various transitioning states (`STARTING`, `STOPPING`, `CONNECTING`, etc). |
 
 ---
@@ -82,3 +84,5 @@ Checks if credentials exist in NVS.
 - **Thread Safety**: All public methods use an internal mutex and command queue, making the class safe to use from multiple FreeRTOS tasks.
 - **Non-Blocking Task**: The actual work (calling `esp_wifi_*` functions) happens in a dedicated task (`wifiTask`) with priority 5.
 - **Rollback Logic**: If a synchronous `start` or `connect` fails or times out, the manager automatically attempts a rollback to a stable state (`STOPPED` or `DISCONNECTED`).
+- **Auto-Reconnection**: If the link is lost after a successful connection (Beacon Timeout, AP Reboot, etc.), the manager automatically initiates an exponential backoff retry loop (1s, 2s, 4s... up to 5 min).
+- **Credential Protection**: If the driver reports `WIFI_REASON_AUTH_FAIL`, the manager transitions to `ERROR_CREDENTIALS` and stops retrying to prevent network blacklisting.

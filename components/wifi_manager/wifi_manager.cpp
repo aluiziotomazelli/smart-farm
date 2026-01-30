@@ -1,6 +1,7 @@
 #include "wifi_manager.hpp"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include <cstring>
@@ -25,6 +26,8 @@ WiFiManager::WiFiManager()
     , command_queue_(nullptr)
     , wifi_event_group_(nullptr)
     , current_state_(State::UNINITIALIZED)
+    , retry_count_(0)
+    , next_reconnect_ms_(0)
 {
     // Mutex is created once and persists for the lifetime of the singleton
     state_mutex_ = xSemaphoreCreateMutex();
@@ -561,6 +564,13 @@ void WiFiManager::wifiEventHandler(void *arg,
     Command cmd       = {};
     cmd.id            = CommandId::HANDLE_EVENT_WIFI;
     cmd.event_id      = id;
+
+    if (id == WIFI_EVENT_STA_DISCONNECTED && data != nullptr) {
+        wifi_event_sta_disconnected_t *disconn =
+            static_cast<wifi_event_sta_disconnected_t *>(data);
+        cmd.reason = disconn->reason;
+    }
+
     xQueueSendFromISR(self->command_queue_, &cmd, nullptr);
 }
 
@@ -583,17 +593,36 @@ void WiFiManager::wifiTask(void *pvParameters)
     esp_err_t err;
 
     for (;;) {
-        // Block until a command (from API) or an event (from ISR/Handlers) arrives
-        if (xQueueReceive(self->command_queue_, &cmd, portMAX_DELAY) == pdTRUE) {
+        TickType_t wait_ticks = portMAX_DELAY;
+
+        // If we are waiting to reconnect, calculate the remaining backoff time
+        if (self->current_state_ == State::WAITING_RECONNECT) {
+            uint64_t now = esp_timer_get_time() / 1000;
+            if (self->next_reconnect_ms_ > now) {
+                wait_ticks = pdMS_TO_TICKS(self->next_reconnect_ms_ - now);
+            }
+            else {
+                wait_ticks = 0; // Timer already expired
+            }
+        }
+
+        // Wait for a command or a timeout (backoff expiration)
+        if (xQueueReceive(self->command_queue_, &cmd, wait_ticks) == pdTRUE) {
             // The state mutex is held for the duration of a command processing
             xSemaphoreTake(self->state_mutex_, portMAX_DELAY);
+
+            // Any explicit user command resets the retry counter
+            if (cmd.id != CommandId::HANDLE_EVENT_WIFI &&
+                cmd.id != CommandId::HANDLE_EVENT_IP) {
+                self->retry_count_ = 0;
+            }
 
             switch (cmd.id) {
             case CommandId::START:
             {
                 State s = self->current_state_;
                 // Filter redundant start calls
-                if (s >= State::STARTED && s <= State::DISCONNECTED) {
+                if (s >= State::STARTED && s <= State::ERROR_CREDENTIALS) {
                     ESP_LOGI(TAG, "Already started (state: %d)", (int)s);
                     xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
                     break;
@@ -631,7 +660,10 @@ void WiFiManager::wifiTask(void *pvParameters)
             }
             case CommandId::CONNECT:
             {
-                State s = self->current_state_;
+                State s             = self->current_state_;
+                self->current_ssid_ = cmd.ssid;
+                self->current_password_ = cmd.password;
+
                 // Basic state validation before attempting a connect
                 if (s == State::CONNECTED_GOT_IP) {
                     ESP_LOGI(TAG, "Already connected.");
@@ -653,9 +685,10 @@ void WiFiManager::wifiTask(void *pvParameters)
                 self->current_state_ = State::CONNECTING;
                 {
                     wifi_config_t wifi_config = {};
-                    strncpy((char *)wifi_config.sta.ssid, cmd.ssid.c_str(),
+                    strncpy((char *)wifi_config.sta.ssid, self->current_ssid_.c_str(),
                             sizeof(wifi_config.sta.ssid) - 1);
-                    strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
+                    strncpy((char *)wifi_config.sta.password,
+                            self->current_password_.c_str(),
                             sizeof(wifi_config.sta.password) - 1);
                     if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) !=
                         ESP_OK) {
@@ -726,12 +759,47 @@ void WiFiManager::wifiTask(void *pvParameters)
                     self->current_state_ = State::CONNECTED_NO_IP;
                     break;
                 case WIFI_EVENT_STA_DISCONNECTED:
-                    ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED");
-                    self->current_state_ = State::DISCONNECTED;
-                    // Signaling failure here allows the sync connect() to stop
-                    // waiting and return error
-                    xEventGroupSetBits(self->wifi_event_group_,
-                                       DISCONNECTED_BIT | CONNECT_FAILED_BIT);
+                    ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED (reason: %d)",
+                             cmd.reason);
+
+                    State s = self->current_state_;
+                    // Case 1: Disconnection was intended (via API)
+                    if (s == State::DISCONNECTING || s == State::STOPPING ||
+                        s == State::INITIALIZED) {
+                        self->current_state_ = State::DISCONNECTED;
+                        xEventGroupSetBits(self->wifi_event_group_,
+                                           DISCONNECTED_BIT | CONNECT_FAILED_BIT);
+                    }
+                    // Case 2: Permanent failure (Wrong credentials)
+                    else if (cmd.reason == WIFI_REASON_AUTH_FAIL) {
+                        ESP_LOGE(TAG, "Authentication failed (wrong password).");
+                        self->current_state_ = State::ERROR_CREDENTIALS;
+                        xEventGroupSetBits(self->wifi_event_group_,
+                                           CONNECT_FAILED_BIT);
+                    }
+                    // Case 3: Temporary failure, initiate reconnection logic
+                    else {
+                        self->current_state_ = State::WAITING_RECONNECT;
+                        self->retry_count_++;
+
+                        uint32_t delay_ms = 1000; // First retry after 1s
+                        if (self->retry_count_ > 1) {
+                            // Exponential backoff: 2s, 4s, 8s... max 300s (5 min)
+                            delay_ms = (1 << (self->retry_count_ - 1)) * 1000;
+                            if (delay_ms > 300000)
+                                delay_ms = 300000;
+                        }
+                        self->next_reconnect_ms_ =
+                            (esp_timer_get_time() / 1000) + delay_ms;
+
+                        ESP_LOGI(TAG, "Reconnection attempt %lu in %lu ms...",
+                                 (unsigned long)self->retry_count_,
+                                 (unsigned long)delay_ms);
+
+                        // Signal failure so blocking connect() calls can return
+                        xEventGroupSetBits(self->wifi_event_group_,
+                                           CONNECT_FAILED_BIT);
+                    }
                     break;
                 }
                 break;
@@ -740,6 +808,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                 if (cmd.event_id == IP_EVENT_STA_GOT_IP) {
                     ESP_LOGI(TAG, "Task Event: GOT_IP");
                     self->current_state_ = State::CONNECTED_GOT_IP;
+                    self->retry_count_   = 0; // Reset retries on success
                     xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
                 }
                 break;
@@ -753,6 +822,27 @@ void WiFiManager::wifiTask(void *pvParameters)
                 return; // Should not reach here
             }
             xSemaphoreGive(self->state_mutex_);
+        }
+        else {
+            // Timeout reached in xQueueReceive - Backoff finished
+            if (self->current_state_ == State::WAITING_RECONNECT) {
+                xSemaphoreTake(self->state_mutex_, portMAX_DELAY);
+                ESP_LOGI(TAG, "Retrying connection to %s...",
+                         self->current_ssid_.c_str());
+
+                self->current_state_ = State::CONNECTING;
+                wifi_config_t wifi_config = {};
+                strncpy((char *)wifi_config.sta.ssid, self->current_ssid_.c_str(),
+                        sizeof(wifi_config.sta.ssid) - 1);
+                strncpy((char *)wifi_config.sta.password,
+                        self->current_password_.c_str(),
+                        sizeof(wifi_config.sta.password) - 1);
+
+                esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+                esp_wifi_connect();
+
+                xSemaphoreGive(self->state_mutex_);
+            }
         }
     }
 }
