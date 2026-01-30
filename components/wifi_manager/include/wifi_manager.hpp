@@ -11,6 +11,11 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+// Forward declaration for tests
+#ifdef UNIT_TEST
+class WiFiManagerTestAccessor;
+#endif
+
 /**
  * @class WiFiManager
  * @brief Singleton class for managing WiFi connections on ESP32.
@@ -21,6 +26,10 @@
  */
 class WiFiManager
 {
+#ifdef UNIT_TEST
+    friend class WiFiManagerAcessor;
+#endif
+
 public:
     /**
      * @brief Publicly accessible states of the WiFi manager.
@@ -180,6 +189,7 @@ private:
         int32_t event_id;
     };
 
+private:
     // Event bits for synchronization
     static constexpr EventBits_t STARTED_BIT        = BIT0;
     static constexpr EventBits_t STOPPED_BIT        = BIT1;
@@ -188,10 +198,9 @@ private:
     static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4;
     static constexpr EventBits_t START_FAILED_BIT   = BIT5;
     static constexpr EventBits_t STOP_FAILED_BIT    = BIT6;
-    static constexpr EventBits_t ALL_SYNC_BITS      = STARTED_BIT | STOPPED_BIT |
-                                                 CONNECTED_BIT | DISCONNECTED_BIT |
-                                                 CONNECT_FAILED_BIT | START_FAILED_BIT |
-                                                 STOP_FAILED_BIT;
+    static constexpr EventBits_t ALL_SYNC_BITS =
+        STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT |
+        CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT;
 
     // Task and event handlers
     static void wifiTask(void *pvParameters);
@@ -212,6 +221,7 @@ private:
     // Helper to send a command to the queue
     esp_err_t sendCommand(const Command &cmd, bool is_async);
 
+private:
     // RTOS objects
     TaskHandle_t task_handle_;
     QueueHandle_t command_queue_;
@@ -220,4 +230,23 @@ private:
 
     // State variable
     State current_state_;
+
+#ifdef UNIT_TEST
+    friend class WiFiManagerTestAccessor;
+
+    // Helpers que criam e enviam comandos específicos
+    esp_err_t testHelper_sendStartCommand(bool is_async);
+    esp_err_t testHelper_sendStopCommand(bool is_async);
+    esp_err_t testHelper_sendConnectCommand(const std::string &ssid,
+                                            const std::string &password,
+                                            bool is_async);
+    esp_err_t testHelper_sendDisconnectCommand(bool is_async);
+
+    // Helper para verificar estado interno (opcional)
+    State testHelper_getInternalState() const;
+
+    // Helper para verificar fila (opcional)
+    uint32_t testHelper_getQueuePendingCount() const;
+    bool testHelper_isQueueFull() const;
+#endif
 };
