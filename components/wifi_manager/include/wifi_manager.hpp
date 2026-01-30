@@ -1,5 +1,12 @@
 #pragma once
 
+/**
+ * @file wifi_manager.hpp
+ * @brief Singleton WiFi Manager for ESP32.
+ * @author Jules
+ * @version 1.0.0
+ */
+
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -22,7 +29,7 @@ class WiFiManagerTestAccessor;
  *
  * This class uses a dedicated FreeRTOS task to handle all WiFi operations,
  * ensuring thread safety and a non-blocking internal architecture.
- * It provides both synchronous and asynchronous methods for ease of use.
+ * It provides both synchronous (blocking) and asynchronous (non-blocking) methods.
  */
 class WiFiManager
 {
@@ -32,22 +39,22 @@ class WiFiManager
 
 public:
     /**
-     * @brief Publicly accessible states of the WiFi manager.
+     * @brief Internal states of the WiFi manager.
      */
     enum class State
     {
-        UNINITIALIZED,
-        INITIALIZING,
-        INITIALIZED,
-        STARTING,
-        STARTED,
-        CONNECTING,
-        CONNECTED_NO_IP,
-        CONNECTED_GOT_IP,
-        DISCONNECTING,
-        DISCONNECTED,
-        STOPPING,
-        STOPPED,
+        UNINITIALIZED,    ///< Initial state before init() is called.
+        INITIALIZING,     ///< In the process of setting up resources.
+        INITIALIZED,      ///< Resources allocated, task running, driver not started.
+        STARTING,         ///< In the process of starting the WiFi driver.
+        STARTED,          ///< WiFi driver started in STA mode.
+        CONNECTING,       ///< Attempting to connect to an AP.
+        CONNECTED_NO_IP,  ///< Connected to AP, waiting for DHCP/Static IP.
+        CONNECTED_GOT_IP, ///< Successfully connected and has an IP address.
+        DISCONNECTING,    ///< In the process of disconnecting from the AP.
+        DISCONNECTED,     ///< Not connected to any AP.
+        STOPPING,         ///< In the process of stopping the WiFi driver.
+        STOPPED,          ///< WiFi driver stopped.
     };
 
     /**
@@ -61,50 +68,82 @@ public:
     WiFiManager &operator=(const WiFiManager &) = delete;
 
     /**
-     * @brief Initialize the WiFi stack, creates the event queue and the manager
-     * task.
-     * @return ESP_OK on success, error code on failure.
+     * @brief Initialize the WiFi stack.
+     *
+     * Initializes NVS, Netif, Event Loop, creates the command queue,
+     * event group, and launches the internal manager task.
+     *
+     * @return
+     *  - ESP_OK: Success.
+     *  - ESP_ERR_NO_MEM: Failed to allocate RTOS resources.
+     *  - Others: Failed to initialize system-level components.
      */
     esp_err_t init();
 
     /**
-     * @brief Deinitialize the WiFi stack, clean up resources.
-     * @return ESP_OK on success, error code on failure.
+     * @brief Deinitialize the WiFi stack.
+     *
+     * Stops the WiFi driver if running, terminates the manager task,
+     * and releases all allocated RTOS and system resources.
+     *
+     * @return ESP_OK on success.
      */
     esp_err_t deinit();
 
     /**
      * @brief Start the WiFi station mode (synchronous).
+     *
+     * Blocks until the WiFi driver is successfully started or a timeout occurs.
+     *
      * @param timeout_ms Maximum time to wait for the operation to complete.
-     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
+     * @return
+     *  - ESP_OK: Started successfully.
+     *  - ESP_ERR_TIMEOUT: Operation timed out.
+     *  - ESP_ERR_INVALID_STATE: Manager is not initialized.
      */
     esp_err_t start(uint32_t timeout_ms = 5000);
 
     /**
      * @brief Start the WiFi station mode (asynchronous).
-     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     *
+     * Returns immediately after queuing the start command.
+     *
+     * @return ESP_OK if the command was sent successfully.
      */
     esp_err_t start_async();
 
     /**
      * @brief Stop the WiFi station mode (synchronous).
+     *
+     * Blocks until the WiFi driver is stopped or a timeout occurs.
+     *
      * @param timeout_ms Maximum time to wait for the operation to complete.
-     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
+     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout.
      */
     esp_err_t stop(uint32_t timeout_ms = 5000);
 
     /**
      * @brief Stop the WiFi station mode (asynchronous).
-     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     *
+     * Returns immediately after queuing the stop command.
+     *
+     * @return ESP_OK if the command was sent successfully.
      */
     esp_err_t stop_async();
 
     /**
      * @brief Connect to a WiFi network (synchronous).
+     *
+     * Blocks until a connection is established and an IP is obtained,
+     * or a timeout/error occurs.
+     *
      * @param ssid The network SSID.
      * @param password The network password.
      * @param timeout_ms Maximum time to wait for connection and IP.
-     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
+     * @return
+     *  - ESP_OK: Connected and has IP.
+     *  - ESP_ERR_TIMEOUT: Failed to connect within the time limit.
+     *  - ESP_FAIL: Driver reported immediate failure.
      */
     esp_err_t connect(const std::string &ssid,
                       const std::string &password,
@@ -112,22 +151,31 @@ public:
 
     /**
      * @brief Connect to a WiFi network (asynchronous).
+     *
+     * Returns immediately after queuing the connect command.
+     *
      * @param ssid The network SSID.
      * @param password The network password.
-     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     * @return ESP_OK if the command was sent successfully.
      */
     esp_err_t connect_async(const std::string &ssid, const std::string &password);
 
     /**
      * @brief Disconnect from the current WiFi network (synchronous).
+     *
+     * Blocks until the disconnection is confirmed by the driver.
+     *
      * @param timeout_ms Maximum time to wait for the operation to complete.
-     * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout, or other error code.
+     * @return ESP_OK on success.
      */
     esp_err_t disconnect(uint32_t timeout_ms = 5000);
 
     /**
      * @brief Disconnect from the current WiFi network (asynchronous).
-     * @return ESP_OK if the command was sent successfully, error code otherwise.
+     *
+     * Returns immediately after queuing the disconnect command.
+     *
+     * @return ESP_OK if the command was sent successfully.
      */
     esp_err_t disconnect_async();
 
@@ -139,23 +187,27 @@ public:
 
     /**
      * @brief Store WiFi credentials in NVS.
+     *
+     * Uses a dedicated NVS namespace "wifi_manager".
+     *
      * @param ssid The network SSID to store.
      * @param password The network password to store.
-     * @return ESP_OK on success, error code on failure.
+     * @return ESP_OK on success.
      */
     esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
 
     /**
      * @brief Load WiFi credentials from NVS.
+     *
      * @param ssid Output parameter for the loaded SSID.
      * @param password Output parameter for the loaded password.
-     * @return ESP_OK on success, error code on failure.
+     * @return ESP_OK on success, or error if not found.
      */
     esp_err_t loadCredentials(std::string &ssid, std::string &password);
 
     /**
-     * @brief Check if credentials are stored in NVS.
-     * @return true if credentials exist, false otherwise.
+     * @brief Check if credentials exist in NVS.
+     * @return true if credentials are found and valid.
      */
     bool hasCredentials();
 

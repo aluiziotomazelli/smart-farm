@@ -22,6 +22,10 @@ extern "C" void test_warmup(void)
     wm.stop(5000);
     wm.deinit();
     printf("Warmup complete. Memory state stabilized.\n");
+
+    // Disable non-error logs for cleaner test output
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    printf("Log level set to ERROR for all components.\n");
     printf("==========================\n\n");
 }
 
@@ -47,6 +51,7 @@ TEST_CASE("test_wifi_init_once", "[wifi][init]")
     printf("Testing WiFi Manager initialization...\n");
 
     esp_err_t ret = wm.init();
+    printf("wm.init() returned: %s\n", esp_err_to_name(ret));
     TEST_ASSERT(ret == ESP_OK || ret == ESP_ERR_INVALID_STATE);
 
     printf("WiFi Manager initialized successfully\n");
@@ -77,10 +82,12 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
     std::string test_ssid = "TestNetwork";
     std::string test_pass = "TestPassword123";
 
+    printf("Storing credentials: SSID=%s\n", test_ssid.c_str());
     esp_err_t ret = wm.storeCredentials(test_ssid, test_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 
     // Test reading
+    printf("Loading credentials from NVS...\n");
     std::string read_ssid, read_pass;
     ret = wm.loadCredentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
@@ -348,12 +355,14 @@ TEST_CASE("test_wifi_start_stop", "[wifi][state]")
     // 1. Test Start
     printf("Calling start()...\n");
     esp_err_t err = wm.start(5000);
+    printf("wm.start() returned: %s\n", esp_err_to_name(err));
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
 
     // 2. Test Stop
     printf("Calling stop()...\n");
     err = wm.stop(5000);
+    printf("wm.stop() returned: %s\n", esp_err_to_name(err));
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
 
