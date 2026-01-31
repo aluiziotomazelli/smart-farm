@@ -65,6 +65,16 @@ public:
                                       WIFI_EVENT_STA_DISCONNECTED, &disconn);
     }
 
+    void test_simulateWifiEvent(int32_t id, void *data = nullptr)
+    {
+        WiFiManager::wifiEventHandler(&wifi_manager_, WIFI_EVENT, id, data);
+    }
+
+    void test_simulateIpEvent(int32_t id, void *data = nullptr)
+    {
+        WiFiManager::ipEventHandler(&wifi_manager_, IP_EVENT, id, data);
+    }
+
     uint32_t test_getQueueCapacity()
     {
         uint32_t pending = wifi_manager_.testHelper_getQueuePendingCount();

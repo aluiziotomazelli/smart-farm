@@ -212,8 +212,10 @@ esp_err_t WiFiManager::init()
                     ssid_len = 32;
                 memcpy(wifi_config.sta.ssid, CONFIG_WIFI_SSID, ssid_len);
 
-                strncpy((char *)wifi_config.sta.password, CONFIG_WIFI_PASSWORD,
-                        sizeof(wifi_config.sta.password) - 1);
+                size_t pass_len = strlen(CONFIG_WIFI_PASSWORD);
+                if (pass_len > 64)
+                    pass_len = 64;
+                memcpy(wifi_config.sta.password, CONFIG_WIFI_PASSWORD, pass_len);
 
                 wifi_config.sta.scan_method        = WIFI_ALL_CHANNEL_SCAN;
                 wifi_config.sta.failure_retry_cnt  = 2;

@@ -7,6 +7,7 @@
 
 #include "secrets.h"
 #include "test_memory_helper.h"
+#include <cstring>
 
 #include "wifi_manager.hpp"
 
@@ -161,7 +162,13 @@ TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
 
     wm.deinit();
     wm.init();
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    // After re-init, if Kconfig has a default SSID, it will be applied and flag set to true
+    if (strlen(CONFIG_WIFI_SSID) > 0) {
+        TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    }
+    else {
+        TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    }
 
     wm.deinit();
 }
