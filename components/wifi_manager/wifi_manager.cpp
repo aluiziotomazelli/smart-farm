@@ -216,7 +216,7 @@ esp_err_t WiFiManager::init()
                         sizeof(wifi_config.sta.password) - 1);
 
                 wifi_config.sta.scan_method        = WIFI_ALL_CHANNEL_SCAN;
-                wifi_config.sta.failure_retry_cnt  = 3;
+                wifi_config.sta.failure_retry_cnt  = 2;
                 wifi_config.sta.pmf_cfg.capable    = true;
                 wifi_config.sta.pmf_cfg.required   = false;
                 wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
@@ -561,15 +561,15 @@ esp_err_t WiFiManager::setCredentials(const std::string &ssid,
     }
 
     wifi_config_t wifi_config = {};
-    // Use memcpy for SSID to support 32 characters correctly
+    // Use memcpy for SSID and Password to support full range of characters
     size_t ssid_len = ssid.length() > 32 ? 32 : ssid.length();
     memcpy(wifi_config.sta.ssid, ssid.c_str(), ssid_len);
 
-    strncpy((char *)wifi_config.sta.password, password.c_str(),
-            sizeof(wifi_config.sta.password) - 1);
+    size_t pass_len = password.length() > 64 ? 64 : password.length();
+    memcpy(wifi_config.sta.password, password.c_str(), pass_len);
 
     wifi_config.sta.scan_method        = WIFI_ALL_CHANNEL_SCAN;
-    wifi_config.sta.failure_retry_cnt  = 3;
+    wifi_config.sta.failure_retry_cnt  = 2;
     wifi_config.sta.pmf_cfg.capable    = true;
     wifi_config.sta.pmf_cfg.required   = false;
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
@@ -596,8 +596,12 @@ esp_err_t WiFiManager::getCredentials(std::string &ssid, std::string &password)
         // SSID can be up to 32 chars and not null terminated
         char ssid_buf[33] = {0};
         memcpy(ssid_buf, conf.sta.ssid, 32);
-        ssid     = ssid_buf;
-        password = (char *)conf.sta.password;
+        ssid = ssid_buf;
+
+        // Password can be up to 64 chars and not null terminated
+        char pass_buf[65] = {0};
+        memcpy(pass_buf, conf.sta.password, 64);
+        password = pass_buf;
     }
     return err;
 }
@@ -842,12 +846,13 @@ void WiFiManager::wifiTask(void *pvParameters)
                     break;
                 }
 
-                // SPECIAL CASE: Rollback during early connect phase.
+                // SPECIAL CASE: Rollback during early connect phase or backoff.
                 // The driver might not emit a DISCONNECTED event if we call
-                // disconnect before the link is established.
-                if (s == State::CONNECTING) {
-                    ESP_LOGI(TAG, "Disconnect requested while connecting, forcing "
-                                  "DISCONNECTED");
+                // disconnect before the link is established or while waiting.
+                if (s == State::CONNECTING || s == State::WAITING_RECONNECT) {
+                    ESP_LOGI(TAG,
+                             "Disconnect requested while %s, forcing DISCONNECTED",
+                             s == State::CONNECTING ? "connecting" : "waiting");
                     esp_wifi_disconnect();
                     self->current_state_ = State::DISCONNECTED;
                     xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
