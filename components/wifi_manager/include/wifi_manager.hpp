@@ -134,31 +134,51 @@ public:
     esp_err_t stop_async();
 
     /**
-     * @brief Connect to a WiFi network (synchronous).
+     * @brief Connect to the configured WiFi network (synchronous).
      *
      * Blocks until a connection is established and an IP is obtained,
-     * or a timeout/error occurs.
+     * or a timeout/error occurs. Uses the credentials already stored in the WiFi
+     * driver.
      *
-     * @param ssid The network SSID.
-     * @param password The network password.
      * @param timeout_ms Maximum time to wait for connection and IP.
      * @return
      *  - ESP_OK: Connected and has IP.
      *  - ESP_ERR_TIMEOUT: Failed to connect within the time limit.
-     *  - ESP_FAIL: Driver reported immediate failure.
+     *  - ESP_FAIL: Driver reported immediate failure or no credentials found.
+     */
+    esp_err_t connect(uint32_t timeout_ms);
+
+    /**
+     * @brief Connect to the configured WiFi network (asynchronous).
+     *
+     * Returns immediately after queuing the connect command.
+     *
+     * @return ESP_OK if the command was sent successfully.
+     */
+    esp_err_t connect();
+
+    /**
+     * @brief Connect to a specific WiFi network (synchronous).
+     *
+     * Sets the credentials and attempts to connect.
+     *
+     * @param ssid The network SSID.
+     * @param password The network password.
+     * @param timeout_ms Maximum time to wait.
+     * @return ESP_OK on success.
      */
     esp_err_t connect(const std::string &ssid,
                       const std::string &password,
                       uint32_t timeout_ms);
 
     /**
-     * @brief Connect to a WiFi network (asynchronous).
+     * @brief Connect to a specific WiFi network (asynchronous).
      *
-     * Returns immediately after queuing the connect command.
+     * Sets the credentials and attempts to connect.
      *
      * @param ssid The network SSID.
      * @param password The network password.
-     * @return ESP_OK if the command was sent successfully.
+     * @return ESP_OK on success.
      */
     esp_err_t connect_async(const std::string &ssid, const std::string &password);
 
@@ -188,30 +208,42 @@ public:
     State getState() const;
 
     /**
-     * @brief Store WiFi credentials in NVS.
+     * @brief Set WiFi credentials and save them to the driver's NVS.
      *
-     * Uses a dedicated NVS namespace "wifi_manager".
-     *
-     * @param ssid The network SSID to store.
-     * @param password The network password to store.
+     * @param ssid The network SSID.
+     * @param password The network password.
      * @return ESP_OK on success.
      */
-    esp_err_t storeCredentials(const std::string &ssid, const std::string &password);
+    esp_err_t setCredentials(const std::string &ssid, const std::string &password);
 
     /**
-     * @brief Load WiFi credentials from NVS.
+     * @brief Get the currently configured WiFi credentials from the driver.
      *
-     * @param ssid Output parameter for the loaded SSID.
-     * @param password Output parameter for the loaded password.
-     * @return ESP_OK on success, or error if not found.
+     * @param ssid Output parameter for the SSID.
+     * @param password Output parameter for the password.
+     * @return ESP_OK on success.
      */
-    esp_err_t loadCredentials(std::string &ssid, std::string &password);
+    esp_err_t getCredentials(std::string &ssid, std::string &password);
 
     /**
-     * @brief Check if credentials exist in NVS.
-     * @return true if credentials are found and valid.
+     * @brief Clear WiFi credentials from the driver and reset validity flag.
+     * @return ESP_OK on success.
      */
-    bool hasCredentials();
+    esp_err_t clearCredentials();
+
+    /**
+     * @brief Perform a factory reset of the WiFi settings.
+     *
+     * Calls esp_wifi_restore() and clears the internal "wifi_manager" NVS.
+     * @return ESP_OK on success.
+     */
+    esp_err_t factoryReset();
+
+    /**
+     * @brief Check if the currently stored credentials are considered valid.
+     * @return true if valid.
+     */
+    bool isCredentialsValid() const;
 
 private:
     // Private constructor for singleton
@@ -231,6 +263,9 @@ private:
         STOP,              // Request to stop WiFi driver
         CONNECT,           // Request to connect to an AP
         DISCONNECT,        // Request to disconnect from an AP
+        SET_CREDENTIALS,   // Set new SSID/PASS
+        CLEAR_CREDENTIALS, // Clear SSID/PASS
+        FACTORY_RESET,     // Restore driver defaults and clear NVS
         HANDLE_EVENT_WIFI, // Bridge for WiFi system events
         HANDLE_EVENT_IP,   // Bridge for IP system events
         EXIT,              // Request to terminate the manager task
@@ -302,11 +337,15 @@ private:
     // The current thread-protected internal state
     State current_state_;
 
+    // Validity of the current credentials (persisted in NVS)
+    bool is_credential_valid_;
+
     // Reconnection tracking
-    std::string current_ssid_;
-    std::string current_password_;
     uint32_t retry_count_;
     uint64_t next_reconnect_ms_;
+
+    // Helper to persist validity flag
+    esp_err_t saveValidFlag(bool valid);
 
 #ifdef UNIT_TEST
     friend class WiFiManagerTestAccessor;

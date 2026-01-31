@@ -83,13 +83,13 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
     std::string test_pass = "TestPassword123";
 
     printf("Storing credentials: SSID=%s\n", test_ssid.c_str());
-    esp_err_t ret = wm.storeCredentials(test_ssid, test_pass);
+    esp_err_t ret = wm.setCredentials(test_ssid, test_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 
     // Test reading
-    printf("Loading credentials from NVS...\n");
+    printf("Loading credentials from Driver...\n");
     std::string read_ssid, read_pass;
-    ret = wm.loadCredentials(read_ssid, read_pass);
+    ret = wm.getCredentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
     TEST_ASSERT_EQUAL_STRING(test_ssid.c_str(), read_ssid.c_str());
     TEST_ASSERT_EQUAL_STRING(test_pass.c_str(), read_pass.c_str());
@@ -286,7 +286,7 @@ TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     // 4. Verify we can use NVS now
-    err = wm.storeCredentials("RepairSSID", "RepairPass");
+    err = wm.setCredentials("RepairSSID", "RepairPass");
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     printf("✓ NVS auto-repair test passed!\n");
@@ -311,11 +311,11 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     std::string max_pass(64, 'P');
 
     printf("Testing max length credentials...\n");
-    esp_err_t err = wm.storeCredentials(max_ssid, max_pass);
+    esp_err_t err = wm.setCredentials(max_ssid, max_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     std::string read_ssid, read_pass;
-    err = wm.loadCredentials(read_ssid, read_pass);
+    err = wm.getCredentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_EQUAL_STRING(max_ssid.c_str(), read_ssid.c_str());
     TEST_ASSERT_EQUAL_STRING(max_pass.c_str(), read_pass.c_str());
@@ -324,15 +324,15 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     printf("Testing persistence across deinit/init...\n");
     std::string p_ssid = "PersistSSID";
     std::string p_pass = "PersistPass";
-    wm.storeCredentials(p_ssid, p_pass);
+    wm.setCredentials(p_ssid, p_pass);
 
     wm.deinit();
     // Re-initialize
     wm.init();
 
     std::string check_ssid, check_pass;
-    TEST_ASSERT_TRUE(wm.hasCredentials());
-    wm.loadCredentials(check_ssid, check_pass);
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    wm.getCredentials(check_ssid, check_pass);
     TEST_ASSERT_EQUAL_STRING(p_ssid.c_str(), check_ssid.c_str());
     TEST_ASSERT_EQUAL_STRING(p_pass.c_str(), check_pass.c_str());
 
@@ -768,6 +768,95 @@ TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
         retry++;
     }
     TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+
+    wm.deinit();
+}
+
+/**
+ * 23. Test Clear Credentials
+ */
+TEST_CASE("test_wifi_clear_credentials", "[wifi][nvs]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Testing Clear Credentials ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    wm.setCredentials("ClearSSID", "ClearPass");
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    printf("Calling clearCredentials()...\n");
+    esp_err_t err = wm.clearCredentials();
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    std::string ssid, pass;
+    wm.getCredentials(ssid, pass);
+    TEST_ASSERT_EQUAL(0, ssid.length());
+
+    wm.deinit();
+}
+
+/**
+ * 24. Test Factory Reset
+ */
+TEST_CASE("test_wifi_factory_reset", "[wifi][nvs]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Testing Factory Reset ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    wm.setCredentials("FactorySSID", "FactoryPass");
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    printf("Calling factoryReset()...\n");
+    esp_err_t err = wm.factoryReset();
+    TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    std::string ssid, pass;
+    wm.getCredentials(ssid, pass);
+    TEST_ASSERT_EQUAL(0, ssid.length());
+
+    wm.deinit();
+}
+
+/**
+ * 25. Test Validity Flag Persistence
+ */
+TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Testing Validity Flag Persistence ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    wm.setCredentials("ValidSSID", "ValidPass");
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    // Deinit/Init should preserve the flag
+    printf("Deinitializing and reinitializing...\n");
+    wm.deinit();
+    wm.init();
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    // Clear and check persistence
+    printf("Clearing credentials and checking persistence...\n");
+    wm.clearCredentials();
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    wm.deinit();
+    wm.init();
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     wm.deinit();
 }

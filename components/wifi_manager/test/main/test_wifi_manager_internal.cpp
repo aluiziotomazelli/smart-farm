@@ -77,6 +77,44 @@ TEST_CASE("test_internal_queue_behavior", "[wifi][internal][stress]")
 }
 
 /**
+ * @brief Test: No reconnection if invalid
+ */
+TEST_CASE("test_internal_no_reconnect_if_invalid", "[wifi][internal][reconnect]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: No Reconnection if Invalid ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start();
+
+    WiFiManagerTestAccessor accessor(wm);
+
+    // 1. Force invalid
+    wm.clearCredentials();
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    // 2. Simulate a failed connection that sets valid=false
+    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    accessor.test_simulateDisconnect(WIFI_REASON_AUTH_FAIL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    // 3. Try another disconnect reason that usually retries
+    accessor.test_simulateDisconnect(WIFI_REASON_NO_AP_FOUND);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Should NOT be in WAITING_RECONNECT, but back to DISCONNECTED
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
+
+    wm.deinit();
+}
+
+/**
  * @brief Test: Stress test with internal monitoring
  *
  * Heavy load test while monitoring queue depth to ensure the task
