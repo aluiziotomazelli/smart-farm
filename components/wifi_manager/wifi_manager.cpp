@@ -28,6 +28,7 @@ WiFiManager::WiFiManager()
     , current_state_(State::UNINITIALIZED)
     , is_credential_valid_(false)
     , retry_count_(0)
+    , suspect_retry_count_(0)
     , next_reconnect_ms_(0)
 {
     // Mutex is created once and persists for the lifetime of the singleton.
@@ -143,6 +144,14 @@ esp_err_t WiFiManager::init()
     }
     if (err == ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "WiFi stack already initialized.");
+    }
+
+    // Ensure driver is in STA mode so we can read/write configs
+    err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set wifi mode: %s", esp_err_to_name(err));
+        deinit();
+        return err;
     }
 
     // Register event handlers with instance pointers for the static callbacks
@@ -545,16 +554,40 @@ WiFiManager::State WiFiManager::getState() const
 esp_err_t WiFiManager::setCredentials(const std::string &ssid,
                                       const std::string &password)
 {
-    if (getState() == State::UNINITIALIZED || !command_queue_) {
+    xSemaphoreTakeRecursive(state_mutex_, portMAX_DELAY);
+    if (current_state_ == State::UNINITIALIZED) {
+        xSemaphoreGiveRecursive(state_mutex_);
         return ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGI(TAG, "API: Setting credentials...");
-    Command cmd    = {};
-    cmd.id         = CommandId::SET_CREDENTIALS;
-    cmd.ssid       = ssid;
-    cmd.password   = password;
-    return sendCommand(cmd, false); // Sync to ensure it's applied
+
+    // If we are currently active, we must stop the current connection first
+    if (current_state_ >= State::CONNECTING && current_state_ < State::STOPPING) {
+        ESP_LOGI(TAG, "Disconnecting before applying new credentials...");
+        esp_wifi_disconnect();
+    }
+
+    wifi_config_t wifi_config = {};
+    // Use memcpy for SSID to support 32 characters correctly
+    size_t ssid_len = ssid.length() > 32 ? 32 : ssid.length();
+    memcpy(wifi_config.sta.ssid, ssid.c_str(), ssid_len);
+
+    strncpy((char *)wifi_config.sta.password, password.c_str(),
+            sizeof(wifi_config.sta.password) - 1);
+
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err == ESP_OK) {
+        suspect_retry_count_ = 0;
+        saveValidFlag(true);
+        ESP_LOGI(TAG, "Credentials applied successfully.");
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to set wifi config: %s", esp_err_to_name(err));
+    }
+
+    xSemaphoreGiveRecursive(state_mutex_);
+    return err;
 }
 
 esp_err_t WiFiManager::getCredentials(std::string &ssid, std::string &password)
@@ -562,7 +595,10 @@ esp_err_t WiFiManager::getCredentials(std::string &ssid, std::string &password)
     wifi_config_t conf;
     esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
     if (err == ESP_OK) {
-        ssid     = (char *)conf.sta.ssid;
+        // SSID can be up to 32 chars and not null terminated
+        char ssid_buf[33] = {0};
+        memcpy(ssid_buf, conf.sta.ssid, 32);
+        ssid     = ssid_buf;
         password = (char *)conf.sta.password;
     }
     return err;
@@ -570,26 +606,46 @@ esp_err_t WiFiManager::getCredentials(std::string &ssid, std::string &password)
 
 esp_err_t WiFiManager::clearCredentials()
 {
-    if (getState() == State::UNINITIALIZED || !command_queue_) {
+    xSemaphoreTakeRecursive(state_mutex_, portMAX_DELAY);
+    if (current_state_ == State::UNINITIALIZED) {
+        xSemaphoreGiveRecursive(state_mutex_);
         return ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGI(TAG, "API: Clearing credentials...");
-    Command cmd = {};
-    cmd.id      = CommandId::CLEAR_CREDENTIALS;
-    return sendCommand(cmd, false);
+    wifi_config_t blank_config = {};
+    esp_err_t err              = esp_wifi_set_config(WIFI_IF_STA, &blank_config);
+    if (err == ESP_OK) {
+        suspect_retry_count_ = 0;
+        saveValidFlag(false);
+    }
+    xSemaphoreGiveRecursive(state_mutex_);
+    return err;
 }
 
 esp_err_t WiFiManager::factoryReset()
 {
-    if (getState() == State::UNINITIALIZED || !command_queue_) {
+    xSemaphoreTakeRecursive(state_mutex_, portMAX_DELAY);
+    if (current_state_ == State::UNINITIALIZED) {
+        xSemaphoreGiveRecursive(state_mutex_);
         return ESP_ERR_INVALID_STATE;
     }
 
     ESP_LOGI(TAG, "API: Factory reset...");
-    Command cmd = {};
-    cmd.id      = CommandId::FACTORY_RESET;
-    return sendCommand(cmd, false);
+    esp_wifi_restore();
+
+    nvs_handle_t h;
+    if (nvs_open("wifi_manager", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+
+    is_credential_valid_ = false;
+    suspect_retry_count_ = 0;
+
+    xSemaphoreGiveRecursive(state_mutex_);
+    return ESP_OK;
 }
 
 bool WiFiManager::isCredentialsValid() const
@@ -699,10 +755,11 @@ void WiFiManager::wifiTask(void *pvParameters)
             // The state mutex is held for the duration of a command processing
             xSemaphoreTakeRecursive(self->state_mutex_, portMAX_DELAY);
 
-            // Any explicit user command resets the retry counter
+            // Any explicit user command resets the retry counters
             if (cmd.id != CommandId::HANDLE_EVENT_WIFI &&
                 cmd.id != CommandId::HANDLE_EVENT_IP) {
-                self->retry_count_ = 0;
+                self->retry_count_         = 0;
+                self->suspect_retry_count_ = 0;
             }
 
             switch (cmd.id) {
@@ -716,14 +773,8 @@ void WiFiManager::wifiTask(void *pvParameters)
                     break;
                 }
                 self->current_state_ = State::STARTING;
-                if ((err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to set wifi mode: %s",
-                             esp_err_to_name(err));
-                    self->current_state_ =
-                        s; // Rollback to previous state on immediate failure
-                    xEventGroupSetBits(self->wifi_event_group_, START_FAILED_BIT);
-                }
-                else if ((err = esp_wifi_start()) != ESP_OK) {
+
+                if ((err = esp_wifi_start()) != ESP_OK) {
                     ESP_LOGE(TAG, "Failed to start wifi: %s", esp_err_to_name(err));
                     self->current_state_ = s;
                     xEventGroupSetBits(self->wifi_event_group_, START_FAILED_BIT);
@@ -750,23 +801,6 @@ void WiFiManager::wifiTask(void *pvParameters)
             {
                 State s = self->current_state_;
 
-                // If credentials are provided in the command, set them first
-                if (!cmd.ssid.empty()) {
-                    wifi_config_t wifi_config = {};
-                    strncpy((char *)wifi_config.sta.ssid, cmd.ssid.c_str(),
-                            sizeof(wifi_config.sta.ssid) - 1);
-                    strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
-                            sizeof(wifi_config.sta.password) - 1);
-                    if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) !=
-                        ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to set wifi config (in connect): %s",
-                                 esp_err_to_name(err));
-                    }
-                    else {
-                        self->saveValidFlag(true);
-                    }
-                }
-
                 // Basic state validation before attempting a connect
                 if (s == State::CONNECTED_GOT_IP) {
                     ESP_LOGI(TAG, "Already connected.");
@@ -791,51 +825,6 @@ void WiFiManager::wifiTask(void *pvParameters)
                     self->current_state_ = s;
                     xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
                 }
-                break;
-            }
-            case CommandId::SET_CREDENTIALS:
-            {
-                wifi_config_t wifi_config = {};
-                strncpy((char *)wifi_config.sta.ssid, cmd.ssid.c_str(),
-                        sizeof(wifi_config.sta.ssid) - 1);
-                strncpy((char *)wifi_config.sta.password, cmd.password.c_str(),
-                        sizeof(wifi_config.sta.password) - 1);
-                if ((err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config)) != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to set wifi config: %s",
-                             esp_err_to_name(err));
-                }
-                else {
-                    ESP_LOGI(TAG, "Credentials set successfully.");
-                    self->saveValidFlag(true);
-                }
-                break;
-            }
-            case CommandId::CLEAR_CREDENTIALS:
-            {
-                wifi_config_t blank_config = {};
-                // Setting a config with empty SSID effectively clears it
-                if ((err = esp_wifi_set_config(WIFI_IF_STA, &blank_config)) !=
-                    ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to clear wifi config: %s",
-                             esp_err_to_name(err));
-                }
-                else {
-                    ESP_LOGI(TAG, "Credentials cleared.");
-                    self->saveValidFlag(false);
-                }
-                break;
-            }
-            case CommandId::FACTORY_RESET:
-            {
-                esp_wifi_restore();
-                nvs_handle_t h;
-                if (nvs_open("wifi_manager", NVS_READWRITE, &h) == ESP_OK) {
-                    nvs_erase_all(h);
-                    nvs_commit(h);
-                    nvs_close(h);
-                }
-                self->is_credential_valid_ = false;
-                ESP_LOGI(TAG, "Factory reset complete.");
                 break;
             }
             case CommandId::DISCONNECT:
@@ -900,15 +889,51 @@ void WiFiManager::wifiTask(void *pvParameters)
                         xEventGroupSetBits(self->wifi_event_group_,
                                            DISCONNECTED_BIT | CONNECT_FAILED_BIT);
                     }
-                    // Case 2: Permanent failure (Wrong credentials)
-                    else if (cmd.reason == WIFI_REASON_AUTH_FAIL) {
-                        ESP_LOGE(TAG, "Authentication failed (wrong password).");
+                    // Case 1: Intentional disconnect
+                    else if (cmd.reason == WIFI_REASON_ASSOC_LEAVE) {
+                        ESP_LOGI(TAG, "Disconnected (Reason: ASSOC_LEAVE).");
+                        self->current_state_ = State::DISCONNECTED;
+                        xEventGroupSetBits(self->wifi_event_group_,
+                                           DISCONNECTED_BIT | CONNECT_FAILED_BIT);
+                    }
+                    // Case 2: Definite credential failure
+                    else if (cmd.reason == WIFI_REASON_AUTH_FAIL ||
+                             cmd.reason == WIFI_REASON_802_1X_AUTH_FAILED) {
+                        ESP_LOGE(TAG, "Authentication failed (Reason: %d).",
+                                 cmd.reason);
                         self->current_state_ = State::ERROR_CREDENTIALS;
                         self->saveValidFlag(false);
                         xEventGroupSetBits(self->wifi_event_group_,
                                            CONNECT_FAILED_BIT);
                     }
-                    // Case 3: Temporary failure, initiate reconnection logic
+                    // Case 3: Suspect credential failure
+                    else if (cmd.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+                             cmd.reason == WIFI_REASON_HANDSHAKE_TIMEOUT ||
+                             cmd.reason == WIFI_REASON_CONNECTION_FAIL) {
+                        self->suspect_retry_count_++;
+                        ESP_LOGW(TAG, "Suspect failure %lu/3 (Reason: %d).",
+                                 (unsigned long)self->suspect_retry_count_,
+                                 cmd.reason);
+
+                        if (self->suspect_retry_count_ >= 3) {
+                            ESP_LOGE(TAG, "Too many suspect failures. Invalidating "
+                                          "credentials.");
+                            self->current_state_ = State::ERROR_CREDENTIALS;
+                            self->saveValidFlag(false);
+                        }
+                        else {
+                            self->current_state_ = State::WAITING_RECONNECT;
+                            self->retry_count_++;
+                            uint32_t delay_ms = 1000 * (1 << (self->retry_count_ - 1));
+                            if (delay_ms > 300000)
+                                delay_ms = 300000;
+                            self->next_reconnect_ms_ =
+                                (esp_timer_get_time() / 1000) + delay_ms;
+                        }
+                        xEventGroupSetBits(self->wifi_event_group_,
+                                           CONNECT_FAILED_BIT);
+                    }
+                    // Case 4: Recoverable failure
                     else {
                         if (self->is_credential_valid_) {
                             self->current_state_ = State::WAITING_RECONNECT;
@@ -944,8 +969,9 @@ void WiFiManager::wifiTask(void *pvParameters)
             case CommandId::HANDLE_EVENT_IP:
                 if (cmd.event_id == IP_EVENT_STA_GOT_IP) {
                     ESP_LOGI(TAG, "Task Event: GOT_IP");
-                    self->current_state_ = State::CONNECTED_GOT_IP;
-                    self->retry_count_   = 0; // Reset retries on success
+                    self->current_state_        = State::CONNECTED_GOT_IP;
+                    self->retry_count_          = 0; // Reset retries on success
+                    self->suspect_retry_count_ = 0;
                     if (!self->is_credential_valid_) {
                         self->saveValidFlag(true);
                     }
@@ -997,14 +1023,10 @@ esp_err_t WiFiManager::testHelper_sendStopCommand(bool is_async)
     return sendCommand(cmd, is_async);
 }
 
-esp_err_t WiFiManager::testHelper_sendConnectCommand(const std::string &ssid,
-                                                     const std::string &password,
-                                                     bool is_async)
+esp_err_t WiFiManager::testHelper_sendConnectCommand(bool is_async)
 {
-    Command cmd  = {};
-    cmd.id       = CommandId::CONNECT;
-    cmd.ssid     = ssid;
-    cmd.password = password;
+    Command cmd = {};
+    cmd.id      = CommandId::CONNECT;
     return sendCommand(cmd, is_async);
 }
 

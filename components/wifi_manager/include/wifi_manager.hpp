@@ -263,9 +263,6 @@ private:
         STOP,              // Request to stop WiFi driver
         CONNECT,           // Request to connect to an AP
         DISCONNECT,        // Request to disconnect from an AP
-        SET_CREDENTIALS,   // Set new SSID/PASS
-        CLEAR_CREDENTIALS, // Clear SSID/PASS
-        FACTORY_RESET,     // Restore driver defaults and clear NVS
         HANDLE_EVENT_WIFI, // Bridge for WiFi system events
         HANDLE_EVENT_IP,   // Bridge for IP system events
         EXIT,              // Request to terminate the manager task
@@ -274,11 +271,9 @@ private:
     // Structure used to pass commands and data to the internal task
     struct Command
     {
-        CommandId id;         // The operation requested
-        std::string ssid;     // SSID for CONNECT commands
-        std::string password; // Password for CONNECT commands
-        int32_t event_id;     // Event ID for HANDLE_EVENT_* commands
-        uint8_t reason;       // Reason code for DISCONNECTED events
+        CommandId id;     // The operation requested
+        int32_t event_id; // Event ID for HANDLE_EVENT_* commands
+        uint8_t reason;   // Reason code for DISCONNECTED events
     };
 
 private:
@@ -342,6 +337,7 @@ private:
 
     // Reconnection tracking
     uint32_t retry_count_;
+    uint32_t suspect_retry_count_;
     uint64_t next_reconnect_ms_;
 
     // Helper to persist validity flag
@@ -353,9 +349,7 @@ private:
     // Helpers que criam e enviam comandos específicos
     esp_err_t testHelper_sendStartCommand(bool is_async);
     esp_err_t testHelper_sendStopCommand(bool is_async);
-    esp_err_t testHelper_sendConnectCommand(const std::string &ssid,
-                                            const std::string &password,
-                                            bool is_async);
+    esp_err_t testHelper_sendConnectCommand(bool is_async);
     esp_err_t testHelper_sendDisconnectCommand(bool is_async);
 
     // Helper para verificar fila (opcional)

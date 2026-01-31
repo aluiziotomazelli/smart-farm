@@ -10,8 +10,6 @@
 
 #include "wifi_manager.hpp"
 
-static const char *TAG = "test_wifi";
-
 extern "C" void test_warmup(void)
 {
     printf("\n=== WiFiManager Warmup ===\n");
@@ -310,13 +308,17 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     std::string max_ssid(32, 'S');
     std::string max_pass(64, 'P');
 
-    printf("Testing max length credentials...\n");
+    printf("Testing max length credentials (32 chars SSID)...\n");
     esp_err_t err = wm.setCredentials(max_ssid, max_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     std::string read_ssid, read_pass;
     err = wm.getCredentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
+
+    // Note: read_ssid.length() should be 32. TEST_ASSERT_EQUAL_STRING works
+    // if read_ssid is null terminated, which getCredentials ensures by using a 33 byte buffer.
+    TEST_ASSERT_EQUAL(32, read_ssid.length());
     TEST_ASSERT_EQUAL_STRING(max_ssid.c_str(), read_ssid.c_str());
     TEST_ASSERT_EQUAL_STRING(max_pass.c_str(), read_pass.c_str());
 
@@ -599,20 +601,17 @@ TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
 
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
 
-    // 2. Force disconnect via driver
-    printf("2. Forcing disconnect via esp_wifi_disconnect()...\n");
-    esp_wifi_disconnect();
-
-    // Wait for detection
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // 2. Force disconnect via API (should not auto-reconnect)
+    printf("2. Disconnecting via wm.disconnect()...\n");
+    wm.disconnect(5000);
 
     WiFiManager::State state_after_drop = wm.getState();
-    printf("State after forced drop: %d\n", (int)state_after_drop);
+    printf("State after disconnect: %d\n", (int)state_after_drop);
     TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, state_after_drop);
 
     // 3. Try to reconnect manually via class
     printf("3. Reconnecting manually via connect()...\n");
-    esp_err_t err = wm.connect(TEST_WIFI_SSID, TEST_WIFI_PASS, 15000);
+    esp_err_t err = wm.connect(15000);
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
 

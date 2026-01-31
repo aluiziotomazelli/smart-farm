@@ -30,11 +30,9 @@ public:
         return wifi_manager_.testHelper_sendStopCommand(is_async);
     }
 
-    esp_err_t test_sendConnectCommand(const std::string &ssid,
-                                      const std::string &password,
-                                      bool is_async = true)
+    esp_err_t test_sendConnectCommand(bool is_async = true)
     {
-        return wifi_manager_.testHelper_sendConnectCommand(ssid, password, is_async);
+        return wifi_manager_.testHelper_sendConnectCommand(is_async);
     }
 
     esp_err_t test_sendDisconnectCommand(bool is_async = true)

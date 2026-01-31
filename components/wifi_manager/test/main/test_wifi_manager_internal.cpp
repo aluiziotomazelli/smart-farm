@@ -77,6 +77,57 @@ TEST_CASE("test_internal_queue_behavior", "[wifi][internal][stress]")
 }
 
 /**
+ * @brief Test: Suspect failure logic (3 strikes)
+ */
+TEST_CASE("test_internal_suspect_failures", "[wifi][internal][reconnect]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: Suspect Failures (3 strikes) ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start();
+
+    WiFiManagerTestAccessor accessor(wm);
+
+    wm.setCredentials("SuspectSSID", "password");
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    // 1. First suspect failure
+    printf("Simulating 1st suspect failure (HANDSHAKE_TIMEOUT)...\n");
+    accessor.test_sendConnectCommand(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    // 2. Second suspect failure
+    printf("Simulating 2nd suspect failure...\n");
+    accessor.test_sendConnectCommand(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+
+    // 3. Third suspect failure -> Invalidate
+    printf("Simulating 3rd suspect failure -> Expect Invalidation...\n");
+    accessor.test_sendConnectCommand(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    wm.deinit();
+}
+
+/**
  * @brief Test: No reconnection if invalid
  */
 TEST_CASE("test_internal_no_reconnect_if_invalid", "[wifi][internal][reconnect]")
@@ -96,7 +147,7 @@ TEST_CASE("test_internal_no_reconnect_if_invalid", "[wifi][internal][reconnect]"
     TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     // 2. Simulate a failed connection that sets valid=false
-    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
     accessor.test_simulateDisconnect(WIFI_REASON_AUTH_FAIL);
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -143,7 +194,7 @@ TEST_CASE("test_internal_stress_with_monitoring", "[wifi][internal][stress]")
         if (i % 2 == 0) {
             ret = accessor.test_sendStartCommand(true);
         } else {
-            ret = accessor.test_sendConnectCommand("StressSSID", "password", true);
+            ret = accessor.test_sendConnectCommand(true);
         }
 
         if (ret == ESP_OK) successes++;
@@ -192,7 +243,8 @@ TEST_CASE("test_internal_reconnection_logic", "[wifi][internal][reconnect]")
 
     // 1. Simulate a connection attempt
     printf("Simulating CONNECT command...\n");
-    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    wm.setCredentials("RetrySSID", "password");
+    accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
 
@@ -201,10 +253,12 @@ TEST_CASE("test_internal_reconnection_logic", "[wifi][internal][reconnect]")
     accessor.test_simulateDisconnect(WIFI_REASON_AUTH_FAIL);
     vTaskDelay(pdMS_TO_TICKS(100));
     TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     // 3. Reset and try a temporary failure
     printf("Resetting with new CONNECT...\n");
-    accessor.test_sendConnectCommand("RetrySSID", "password", true);
+    wm.setCredentials("RetrySSID", "password");
+    accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
 
