@@ -387,8 +387,9 @@ TEST_CASE("test_wifi_connect_timeout", "[wifi][connect]")
 
     printf("Calling connect() with non-existent SSID and 2s timeout...\n");
     // Use an SSID that probably doesn't exist
+    wm.setCredentials("NonExistentSSID_12345", "wrong_password");
     int64_t start_time = esp_timer_get_time();
-    esp_err_t err      = wm.connect("NonExistentSSID_12345", "wrong_password", 2000);
+    esp_err_t err      = wm.connect(2000);
     int64_t end_time   = esp_timer_get_time();
 
     printf("Connect returned after %lld ms\n", (end_time - start_time) / 1000);
@@ -420,9 +421,10 @@ TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
 
     // Test if the task processes redundant commands fast enough
     printf("Sending 100 redundant connect commands...\n");
+    wm.setCredentials("StressSSID", "password");
     int fail_count = 0;
     for (int i = 0; i < 100; i++) {
-        if (wm.connect_async("StressSSID", "password") != ESP_OK) {
+        if (wm.connect() != ESP_OK) {
             fail_count++;
         }
     }
@@ -453,7 +455,7 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 
     // 2. Try connect without init
     printf("Calling connect() before init()...\n");
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.connect("SSID", "PASS", 1000));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.connect(1000));
 
     // 3. Try disconnect without init
     printf("Calling disconnect() before init()...\n");
@@ -463,7 +465,8 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 
     // 4. Try connect without start (driver wifi not loaded)
     printf("Calling connect() after init() but before start()...\n");
-    esp_err_t err = wm.connect("SSID", "PASS", 1000);
+    wm.setCredentials("SSID", "PASS");
+    esp_err_t err = wm.connect(1000);
     printf("Connect returned: %s\n", esp_err_to_name(err));
     // Should return ESP_FAIL immediately due to invalid state rejection
     TEST_ASSERT_EQUAL(ESP_FAIL, err);
@@ -476,7 +479,8 @@ static void connect_task(void *pvParameters)
     const char *ssid = (const char *)pvParameters;
     WiFiManager &wm  = WiFiManager::instance();
     printf("Task connecting to %s...\n", ssid);
-    esp_err_t err = wm.connect(ssid, "password", 1000);
+    wm.setCredentials(ssid, "password");
+    esp_err_t err = wm.connect(1000);
     printf("Task %s finished with error: %d\n", ssid, err);
     vTaskDelete(NULL);
 }
@@ -519,7 +523,8 @@ TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
     wm.start();
 
     printf("Connecting to %s (Async)...\n", TEST_WIFI_SSID);
-    esp_err_t err = wm.connect_async(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    esp_err_t err = wm.connect();
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     // Wait up to 15 seconds for connection and IP
@@ -558,23 +563,19 @@ TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
     wm.start();
 
     printf("Connecting to %s with WRONG password...\n", TEST_WIFI_SSID);
-    esp_err_t err = wm.connect(TEST_WIFI_SSID, "wrong_password_123", 10000);
+    wm.setCredentials(TEST_WIFI_SSID, "wrong_password_123");
+    esp_err_t err = wm.connect(10000);
 
-    // Should return timeout or error
+    // Should return timeout or fail
     printf("Connect returned: %s\n", esp_err_to_name(err));
     TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
 
     WiFiManager::State state = wm.getState();
     printf("State after failed connection: %d\n", (int)state);
 
-    // State should reflect not connected and specifically credential error if the driver reported it
-    TEST_ASSERT_NOT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, state);
-
-    // Note: Some routers might just timeout instead of sending a clear AUTH_FAIL.
-    // If it did send AUTH_FAIL, it should be in ERROR_CREDENTIALS.
-    if (err != ESP_ERR_TIMEOUT) {
-        TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, state);
-    }
+    // Should be in ERROR_CREDENTIALS due to immediate invalidation on handshake timeout
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, state);
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     wm.deinit();
 }
@@ -593,7 +594,8 @@ TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
     wm.start();
 
     printf("1. Connecting to %s...\n", TEST_WIFI_SSID);
-    if (wm.connect(TEST_WIFI_SSID, TEST_WIFI_PASS, 15000) != ESP_OK) {
+    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    if (wm.connect(15000) != ESP_OK) {
         printf("Could not connect to real WiFi for reconnection test. Skipping.\n");
         wm.deinit();
         return;
@@ -633,7 +635,8 @@ TEST_CASE("test_wifi_disconnect_async", "[wifi][connect][real]")
     wm.start();
 
     printf("1. Connecting to %s...\n", TEST_WIFI_SSID);
-    if (wm.connect(TEST_WIFI_SSID, TEST_WIFI_PASS, 15000) != ESP_OK) {
+    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    if (wm.connect(15000) != ESP_OK) {
         printf("Could not connect to real WiFi for disconnect test. Skipping.\n");
         wm.deinit();
         return;
@@ -642,7 +645,7 @@ TEST_CASE("test_wifi_disconnect_async", "[wifi][connect][real]")
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
 
     printf("2. Disconnecting (Async)...\n");
-    esp_err_t err = wm.disconnect_async();
+    esp_err_t err = wm.disconnect();
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     // Wait for detection
@@ -695,7 +698,8 @@ TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
     wm.start();
 
     printf("Calling connect() with 1s timeout (forcing timeout)...\n");
-    esp_err_t err = wm.connect("NonExistentSSID_999", "password", 1000);
+    wm.setCredentials("NonExistentSSID_999", "password");
+    esp_err_t err = wm.connect(1000);
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
 
     printf("Waiting for rollback to DISCONNECTED...\n");
@@ -748,8 +752,8 @@ TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
     wm.deinit();
     wm.init();
 
-    printf("Calling start_async()...\n");
-    TEST_ASSERT_EQUAL(ESP_OK, wm.start_async());
+    printf("Calling start()...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start());
 
     int retry = 0;
     while (wm.getState() != WiFiManager::State::STARTED && retry < 50) {
@@ -758,8 +762,8 @@ TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
     }
     TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
 
-    printf("Calling stop_async()...\n");
-    TEST_ASSERT_EQUAL(ESP_OK, wm.stop_async());
+    printf("Calling stop()...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop());
 
     retry = 0;
     while (wm.getState() != WiFiManager::State::STOPPED && retry < 50) {
@@ -837,6 +841,8 @@ TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
 
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
+    // Wipe everything to be sure Kconfig doesn't interfere
+    nvs_flash_erase();
     wm.init();
 
     wm.setCredentials("ValidSSID", "ValidPass");

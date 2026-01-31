@@ -17,50 +17,54 @@ Cleans up all resources.
 - **Returns**: `ESP_OK` on success.
 - **Actions**: Stops WiFi if running, kills the task, and deletes RTOS objects.
 
-### `esp_err_t start(uint32_t timeout_ms = 5000)`
+### `esp_err_t start(uint32_t timeout_ms)`
 Synchronously starts the WiFi driver in Station mode.
 - **Parameters**: `timeout_ms` - Max wait time.
 - **Returns**: `ESP_OK`, `ESP_ERR_TIMEOUT`, or `ESP_ERR_INVALID_STATE`.
 
-### `esp_err_t start_async()`
+### `esp_err_t start()`
 Asynchronously starts the WiFi driver.
 - **Returns**: `ESP_OK` if the command was queued.
 
-### `esp_err_t stop(uint32_t timeout_ms = 5000)`
+### `esp_err_t stop(uint32_t timeout_ms)`
 Synchronously stops the WiFi driver.
 - **Returns**: `ESP_OK` or `ESP_ERR_TIMEOUT`.
 
-### `esp_err_t stop_async()`
+### `esp_err_t stop()`
 Asynchronously stops the WiFi driver.
 
-### `esp_err_t connect(const std::string& ssid, const std::string& password, uint32_t timeout_ms)`
-Synchronously connects to an Access Point.
+### `esp_err_t connect(uint32_t timeout_ms)`
+Synchronously connects to an Access Point using stored credentials.
 - **Parameters**:
-  - `ssid`: The network name.
-  - `password`: The network password.
   - `timeout_ms`: Max time to wait for connection AND IP acquisition.
 - **Returns**: `ESP_OK` on success.
 
-### `esp_err_t connect_async(const std::string& ssid, const std::string& password)`
-Asynchronously connects to an Access Point.
+### `esp_err_t connect()`
+Asynchronously connects to an Access Point using stored credentials.
 
-### `esp_err_t disconnect(uint32_t timeout_ms = 5000)`
+### `esp_err_t disconnect(uint32_t timeout_ms)`
 Synchronously disconnects from the current network.
 
-### `esp_err_t disconnect_async()`
+### `esp_err_t disconnect()`
 Asynchronously disconnects from the current network.
 
 ### `State getState() const`
 Returns the current internal state of the manager.
 
-### `esp_err_t storeCredentials(const std::string& ssid, const std::string& password)`
-Stores credentials in NVS.
+### `esp_err_t setCredentials(const std::string& ssid, const std::string& password)`
+Configures WiFi credentials and saves them to the driver's NVS.
 
-### `esp_err_t loadCredentials(std::string& ssid, std::string& password)`
-Loads credentials from NVS.
+### `esp_err_t getCredentials(std::string& ssid, std::string& password)`
+Retrieves the currently configured credentials from the driver.
 
-### `bool hasCredentials()`
-Checks if credentials exist in NVS.
+### `esp_err_t clearCredentials()`
+Clears credentials from the driver and resets the validity flag.
+
+### `esp_err_t factoryReset()`
+Calls `esp_wifi_restore()` and clears all manager settings.
+
+### `bool isCredentialsValid() const`
+Returns whether the current credentials are considered valid.
 
 ---
 

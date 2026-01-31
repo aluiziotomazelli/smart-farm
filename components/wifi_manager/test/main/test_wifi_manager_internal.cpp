@@ -95,10 +95,10 @@ TEST_CASE("test_internal_suspect_failures", "[wifi][internal][reconnect]")
     TEST_ASSERT_TRUE(wm.isCredentialsValid());
 
     // 1. First suspect failure
-    printf("Simulating 1st suspect failure (HANDSHAKE_TIMEOUT)...\n");
+    printf("Simulating 1st suspect failure (CONNECTION_FAIL)...\n");
     accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
-    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    accessor.test_simulateDisconnect(WIFI_REASON_CONNECTION_FAIL);
     vTaskDelay(pdMS_TO_TICKS(100));
 
     TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
@@ -108,7 +108,7 @@ TEST_CASE("test_internal_suspect_failures", "[wifi][internal][reconnect]")
     printf("Simulating 2nd suspect failure...\n");
     accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
-    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    accessor.test_simulateDisconnect(WIFI_REASON_CONNECTION_FAIL);
     vTaskDelay(pdMS_TO_TICKS(100));
 
     TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
@@ -118,7 +118,7 @@ TEST_CASE("test_internal_suspect_failures", "[wifi][internal][reconnect]")
     printf("Simulating 3rd suspect failure -> Expect Invalidation...\n");
     accessor.test_sendConnectCommand(true);
     vTaskDelay(pdMS_TO_TICKS(50));
-    accessor.test_simulateDisconnect(WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    accessor.test_simulateDisconnect(WIFI_REASON_CONNECTION_FAIL);
     vTaskDelay(pdMS_TO_TICKS(100));
 
     TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
@@ -270,7 +270,7 @@ TEST_CASE("test_internal_reconnection_logic", "[wifi][internal][reconnect]")
 
     // 5. Verify manual interrupt
     printf("Interrupting backoff with manual DISCONNECT...\n");
-    wm.disconnect_async();
+    wm.disconnect();
     vTaskDelay(pdMS_TO_TICKS(100));
     TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
 

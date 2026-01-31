@@ -103,7 +103,7 @@ public:
      *  - ESP_ERR_TIMEOUT: Operation timed out.
      *  - ESP_ERR_INVALID_STATE: Manager is not initialized.
      */
-    esp_err_t start(uint32_t timeout_ms = 5000);
+    esp_err_t start(uint32_t timeout_ms);
 
     /**
      * @brief Start the WiFi station mode (asynchronous).
@@ -112,7 +112,7 @@ public:
      *
      * @return ESP_OK if the command was sent successfully.
      */
-    esp_err_t start_async();
+    esp_err_t start();
 
     /**
      * @brief Stop the WiFi station mode (synchronous).
@@ -122,7 +122,7 @@ public:
      * @param timeout_ms Maximum time to wait for the operation to complete.
      * @return ESP_OK on success, ESP_ERR_TIMEOUT on timeout.
      */
-    esp_err_t stop(uint32_t timeout_ms = 5000);
+    esp_err_t stop(uint32_t timeout_ms);
 
     /**
      * @brief Stop the WiFi station mode (asynchronous).
@@ -131,7 +131,7 @@ public:
      *
      * @return ESP_OK if the command was sent successfully.
      */
-    esp_err_t stop_async();
+    esp_err_t stop();
 
     /**
      * @brief Connect to the configured WiFi network (synchronous).
@@ -158,31 +158,6 @@ public:
     esp_err_t connect();
 
     /**
-     * @brief Connect to a specific WiFi network (synchronous).
-     *
-     * Sets the credentials and attempts to connect.
-     *
-     * @param ssid The network SSID.
-     * @param password The network password.
-     * @param timeout_ms Maximum time to wait.
-     * @return ESP_OK on success.
-     */
-    esp_err_t connect(const std::string &ssid,
-                      const std::string &password,
-                      uint32_t timeout_ms);
-
-    /**
-     * @brief Connect to a specific WiFi network (asynchronous).
-     *
-     * Sets the credentials and attempts to connect.
-     *
-     * @param ssid The network SSID.
-     * @param password The network password.
-     * @return ESP_OK on success.
-     */
-    esp_err_t connect_async(const std::string &ssid, const std::string &password);
-
-    /**
      * @brief Disconnect from the current WiFi network (synchronous).
      *
      * Blocks until the disconnection is confirmed by the driver.
@@ -190,7 +165,7 @@ public:
      * @param timeout_ms Maximum time to wait for the operation to complete.
      * @return ESP_OK on success.
      */
-    esp_err_t disconnect(uint32_t timeout_ms = 5000);
+    esp_err_t disconnect(uint32_t timeout_ms);
 
     /**
      * @brief Disconnect from the current WiFi network (asynchronous).
@@ -199,7 +174,7 @@ public:
      *
      * @return ESP_OK if the command was sent successfully.
      */
-    esp_err_t disconnect_async();
+    esp_err_t disconnect();
 
     /**
      * @brief Get the current state of the WiFi manager.

@@ -206,10 +206,21 @@ esp_err_t WiFiManager::init()
                 ESP_LOGI(TAG, "No SSID in driver, using Kconfig default: %s",
                          CONFIG_WIFI_SSID);
                 wifi_config_t wifi_config = {};
-                strncpy((char *)wifi_config.sta.ssid, CONFIG_WIFI_SSID,
-                        sizeof(wifi_config.sta.ssid) - 1);
+                // Use memcpy for SSID to support 32 characters correctly
+                size_t ssid_len = strlen(CONFIG_WIFI_SSID);
+                if (ssid_len > 32)
+                    ssid_len = 32;
+                memcpy(wifi_config.sta.ssid, CONFIG_WIFI_SSID, ssid_len);
+
                 strncpy((char *)wifi_config.sta.password, CONFIG_WIFI_PASSWORD,
                         sizeof(wifi_config.sta.password) - 1);
+
+                wifi_config.sta.scan_method        = WIFI_ALL_CHANNEL_SCAN;
+                wifi_config.sta.failure_retry_cnt  = 3;
+                wifi_config.sta.pmf_cfg.capable    = true;
+                wifi_config.sta.pmf_cfg.required   = false;
+                wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
                 esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
                 is_credential_valid_ = true;
                 saveValidFlag(true);
@@ -345,7 +356,7 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "API: Requesting to start WiFi...");
+    ESP_LOGI(TAG, "API: Requesting to start WiFi (sync)...");
     Command cmd = {};
     cmd.id      = CommandId::START;
 
@@ -370,11 +381,11 @@ esp_err_t WiFiManager::start(uint32_t timeout_ms)
     // Rollback: if we timed out waiting for the driver, try to stop it to reset
     // state
     ESP_LOGW(TAG, "Start timed out, cancelling...");
-    stop_async();
+    stop();
     return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t WiFiManager::start_async()
+esp_err_t WiFiManager::start()
 {
     if (getState() == State::UNINITIALIZED || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
@@ -393,7 +404,7 @@ esp_err_t WiFiManager::stop(uint32_t timeout_ms)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "API: Requesting to stop WiFi...");
+    ESP_LOGI(TAG, "API: Requesting to stop WiFi (sync)...");
     Command cmd = {};
     cmd.id      = CommandId::STOP;
 
@@ -416,7 +427,7 @@ esp_err_t WiFiManager::stop(uint32_t timeout_ms)
     return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t WiFiManager::stop_async()
+esp_err_t WiFiManager::stop()
 {
     if (getState() == State::UNINITIALIZED || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
@@ -459,7 +470,7 @@ esp_err_t WiFiManager::connect(uint32_t timeout_ms)
     else {
         // Rollback: if timeout occurs, cancel the driver connection attempt
         ESP_LOGW(TAG, "Connect timed out, cancelling attempt...");
-        disconnect_async();
+        disconnect();
         return ESP_ERR_TIMEOUT;
     }
 }
@@ -474,25 +485,6 @@ esp_err_t WiFiManager::connect()
     Command cmd = {};
     cmd.id      = CommandId::CONNECT;
     return sendCommand(cmd, true);
-}
-
-esp_err_t WiFiManager::connect(const std::string &ssid,
-                               const std::string &password,
-                               uint32_t timeout_ms)
-{
-    esp_err_t err = setCredentials(ssid, password);
-    if (err != ESP_OK)
-        return err;
-    return connect(timeout_ms);
-}
-
-esp_err_t WiFiManager::connect_async(const std::string &ssid,
-                                     const std::string &password)
-{
-    esp_err_t err = setCredentials(ssid, password);
-    if (err != ESP_OK)
-        return err;
-    return connect();
 }
 
 esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
@@ -525,7 +517,7 @@ esp_err_t WiFiManager::disconnect(uint32_t timeout_ms)
     return ESP_ERR_TIMEOUT;
 }
 
-esp_err_t WiFiManager::disconnect_async()
+esp_err_t WiFiManager::disconnect()
 {
     if (getState() == State::UNINITIALIZED || !command_queue_) {
         return ESP_ERR_INVALID_STATE;
@@ -576,6 +568,12 @@ esp_err_t WiFiManager::setCredentials(const std::string &ssid,
     strncpy((char *)wifi_config.sta.password, password.c_str(),
             sizeof(wifi_config.sta.password) - 1);
 
+    wifi_config.sta.scan_method        = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config.sta.failure_retry_cnt  = 3;
+    wifi_config.sta.pmf_cfg.capable    = true;
+    wifi_config.sta.pmf_cfg.required   = false;
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     if (err == ESP_OK) {
         suspect_retry_count_ = 0;
@@ -611,10 +609,17 @@ esp_err_t WiFiManager::clearCredentials()
         xSemaphoreGiveRecursive(state_mutex_);
         return ESP_ERR_INVALID_STATE;
     }
-
     ESP_LOGI(TAG, "API: Clearing credentials...");
-    wifi_config_t blank_config = {};
-    esp_err_t err              = esp_wifi_set_config(WIFI_IF_STA, &blank_config);
+
+    wifi_config_t saved_config;
+    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &saved_config);
+    if (err != ESP_OK) {
+        saved_config = {};
+    }
+    saved_config.sta.ssid[0]     = 0;
+    saved_config.sta.password[0] = 0;
+
+    err = esp_wifi_set_config(WIFI_IF_STA, &saved_config);
     if (err == ESP_OK) {
         suspect_retry_count_ = 0;
         saveValidFlag(false);
@@ -898,7 +903,9 @@ void WiFiManager::wifiTask(void *pvParameters)
                     }
                     // Case 2: Definite credential failure
                     else if (cmd.reason == WIFI_REASON_AUTH_FAIL ||
-                             cmd.reason == WIFI_REASON_802_1X_AUTH_FAILED) {
+                             cmd.reason == WIFI_REASON_802_1X_AUTH_FAILED ||
+                             cmd.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+                             cmd.reason == WIFI_REASON_HANDSHAKE_TIMEOUT) {
                         ESP_LOGE(TAG, "Authentication failed (Reason: %d).",
                                  cmd.reason);
                         self->current_state_ = State::ERROR_CREDENTIALS;
@@ -907,9 +914,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                                            CONNECT_FAILED_BIT);
                     }
                     // Case 3: Suspect credential failure
-                    else if (cmd.reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
-                             cmd.reason == WIFI_REASON_HANDSHAKE_TIMEOUT ||
-                             cmd.reason == WIFI_REASON_CONNECTION_FAIL) {
+                    else if (cmd.reason == WIFI_REASON_CONNECTION_FAIL) {
                         self->suspect_retry_count_++;
                         ESP_LOGW(TAG, "Suspect failure %lu/3 (Reason: %d).",
                                  (unsigned long)self->suspect_retry_count_,

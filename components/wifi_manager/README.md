@@ -29,8 +29,11 @@ void app_main() {
     // 2. Start WiFi
     wm.start();
 
-    // 3. Connect (blocking until IP obtained)
-    if (wm.connect("MySSID", "MyPassword", 10000) == ESP_OK) {
+    // 3. Set credentials
+    wm.setCredentials("MySSID", "MyPassword");
+
+    // 4. Connect (blocking until IP obtained)
+    if (wm.connect(10000) == ESP_OK) {
         printf("Connected successfully!\n");
     }
 }
