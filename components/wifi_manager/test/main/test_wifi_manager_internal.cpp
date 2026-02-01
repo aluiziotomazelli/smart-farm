@@ -315,156 +315,249 @@ TEST_CASE("test_internal_concurrent_api", "[wifi][internal][concurrency]")
     TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
 }
 
-TEST_CASE("test_command_validation_strict", "[wifi][state][strict]")
+// ========================================================================
+// EXHAUSTIVE FSM MATRIX TESTS
+// ========================================================================
+
+/**
+ * Helper to check command results without repeating code
+ */
+struct CommandResults
 {
-    printf("\n=== Test: Command Validation (Strict) ===\n");
+    esp_err_t start_res;
+    esp_err_t stop_res;
+    esp_err_t connect_res;
+    esp_err_t disconnect_res;
+};
 
+static void verify_commands(WiFiManager &wm, CommandResults expected)
+{
+    TEST_ASSERT_EQUAL(expected.start_res, wm.start());
+    TEST_ASSERT_EQUAL(expected.stop_res, wm.stop());
+    TEST_ASSERT_EQUAL(expected.connect_res, wm.connect());
+    TEST_ASSERT_EQUAL(expected.disconnect_res, wm.disconnect());
+}
+
+/**
+ * 33. Exhaustive Command Matrix - UNINITIALIZED
+ */
+TEST_CASE("test_fsm_matrix_uninitialized", "[wifi][internal][matrix]")
+{
+    printf("\n=== Test: FSM Matrix - UNINITIALIZED ===\n");
     WiFiManager &wm = WiFiManager::instance();
-    WiFiManagerTestAccessor accessor(wm);
-
-    // Teste 1: Comandos em UNINITIALIZED
-    printf("\nTest 1: Commands in UNINITIALIZED state\n");
     wm.deinit();
 
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, accessor.test_sendStartCommand(true));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, accessor.test_sendStopCommand(true));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, accessor.test_sendConnectCommand(true));
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, accessor.test_sendDisconnectCommand(true));
+    TEST_ASSERT_EQUAL(WiFiManager::State::UNINITIALIZED, wm.getState());
+    verify_commands(wm, {ESP_ERR_INVALID_STATE, ESP_ERR_INVALID_STATE, ESP_ERR_INVALID_STATE,
+                         ESP_ERR_INVALID_STATE});
+}
 
-    // Teste 2: Comandos em INITIALIZED
-    printf("\nTest 2: Commands in INITIALIZED state\n");
+/**
+ * 34. Exhaustive Command Matrix - INITIALIZED
+ */
+TEST_CASE("test_fsm_matrix_initialized", "[wifi][internal][matrix]")
+{
+    printf("\n=== Test: FSM Matrix - INITIALIZED ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
     wm.init();
 
-    // START deve funcionar
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendStartCommand(true));
+    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.getState());
 
-    // STOP não deve funcionar (não está started)
-    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, accessor.test_sendStopCommand(true));
+    // START should be OK, others should fail initially because driver not started
+    // Note: async calls return OK if they can be queued, but for INITIALIZED state,
+    // we want to see what happens when the task processes them.
+    // Wait, wm.start() async returns ESP_OK if queued.
+    // The previous tests used accessor.test_sendStartCommand which calls sendCommand directly.
+    // Public async APIs (wm.start(), etc) also call sendCommand(cmd, true).
 
-    // Dar tempo para processar START
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // In INITIALIZED state:
+    // START: OK (queues)
+    // STOP: OK (queues, but task will log error and set INVALID_STATE_BIT - though async doesn't check it)
+    // CONNECT: OK (queues, but task will log error)
+    // DISCONNECT: OK (queues, but task will log error)
 
-    // Teste 3: Comandos em STARTED
-    printf("\nTest 3: Commands in STARTED state\n");
+    // Wait, the sendCommand itself checks getState() == UNINITIALIZED.
+    // So if state is INITIALIZED, all async commands return ESP_OK.
+    // To verify strictness, we should use SYNC calls or check internal state after delay.
+
+    // Let's use SYNC calls for the matrix where possible, as they wait for the task's result bits.
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(1000)); // Should work
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    wm.deinit();
+    wm.init();
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.stop(100));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.connect(100));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.disconnect(100));
+}
+
+/**
+ * 35. Exhaustive Command Matrix - STARTED
+ */
+TEST_CASE("test_fsm_matrix_started", "[wifi][internal][matrix]")
+{
+    printf("\n=== Test: FSM Matrix - STARTED ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start(5000);
+    WiFiManagerTestAccessor accessor(wm);
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
     vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
 
-    // START novamente deve funcionar (já está started)
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendStartCommand(true));
+    // In STARTED:
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(1000));      // Redundant, returns OK
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect());        // Valid (async)
+    vTaskDelay(pdMS_TO_TICKS(10));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
 
-    // STOP deve funcionar
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendStopCommand(true));
+    // Reset to STARTED for next tests
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_DISCONNECTED);
+    vTaskDelay(pdMS_TO_TICKS(10));
 
-    // CONNECT sem credenciais
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendConnectCommand(true));
+    TEST_ASSERT_EQUAL(ESP_OK, wm.disconnect(1000)); // Already disconnected/not connected, returns OK
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop(2000));       // Valid
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+}
 
-    // Teste 4: Comandos em CONNECTED_GOT_IP
-    printf("\nTest 4: Commands in CONNECTED_GOT_IP state\n");
-
-    // Reset e ir para CONNECTED_GOT_IP
+/**
+ * 36. Event Strictness - Verification of new guards
+ */
+TEST_CASE("test_event_strictness_guards", "[wifi][internal][strict]")
+{
+    printf("\n=== Test: Event Strictness Guards ===\n");
+    WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
     wm.init();
-    accessor.test_sendStartCommand(false);
+    WiFiManagerTestAccessor accessor(wm);
+
+    // 1. STA_START while INITIALIZED (not STARTING)
+    printf("Simulating STA_START while INITIALIZED...\n");
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
-    wm.setCredentials("TestSSID", "TestPass");
-    accessor.test_sendConnectCommand(false);
-    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_CONNECTED);
-    accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.getState()); // Should be ignored
 
-    printf("State: %d\n", static_cast<int>(wm.getState()));
+    // 2. STA_STOP while STARTED (not STOPPING)
+    wm.start(5000);
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
 
-    // CONNECT novamente deve funcionar (já está connected)
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendConnectCommand(true));
+    printf("Simulating STA_STOP while STARTED...\n");
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState()); // Should be ignored
 
-    // DISCONNECT deve funcionar
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendDisconnectCommand(true));
+    // 3. STA_DISCONNECTED while STOPPING (should stay STOPPING)
+    wm.stop(); // Async
+    vTaskDelay(pdMS_TO_TICKS(10));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState());
 
-    // Simular desconexão
+    printf("Simulating STA_DISCONNECTED while STOPPING...\n");
     accessor.test_simulateDisconnect(WIFI_REASON_ASSOC_LEAVE);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState()); // Should remain STOPPING
 
-    printf("Final state: %d\n", static_cast<int>(wm.getState()));
+    printf("Simulating STA_STOP while STOPPING...\n");
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState()); // Transition allowed
 
     wm.deinit();
 }
 
-TEST_CASE("test_specific_state_transitions", "[wifi][state][transitions]")
+/**
+ * 37. GOT_IP Strictness
+ */
+TEST_CASE("test_got_ip_strictness", "[wifi][internal][strict]")
 {
-    printf("\n=== Test: Specific State Transitions ===\n");
-
+    printf("\n=== Test: GOT_IP Strictness ===\n");
     WiFiManager &wm = WiFiManager::instance();
-    WiFiManagerTestAccessor accessor(wm);
-
-    // Teste 1: INITIALIZED -> STARTING -> STARTED
-    printf("\nTest 1: INITIALIZED to STARTED transition\n");
     wm.deinit();
     wm.init();
+    WiFiManagerTestAccessor accessor(wm);
 
-    TEST_ASSERT_EQUAL(static_cast<int>(WiFiManager::State::INITIALIZED),
-                      static_cast<int>(wm.getState()));
-
-    // Enviar START
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendStartCommand(false));
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    // Deve estar em STARTING
-    printf("State after START command: %d\n", static_cast<int>(wm.getState()));
-
-    // Simular STA_START
+    // GOT_IP while STARTED (but not CONNECTING)
+    wm.start(5000);
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    TEST_ASSERT_EQUAL(static_cast<int>(WiFiManager::State::STARTED),
-                      static_cast<int>(wm.getState()));
+    printf("Simulating GOT_IP while STARTED...\n");
+    accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState()); // Should be ignored
 
-    // Teste 2: STARTED -> CONNECTING -> CONNECTED_GOT_IP
-    printf("\nTest 2: STARTED to CONNECTED_GOT_IP transition\n");
-    wm.setCredentials("TestSSID", "TestPass");
+    wm.deinit();
+}
 
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendConnectCommand(false));
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    printf("State after CONNECT command: %d\n", static_cast<int>(wm.getState()));
-
+/**
+ * 38. Exhaustive Command Matrix - CONNECTED_GOT_IP
+ */
+TEST_CASE("test_fsm_matrix_connected", "[wifi][internal][matrix]")
+{
+    printf("\n=== Test: FSM Matrix - CONNECTED_GOT_IP ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start(5000);
+    WiFiManagerTestAccessor accessor(wm);
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
+    wm.setCredentials("MatrixSSID", "pass");
+    wm.connect();
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_CONNECTED);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
 
-    printf("State after STA_CONNECTED: %d\n", static_cast<int>(wm.getState()));
+    // In CONNECTED_GOT_IP:
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(1000));      // Redundant OK
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect(1000));    // Redundant OK
+    TEST_ASSERT_EQUAL(ESP_OK, wm.disconnect(1000)); // Valid
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
 
+    // Go back to CONNECTED for stop test
+    wm.connect();
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_CONNECTED);
     accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    TEST_ASSERT_EQUAL(static_cast<int>(WiFiManager::State::CONNECTED_GOT_IP),
-                      static_cast<int>(wm.getState()));
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop(2000)); // Valid (disconnects and stops)
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    wm.deinit();
+}
 
-    // Teste 3: CONNECTED_GOT_IP -> DISCONNECTING -> DISCONNECTED
-    printf("\nTest 3: CONNECTED_GOT_IP to DISCONNECTED transition\n");
+/**
+ * 39. Exhaustive Command Matrix - WAITING_RECONNECT
+ */
+TEST_CASE("test_fsm_matrix_waiting_reconnect", "[wifi][internal][matrix]")
+{
+    printf("\n=== Test: FSM Matrix - WAITING_RECONNECT ===\n");
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start(5000);
+    WiFiManagerTestAccessor accessor(wm);
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
+    wm.setCredentials("WaitSSID", "pass");
 
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendDisconnectCommand(false));
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // Trigger recoverable failure
+    accessor.test_simulateDisconnect(WIFI_REASON_BEACON_TIMEOUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(WiFiManager::State::WAITING_RECONNECT, wm.getState());
 
-    printf("State after DISCONNECT command: %d\n", static_cast<int>(wm.getState()));
-
-    accessor.test_simulateDisconnect(WIFI_REASON_ASSOC_LEAVE);
+    // In WAITING_RECONNECT:
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect()); // Should move to CONNECTING immediately
     vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
 
-    printf("State after disconnect event: %d\n", static_cast<int>(wm.getState()));
+    // Back to WAITING
+    accessor.test_simulateDisconnect(WIFI_REASON_BEACON_TIMEOUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    // Teste 4: DISCONNECTED -> STOPPING -> STOPPED
-    printf("\nTest 4: DISCONNECTED to STOPPED transition\n");
-
-    TEST_ASSERT_EQUAL(ESP_OK, accessor.test_sendStopCommand(false));
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    printf("State after STOP command: %d\n", static_cast<int>(wm.getState()));
-
-    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    TEST_ASSERT_EQUAL(static_cast<int>(WiFiManager::State::STOPPED),
-                      static_cast<int>(wm.getState()));
-
+    TEST_ASSERT_EQUAL(ESP_OK, wm.disconnect(1000)); // Should move to DISCONNECTED
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
     wm.deinit();
 }
 

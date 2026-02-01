@@ -1008,13 +1008,23 @@ void WiFiManager::wifiTask(void *pvParameters)
                 switch (cmd.event_id) {
                 case WIFI_EVENT_STA_START:
                     ESP_LOGI(TAG, "Task Event: STA_START");
-                    self->current_state_ = State::STARTED;
-                    xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
+                    if (self->current_state_ == State::STARTING) {
+                        self->current_state_ = State::STARTED;
+                        xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
+                    }
+                    else {
+                        ESP_LOGW(TAG, "STA_START ignored in state %d", (int)self->current_state_);
+                    }
                     break;
                 case WIFI_EVENT_STA_STOP:
                     ESP_LOGI(TAG, "Task Event: STA_STOP");
-                    self->current_state_ = State::STOPPED;
-                    xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
+                    if (self->current_state_ == State::STOPPING) {
+                        self->current_state_ = State::STOPPED;
+                        xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
+                    }
+                    else {
+                        ESP_LOGW(TAG, "STA_STOP ignored in state %d", (int)self->current_state_);
+                    }
                     break;
                 case WIFI_EVENT_STA_CONNECTED:
                     ESP_LOGI(TAG, "Task Event: STA_CONNECTED");
@@ -1027,13 +1037,24 @@ void WiFiManager::wifiTask(void *pvParameters)
                     }
                     break;
                 case WIFI_EVENT_STA_DISCONNECTED:
+                {
                     ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED (reason: %d)", cmd.reason);
 
                     State s = self->current_state_;
+
+                    // Ignore if driver is not supposed to be running
+                    if (s == State::UNINITIALIZED || s == State::INITIALIZING ||
+                        s == State::INITIALIZED || s == State::STOPPED) {
+                        ESP_LOGW(TAG, "STA_DISCONNECTED ignored in state %d", (int)s);
+                        break;
+                    }
+
                     // Case 1: Disconnection was intended (via API)
-                    if (s == State::DISCONNECTING || s == State::STOPPING ||
-                        s == State::INITIALIZED) {
-                        self->current_state_ = State::DISCONNECTED;
+                    if (s == State::DISCONNECTING || s == State::STOPPING) {
+                        if (s == State::DISCONNECTING) {
+                            self->current_state_ = State::DISCONNECTED;
+                        }
+                        // If STOPPING, we stay in STOPPING until WIFI_EVENT_STA_STOP
                         xEventGroupSetBits(self->wifi_event_group_,
                                            DISCONNECTED_BIT | CONNECT_FAILED_BIT);
                     }
@@ -1104,6 +1125,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                         xEventGroupSetBits(self->wifi_event_group_, CONNECT_FAILED_BIT);
                     }
                     break;
+                }
                 }
                 break;
 
