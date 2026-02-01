@@ -11,7 +11,7 @@
 #include "test_wifi_manager_accessor.hpp"
 
 // ========================================================================
-// INTERNAL METHOD TESTS
+// GROUP 4: INTERNAL SIMULATION
 // These tests use the TestAccessor to simulate driver events and verify
 // the state machine logic without requiring a real Access Point.
 // ========================================================================
@@ -19,7 +19,7 @@
 #ifdef UNIT_TEST
 
 /**
- * @brief Test: Queue capacity and behavior
+ * 24. Test Queue capacity and behavior
  */
 TEST_CASE("test_internal_queue_behavior", "[wifi][internal][stress]")
 {
@@ -46,7 +46,7 @@ TEST_CASE("test_internal_queue_behavior", "[wifi][internal][stress]")
 }
 
 /**
- * @brief Test: Full connection flow simulation
+ * 25. Test Full connection flow simulation
  */
 TEST_CASE("test_internal_connection_flow", "[wifi][internal][state]")
 {
@@ -59,33 +59,39 @@ TEST_CASE("test_internal_connection_flow", "[wifi][internal][state]")
     WiFiManagerTestAccessor accessor(wm);
 
     // 1. Start WiFi
+    printf("Starting WiFi...\n");
     wm.start(); // Async
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(1));
     TEST_ASSERT_EQUAL(WiFiManager::State::STARTING, wm.getState());
 
+    printf("Simulating WIFI_EVENT_STA_START...\n");
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
 
     // 2. Connect
+    printf("Setting credentials...\n");
     wm.setCredentials("SimulatedSSID", "SimulatedPass");
+    printf("Connecting...\n");
     wm.connect(); // Async
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTING, wm.getState());
 
+    printf("Simulating WIFI_EVENT_STA_CONNECTED...\n");
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_CONNECTED);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_NO_IP, wm.getState());
 
+    printf("Simulating IP_EVENT_STA_GOT_IP...\n");
     accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
 
     wm.deinit();
 }
 
 /**
- * @brief Test: Auto-reconnect on loss
+ * 26. Test Auto-reconnect on loss
  */
 TEST_CASE("test_internal_auto_reconnect", "[wifi][internal][reconnect]")
 {
@@ -117,7 +123,7 @@ TEST_CASE("test_internal_auto_reconnect", "[wifi][internal][reconnect]")
 }
 
 /**
- * @brief Test: Immediate invalidation logic
+ * 27. Test Immediate invalidation logic
  */
 TEST_CASE("test_internal_immediate_invalidation", "[wifi][internal][reconnect]")
 {
@@ -145,7 +151,7 @@ TEST_CASE("test_internal_immediate_invalidation", "[wifi][internal][reconnect]")
 }
 
 /**
- * @brief Test: Suspect failure 3-strike logic
+ * 28. Test Suspect failure 3-strike logic
  */
 TEST_CASE("test_internal_3_strikes", "[wifi][internal][reconnect]")
 {
@@ -185,7 +191,7 @@ TEST_CASE("test_internal_3_strikes", "[wifi][internal][reconnect]")
 }
 
 /**
- * @brief Test: Manual interrupt during backoff
+ * 29. Test Manual interrupt during backoff
  */
 TEST_CASE("test_internal_interrupt_backoff", "[wifi][internal][reconnect]")
 {
@@ -209,6 +215,103 @@ TEST_CASE("test_internal_interrupt_backoff", "[wifi][internal][reconnect]")
     TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
 
     wm.deinit();
+}
+
+/**
+ * 30. Test Mixed Async Stress
+ */
+TEST_CASE("test_internal_mixed_stress", "[wifi][internal][stress]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: Mixed Async Stress ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+
+    printf("Spamming mixed commands...\n");
+    wm.start();
+    wm.connect();
+    wm.disconnect();
+    wm.stop();
+    wm.start();
+    wm.connect();
+
+    // Give it time to process the queue
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Check if it reached a valid state (should be CONNECTING or similar based on last commands)
+    WiFiManager::State s = wm.getState();
+    printf("Final state after stress: %d\n", (int)s);
+    TEST_ASSERT(s != WiFiManager::State::UNINITIALIZED);
+
+    wm.deinit();
+}
+
+/**
+ * 31. Test Unexpected Orphan Events
+ */
+TEST_CASE("test_internal_unexpected_events", "[wifi][internal][robustness]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: Unexpected Orphan Events ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    WiFiManagerTestAccessor accessor(wm);
+
+    // WiFi is INITIALIZED but not STARTED
+    printf("Simulating GOT_IP while STOPPED...\n");
+    accessor.test_simulateIpEvent(IP_EVENT_STA_GOT_IP);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.getState()); // Should remain INITIALIZED
+
+    wm.start(5000);
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_START);
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    printf("Simulating STA_CONNECTED while STARTED but not CONNECTING...\n");
+    accessor.test_simulateWifiEvent(WIFI_EVENT_STA_CONNECTED);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState()); // Should remain STARTED
+
+    wm.deinit();
+}
+
+static void concurrent_api_task(void *pvParameters)
+{
+    WiFiManager &wm = WiFiManager::instance();
+    for(int i=0; i<10; i++) {
+        wm.connect();
+        vTaskDelay(pdMS_TO_TICKS(5));
+        wm.disconnect();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    vTaskDelete(NULL);
+}
+
+/**
+ * 32. Test Concurrent API Access
+ */
+TEST_CASE("test_internal_concurrent_api", "[wifi][internal][concurrency]")
+{
+    set_memory_leak_threshold(-2000);
+    printf("\n=== Test: Concurrent API Access ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+    wm.init();
+    wm.start(5000);
+
+    printf("Launching concurrent API tasks...\n");
+    xTaskCreate(concurrent_api_task, "task1", 4096, NULL, 5, NULL);
+    xTaskCreate(concurrent_api_task, "task2", 4096, NULL, 5, NULL);
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Verify system still responsive
+    TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
 }
 
 #endif // UNIT_TEST

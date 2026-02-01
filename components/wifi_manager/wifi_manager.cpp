@@ -578,6 +578,7 @@ esp_err_t WiFiManager::setCredentials(const std::string &ssid,
 
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     if (err == ESP_OK) {
+        retry_count_         = 0;
         suspect_retry_count_ = 0;
         saveValidFlag(true);
         ESP_LOGI(TAG, "Credentials applied successfully.");
@@ -627,6 +628,7 @@ esp_err_t WiFiManager::clearCredentials()
 
     err = esp_wifi_set_config(WIFI_IF_STA, &saved_config);
     if (err == ESP_OK) {
+        retry_count_         = 0;
         suspect_retry_count_ = 0;
         saveValidFlag(false);
     }
@@ -653,7 +655,9 @@ esp_err_t WiFiManager::factoryReset()
     }
 
     is_credential_valid_ = false;
+    retry_count_         = 0;
     suspect_retry_count_ = 0;
+    current_state_       = State::INITIALIZED;
 
     xSemaphoreGiveRecursive(state_mutex_);
     return ESP_OK;
@@ -887,7 +891,13 @@ void WiFiManager::wifiTask(void *pvParameters)
                     break;
                 case WIFI_EVENT_STA_CONNECTED:
                     ESP_LOGI(TAG, "Task Event: STA_CONNECTED");
-                    self->current_state_ = State::CONNECTED_NO_IP;
+                    if (self->current_state_ == State::CONNECTING) {
+                        self->current_state_ = State::CONNECTED_NO_IP;
+                    }
+                    else {
+                        ESP_LOGW(TAG, "STA_CONNECTED ignored in state %d",
+                                 (int)self->current_state_);
+                    }
                     break;
                 case WIFI_EVENT_STA_DISCONNECTED:
                     ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED (reason: %d)",
@@ -981,13 +991,20 @@ void WiFiManager::wifiTask(void *pvParameters)
             case CommandId::HANDLE_EVENT_IP:
                 if (cmd.event_id == IP_EVENT_STA_GOT_IP) {
                     ESP_LOGI(TAG, "Task Event: GOT_IP");
-                    self->current_state_        = State::CONNECTED_GOT_IP;
-                    self->retry_count_          = 0; // Reset retries on success
-                    self->suspect_retry_count_ = 0;
-                    if (!self->is_credential_valid_) {
-                        self->saveValidFlag(true);
+                    if (self->current_state_ == State::CONNECTING ||
+                        self->current_state_ == State::CONNECTED_NO_IP) {
+                        self->current_state_        = State::CONNECTED_GOT_IP;
+                        self->retry_count_          = 0; // Reset retries on success
+                        self->suspect_retry_count_ = 0;
+                        if (!self->is_credential_valid_) {
+                            self->saveValidFlag(true);
+                        }
+                        xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
                     }
-                    xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
+                    else {
+                        ESP_LOGW(TAG, "GOT_IP ignored in state %d",
+                                 (int)self->current_state_);
+                    }
                 }
                 break;
 

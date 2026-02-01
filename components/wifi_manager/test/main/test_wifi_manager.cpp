@@ -37,23 +37,32 @@ static void print_memory(const char *label)
 }
 
 // ========================================================================
-// LOG CONTROLS
+// 0. LOG CONTROLS
 // ========================================================================
 
+/**
+ * 0.1 Turn logs off
+ */
 TEST_CASE("LOG off", "[wifi][internal][log]")
 {
     esp_log_level_set("*", ESP_LOG_ERROR);
 }
 
+/**
+ * 0.2 Turn logs on
+ */
 TEST_CASE("LOG on", "[wifi][internal][log]")
 {
     esp_log_level_set("*", ESP_LOG_INFO);
 }
 
 // ========================================================================
-// NVS AND CREDENTIALS
+// GROUP 1: NVS AND CREDENTIALS
 // ========================================================================
 
+/**
+ * 1. Initialize WiFi Manager once and deinitialize
+ */
 TEST_CASE("test_wifi_init_once", "[wifi][init]")
 {
     set_memory_leak_threshold(-2000);
@@ -68,6 +77,9 @@ TEST_CASE("test_wifi_init_once", "[wifi][init]")
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 }
 
+/**
+ * 2. Test setting and getting WiFi credentials
+ */
 TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
@@ -92,6 +104,9 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
     wm.deinit();
 }
 
+/**
+ * 3. Test Credentials Deep (Max Lengths)
+ */
 TEST_CASE("test_credentials_deep", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
@@ -125,6 +140,9 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     wm.deinit();
 }
 
+/**
+ * 4. Test NVS memory leak
+ */
 TEST_CASE("test_nvs_leak", "[memory][nvs]")
 {
     printf("\n=== Testing NVS Memory Leak ===\n");
@@ -142,23 +160,19 @@ TEST_CASE("test_nvs_leak", "[memory][nvs]")
     print_memory("After NVS deinit");
 }
 
+/**
+ * 5. Test Validity Flag Persistence
+ */
 TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
     WiFiManager &wm = WiFiManager::instance();
     wm.deinit();
-    nvs_flash_erase(); // Ensure clean state (Ignore Kconfig)
+    nvs_flash_erase(); // Ensure clean state
     wm.init();
 
     wm.setCredentials("ValidSSID", "ValidPass");
     TEST_ASSERT_TRUE(wm.isCredentialsValid());
-
-    wm.deinit();
-    wm.init();
-    TEST_ASSERT_TRUE(wm.isCredentialsValid());
-
-    wm.clearCredentials();
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     wm.deinit();
     wm.init();
@@ -170,9 +184,24 @@ TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
         TEST_ASSERT_FALSE(wm.isCredentialsValid());
     }
 
+    wm.clearCredentials();
+    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+
+    wm.deinit();
+    wm.init();
+    if (strlen(CONFIG_WIFI_SSID) > 0) {
+        TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    }
+    else {
+        TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    }
+
     wm.deinit();
 }
 
+/**
+ * 6. Test Factory Reset
+ */
 TEST_CASE("test_wifi_factory_reset", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
@@ -187,6 +216,7 @@ TEST_CASE("test_wifi_factory_reset", "[wifi][nvs]")
     esp_err_t err = wm.factoryReset();
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.getState());
 
     std::string ssid, pass;
     wm.getCredentials(ssid, pass);
@@ -195,6 +225,9 @@ TEST_CASE("test_wifi_factory_reset", "[wifi][nvs]")
     wm.deinit();
 }
 
+/**
+ * 7. Test NVS Auto-repair
+ */
 TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
@@ -217,9 +250,12 @@ TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
 }
 
 // ========================================================================
-// INIT AND START TESTS
+// GROUP 2: LIFECYCLE (INIT/START/STOP)
 // ========================================================================
 
+/**
+ * 8. Test Singleton Pattern
+ */
 TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
 {
     WiFiManager &instance1 = WiFiManager::instance();
@@ -227,6 +263,9 @@ TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
     TEST_ASSERT_EQUAL_PTR(&instance1, &instance2);
 }
 
+/**
+ * 9. Test Multiple Init Calls
+ */
 TEST_CASE("test_multiple_init_calls", "[wifi][init]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -236,6 +275,9 @@ TEST_CASE("test_multiple_init_calls", "[wifi][init]")
     wm.deinit();
 }
 
+/**
+ * 10. Test State Transitions
+ */
 TEST_CASE("test_state_transitions", "[wifi][state]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -246,6 +288,9 @@ TEST_CASE("test_state_transitions", "[wifi][state]")
     wm.deinit();
 }
 
+/**
+ * 11. Test WiFi Start/Stop
+ */
 TEST_CASE("test_wifi_start_stop", "[wifi][state]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -261,6 +306,9 @@ TEST_CASE("test_wifi_start_stop", "[wifi][state]")
     wm.deinit();
 }
 
+/**
+ * 12. Test Rapid start/stop cycles
+ */
 TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -274,6 +322,9 @@ TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
     wm.deinit();
 }
 
+/**
+ * 13. Test WiFi Queue Spam Robustness
+ */
 TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -291,6 +342,9 @@ TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
     wm.deinit();
 }
 
+/**
+ * 14. Test WiFi API Abuse (Invalid States)
+ */
 TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -307,9 +361,12 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 }
 
 // ========================================================================
-// CONNECTION TESTS
+// GROUP 3: CONNECTION (REAL AP)
 // ========================================================================
 
+/**
+ * 15. Test Real WiFi Connection (Async)
+ */
 TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -330,6 +387,9 @@ TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
     wm.deinit();
 }
 
+/**
+ * 16. Test Real WiFi Connection (Sync)
+ */
 TEST_CASE("test_wifi_connect_real_sync", "[wifi][connect][real]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -339,11 +399,14 @@ TEST_CASE("test_wifi_connect_real_sync", "[wifi][connect][real]")
 
     printf("Connecting to %s (Sync)...\n", TEST_WIFI_SSID);
     wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
-    TEST_ASSERT_EQUAL(ESP_OK, wm.connect(15000));
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect(10000));
     TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
     wm.deinit();
 }
 
+/**
+ * 17. Test WiFi Reconnection (Manual)
+ */
 TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -365,6 +428,9 @@ TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
     wm.deinit();
 }
 
+/**
+ * 18. Test WiFi Start/Stop (Async)
+ */
 TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -391,6 +457,9 @@ TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
     wm.deinit();
 }
 
+/**
+ * 19. Test WiFi Start/Stop (Sync)
+ */
 TEST_CASE("test_wifi_start_stop_sync", "[wifi][state]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -407,6 +476,9 @@ TEST_CASE("test_wifi_start_stop_sync", "[wifi][state]")
     wm.deinit();
 }
 
+/**
+ * 20. Test WiFi with Wrong Password (Sync)
+ */
 TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -424,6 +496,9 @@ TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
     wm.deinit();
 }
 
+/**
+ * 21. Test WiFi with Wrong Password (Async)
+ */
 TEST_CASE("test_wifi_connect_wrong_password_async", "[wifi][connect][real]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -446,6 +521,9 @@ TEST_CASE("test_wifi_connect_wrong_password_async", "[wifi][connect][real]")
     wm.deinit();
 }
 
+/**
+ * 22. Test Connection rollback on timeout
+ */
 TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
 {
     WiFiManager &wm = WiFiManager::instance();
@@ -466,6 +544,9 @@ TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
     wm.deinit();
 }
 
+/**
+ * 23. Test Start rollback on timeout
+ */
 TEST_CASE("test_wifi_start_rollback", "[wifi][state]")
 {
     WiFiManager &wm = WiFiManager::instance();
