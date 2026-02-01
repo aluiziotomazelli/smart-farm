@@ -51,8 +51,8 @@ public:
         CONNECTING,       ///< Attempting to connect to an AP.
         CONNECTED_NO_IP,  ///< Connected to AP, waiting for DHCP/Static IP.
         CONNECTED_GOT_IP, ///< Successfully connected and has an IP address.
-        DISCONNECTING,     ///< In the process of disconnecting from the AP.
-        DISCONNECTED,      ///< Not connected to any AP.
+        DISCONNECTING,    ///< In the process of disconnecting from the AP.
+        DISCONNECTED,     ///< Not connected to any AP.
         WAITING_RECONNECT, ///< Waiting for backoff timer to retry connection.
         ERROR_CREDENTIALS, ///< Last connection failed due to invalid credentials.
         STOPPING,          ///< In the process of stopping the WiFi driver.
@@ -253,18 +253,20 @@ private:
 
 private:
     // FreeRTOS Event Group bits for synchronization between the API and the task
-    static constexpr EventBits_t STARTED_BIT        = BIT0; // WiFi driver started
-    static constexpr EventBits_t STOPPED_BIT        = BIT1; // WiFi driver stopped
-    static constexpr EventBits_t CONNECTED_BIT      = BIT2; // Got IP address
-    static constexpr EventBits_t DISCONNECTED_BIT   = BIT3; // Disconnected from AP
-    static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4; // Connection attempt failed
-    static constexpr EventBits_t START_FAILED_BIT   = BIT5; // Driver start failed
-    static constexpr EventBits_t STOP_FAILED_BIT    = BIT6; // Driver stop failed
+    static constexpr EventBits_t STARTED_BIT      = BIT0; // WiFi driver started
+    static constexpr EventBits_t STOPPED_BIT      = BIT1; // WiFi driver stopped
+    static constexpr EventBits_t CONNECTED_BIT    = BIT2; // Got IP address
+    static constexpr EventBits_t DISCONNECTED_BIT = BIT3; // Disconnected from AP
+    static constexpr EventBits_t CONNECT_FAILED_BIT =
+        BIT4; // Connection attempt failed
+    static constexpr EventBits_t START_FAILED_BIT  = BIT5; // Driver start failed
+    static constexpr EventBits_t STOP_FAILED_BIT   = BIT6; // Driver stop failed
+    static constexpr EventBits_t INVALID_STATE_BIT = BIT7; // Invalid state
 
     // Mask for all synchronization bits
     static constexpr EventBits_t ALL_SYNC_BITS =
         STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT |
-        CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT;
+        CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT | INVALID_STATE_BIT;
 
     // Main FreeRTOS task loop that executes driver operations
     static void wifiTask(void *pvParameters);
@@ -291,7 +293,6 @@ private:
     // Private helper to post commands to the internal queue
     esp_err_t sendCommand(const Command &cmd, bool is_async);
 
-private:
     // FreeRTOS Task handle for the manager loop
     TaskHandle_t task_handle_;
 

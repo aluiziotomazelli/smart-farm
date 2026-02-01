@@ -4,6 +4,7 @@ idf_component_register(
         "main.c"
         "test_wifi_manager.cpp"
         "test_wifi_manager_internal.cpp"
+        "test_state_helpers.cpp"
     INCLUDE_DIRS 
         "."
     REQUIRES 

@@ -176,7 +176,8 @@ TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
 
     wm.deinit();
     wm.init();
-    // After re-init, if Kconfig has a default SSID, it will be applied and flag set to true
+    // After re-init, if Kconfig has a default SSID, it will be applied and flag set
+    // to true
     if (strlen(CONFIG_WIFI_SSID) > 0) {
         TEST_ASSERT_TRUE(wm.isCredentialsValid());
     }
@@ -356,8 +357,56 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
 
     wm.init();
     // Connect without start should fail
-    TEST_ASSERT_EQUAL(ESP_FAIL, wm.connect(1000));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.connect(1000));
     wm.deinit();
+}
+
+TEST_CASE("test_start_stop_state_validation", "[wifi][state][startstop]")
+{
+    printf("\n=== Test: START/STOP State Validation ===\n");
+
+    WiFiManager &wm = WiFiManager::instance();
+    wm.deinit();
+
+    // Test 1: START from UNINITIALIZED (should fail)
+    printf("1. START from UNINITIALIZED...\n");
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.start(100));
+
+    // Test 2: Init, then START (should work)
+    printf("2. Init -> START...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.init());
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(3000));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    // Test 3: Redundant START (should succeed immediately)
+    printf("3. Redundant START...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(100));
+
+    // Test 4: STOP from STARTED (should work)
+    printf("4. STOP from STARTED...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop(3000));
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+
+    // Test 5: Redundant STOP (should succeed immediately)
+    printf("5. Redundant STOP...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.stop(100));
+
+    // Test 6: START from STOPPED (should work again)
+    printf("6. START from STOPPED...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.start(3000));
+
+    // Test 7: Rapid START/STOP cycles
+    printf("7. Rapid START/STOP cycles...\n");
+    for (int i = 0; i < 3; i++) {
+        TEST_ASSERT_EQUAL(ESP_OK, wm.stop(1000));
+        TEST_ASSERT_EQUAL(ESP_OK, wm.start(1000));
+    }
+
+    // System should remain stable
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+
+    // Cleanup
+    TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
 }
 
 // ========================================================================
@@ -531,15 +580,21 @@ TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
     wm.init();
     wm.start();
 
+    WiFiManager::State s = wm.getState();
+    printf("Final state: %d\n", (int)s);
     wm.setCredentials("NonExistentSSID_Rollback", "password");
     esp_err_t err = wm.connect(1000);
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
+    s = wm.getState();
+    printf("Final state: %d\n", (int)s);
 
     int retry = 0;
     while (wm.getState() == WiFiManager::State::CONNECTING && retry < 20) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
+    s = wm.getState();
+    printf("Final state: %d\n", (int)s);
     TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
     wm.deinit();
 }
@@ -553,11 +608,15 @@ TEST_CASE("test_wifi_start_rollback", "[wifi][state]")
     wm.deinit();
     wm.init();
 
+    WiFiManager::State inicial_state = wm.getState();
+    printf("Final state: %d\n", (int)inicial_state);
     esp_err_t err = wm.start(1);
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
 
     vTaskDelay(pdMS_TO_TICKS(500));
+
     WiFiManager::State final_state = wm.getState();
+    printf("Final state: %d\n", (int)final_state);
     TEST_ASSERT(final_state == WiFiManager::State::STOPPED ||
                 final_state == WiFiManager::State::INITIALIZED);
     wm.deinit();
