@@ -4,7 +4,7 @@
  * @file wifi_manager.hpp
  * @brief Singleton WiFi Manager for ESP32.
  * @author Jules
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 #include "esp_err.h"
@@ -43,16 +43,16 @@ public:
      */
     enum class State
     {
-        UNINITIALIZED,    ///< Initial state before init() is called.
-        INITIALIZING,     ///< In the process of setting up resources.
-        INITIALIZED,      ///< Resources allocated, task running, driver not started.
-        STARTING,         ///< In the process of starting the WiFi driver.
-        STARTED,          ///< WiFi driver started in STA mode.
-        CONNECTING,       ///< Attempting to connect to an AP.
-        CONNECTED_NO_IP,  ///< Connected to AP, waiting for DHCP/Static IP.
-        CONNECTED_GOT_IP, ///< Successfully connected and has an IP address.
-        DISCONNECTING,    ///< In the process of disconnecting from the AP.
-        DISCONNECTED,     ///< Not connected to any AP.
+        UNINITIALIZED,     ///< Initial state before init() is called.
+        INITIALIZING,      ///< In the process of setting up resources.
+        INITIALIZED,       ///< Resources allocated, task running, driver not started.
+        STARTING,          ///< In the process of starting the WiFi driver.
+        STARTED,           ///< WiFi driver started in STA mode.
+        CONNECTING,        ///< Attempting to connect to an AP.
+        CONNECTED_NO_IP,   ///< Connected to AP, waiting for DHCP/Static IP.
+        CONNECTED_GOT_IP,  ///< Successfully connected and has an IP address.
+        DISCONNECTING,     ///< In the process of disconnecting from the AP.
+        DISCONNECTED,      ///< Not connected to any AP.
         WAITING_RECONNECT, ///< Waiting for backoff timer to retry connection.
         ERROR_CREDENTIALS, ///< Last connection failed due to invalid credentials.
         STOPPING,          ///< In the process of stopping the WiFi driver.
@@ -63,7 +63,7 @@ public:
      * @brief Get the singleton instance of WiFiManager.
      * @return Reference to the WiFiManager instance.
      */
-    static WiFiManager &instance();
+    static WiFiManager &get_instance();
 
     // Prevent copying and assignment
     WiFiManager(const WiFiManager &)            = delete;
@@ -96,6 +96,7 @@ public:
      * @brief Start the WiFi station mode (synchronous).
      *
      * Blocks until the WiFi driver is successfully started or a timeout occurs.
+     * Note: This operation can take a few hundred milliseconds.
      *
      * @param timeout_ms Maximum time to wait for the operation to complete.
      * @return
@@ -139,6 +140,7 @@ public:
      * Blocks until a connection is established and an IP is obtained,
      * or a timeout/error occurs. Uses the credentials already stored in the WiFi
      * driver.
+     * Note: This can take several seconds depending on network conditions.
      *
      * @param timeout_ms Maximum time to wait for connection and IP.
      * @return
@@ -180,7 +182,7 @@ public:
      * @brief Get the current state of the WiFi manager.
      * @return The current State enum value.
      */
-    State getState() const;
+    State get_state() const;
 
     /**
      * @brief Set WiFi credentials and save them to the driver's NVS.
@@ -189,7 +191,7 @@ public:
      * @param password The network password.
      * @return ESP_OK on success.
      */
-    esp_err_t setCredentials(const std::string &ssid, const std::string &password);
+    esp_err_t set_credentials(const std::string &ssid, const std::string &password);
 
     /**
      * @brief Get the currently configured WiFi credentials from the driver.
@@ -198,13 +200,13 @@ public:
      * @param password Output parameter for the password.
      * @return ESP_OK on success.
      */
-    esp_err_t getCredentials(std::string &ssid, std::string &password);
+    esp_err_t get_credentials(std::string &ssid, std::string &password);
 
     /**
      * @brief Clear WiFi credentials from the driver and reset validity flag.
      * @return ESP_OK on success.
      */
-    esp_err_t clearCredentials();
+    esp_err_t clear_credentials();
 
     /**
      * @brief Perform a factory reset of the WiFi settings.
@@ -212,13 +214,13 @@ public:
      * Calls esp_wifi_restore() and clears the internal "wifi_manager" NVS.
      * @return ESP_OK on success.
      */
-    esp_err_t factoryReset();
+    esp_err_t factory_reset();
 
     /**
      * @brief Check if the currently stored credentials are considered valid.
      * @return true if valid.
      */
-    bool isCredentialsValid() const;
+    bool is_credentials_valid() const;
 
 private:
     // Private constructor for singleton
@@ -253,15 +255,15 @@ private:
 
 private:
     // FreeRTOS Event Group bits for synchronization between the API and the task
-    static constexpr EventBits_t STARTED_BIT      = BIT0; // WiFi driver started
-    static constexpr EventBits_t STOPPED_BIT      = BIT1; // WiFi driver stopped
-    static constexpr EventBits_t CONNECTED_BIT    = BIT2; // Got IP address
-    static constexpr EventBits_t DISCONNECTED_BIT = BIT3; // Disconnected from AP
+    static constexpr EventBits_t STARTED_BIT      = BIT0; ///< WiFi driver started
+    static constexpr EventBits_t STOPPED_BIT      = BIT1; ///< WiFi driver stopped
+    static constexpr EventBits_t CONNECTED_BIT    = BIT2; ///< Got IP address
+    static constexpr EventBits_t DISCONNECTED_BIT = BIT3; ///< Disconnected from AP
     static constexpr EventBits_t CONNECT_FAILED_BIT =
-        BIT4; // Connection attempt failed
-    static constexpr EventBits_t START_FAILED_BIT  = BIT5; // Driver start failed
-    static constexpr EventBits_t STOP_FAILED_BIT   = BIT6; // Driver stop failed
-    static constexpr EventBits_t INVALID_STATE_BIT = BIT7; // Invalid state
+        BIT4; ///< Connection attempt failed
+    static constexpr EventBits_t START_FAILED_BIT  = BIT5; ///< Driver start failed
+    static constexpr EventBits_t STOP_FAILED_BIT   = BIT6; ///< Driver stop failed
+    static constexpr EventBits_t INVALID_STATE_BIT = BIT7; ///< Invalid state
 
     // Mask for all synchronization bits
     static constexpr EventBits_t ALL_SYNC_BITS =
@@ -269,67 +271,67 @@ private:
         CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT | INVALID_STATE_BIT;
 
     // Main FreeRTOS task loop that executes driver operations
-    static void wifiTask(void *pvParameters);
+    static void wifi_task(void *pvParameters);
 
     // Opaque handles for ESP-IDF event handler registrations
-    esp_event_handler_instance_t wifi_event_instance_;
-    esp_event_handler_instance_t ip_event_instance_;
+    esp_event_handler_instance_t wifi_event_instance;
+    esp_event_handler_instance_t ip_event_instance;
 
     // Pointer to the default ESP-IDF station network interface
-    esp_netif_t *sta_netif_ptr_;
+    esp_netif_t *sta_netif;
 
     // Static callback for WiFi system events (bridged to task)
-    static void wifiEventHandler(void *arg,
+    static void wifi_event_handler(void *arg,
+                                   esp_event_base_t base,
+                                   int32_t id,
+                                   void *data);
+
+    // Static callback for IP system events (bridged to task)
+    static void ip_event_handler(void *arg,
                                  esp_event_base_t base,
                                  int32_t id,
                                  void *data);
 
-    // Static callback for IP system events (bridged to task)
-    static void ipEventHandler(void *arg,
-                               esp_event_base_t base,
-                               int32_t id,
-                               void *data);
-
     // Private helper to post commands to the internal queue
-    esp_err_t sendCommand(const Command &cmd, bool is_async);
+    esp_err_t send_command(const Command &cmd, bool is_async);
 
     // FreeRTOS Task handle for the manager loop
-    TaskHandle_t task_handle_;
+    TaskHandle_t task_handle;
 
     // FreeRTOS Queue handle for command passing
-    QueueHandle_t command_queue_;
+    QueueHandle_t command_queue;
 
     // FreeRTOS Event Group handle for API synchronization
-    EventGroupHandle_t wifi_event_group_;
+    EventGroupHandle_t wifi_event_group;
 
-    // Mutex to protect 'current_state_' access across tasks
-    mutable SemaphoreHandle_t state_mutex_;
+    // Mutex to protect 'current_state' access across tasks
+    mutable SemaphoreHandle_t state_mutex;
 
     // The current thread-protected internal state
-    State current_state_;
+    State current_state;
 
     // Validity of the current credentials (persisted in NVS)
-    bool is_credential_valid_;
+    bool is_credential_valid;
 
     // Reconnection tracking
-    uint32_t retry_count_;
-    uint32_t suspect_retry_count_;
-    uint64_t next_reconnect_ms_;
+    uint32_t retry_count;
+    uint32_t suspect_retry_count;
+    uint64_t next_reconnect_ms;
 
     // Helper to persist validity flag
-    esp_err_t saveValidFlag(bool valid);
+    esp_err_t save_valid_flag(bool valid);
 
 #ifdef UNIT_TEST
     friend class WiFiManagerTestAccessor;
 
-    // Helpers que criam e enviam comandos específicos
-    esp_err_t testHelper_sendStartCommand(bool is_async);
-    esp_err_t testHelper_sendStopCommand(bool is_async);
-    esp_err_t testHelper_sendConnectCommand(bool is_async);
-    esp_err_t testHelper_sendDisconnectCommand(bool is_async);
+    // Helpers to create and send specific commands
+    esp_err_t test_helper_send_start_command(bool is_async);
+    esp_err_t test_helper_send_stop_command(bool is_async);
+    esp_err_t test_helper_send_connect_command(bool is_async);
+    esp_err_t test_helper_send_disconnect_command(bool is_async);
 
-    // Helper para verificar fila (opcional)
-    uint32_t testHelper_getQueuePendingCount() const;
-    bool testHelper_isQueueFull() const;
+    // Helpers to check queue state
+    uint32_t test_helper_get_queue_pending_count() const;
+    bool test_helper_is_queue_full() const;
 #endif
 };

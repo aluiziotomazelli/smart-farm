@@ -21,7 +21,7 @@ The `WiFiManager` simplifies WiFi operations on the ESP32 by wrapping the low-le
 #include "wifi_manager.hpp"
 
 void app_main() {
-    auto &wm = WiFiManager::instance();
+    auto &wm = WiFiManager::get_instance();
 
     // 1. Initialize
     wm.init();
@@ -30,7 +30,7 @@ void app_main() {
     wm.start();
 
     // 3. Set credentials
-    wm.setCredentials("MySSID", "MyPassword");
+    wm.set_credentials("MySSID", "MyPassword");
 
     // 4. Connect (blocking until IP obtained)
     if (wm.connect(10000) == ESP_OK) {
@@ -45,13 +45,19 @@ For a full technical reference of all methods and states, see the [API Reference
 
 ## Unit Testing
 
-This component includes a comprehensive test suite. To run the tests:
+This component includes a comprehensive test suite with over 40 test cases covering:
+- **Lifecycle**: Init/Deinit idempotency, Task startup/shutdown.
+- **State Machine (FSM)**: Exhaustive command matrix testing in all states, event strictness guards.
+- **Credentials**: Set/Get/Clear operations, NVS persistence, and automated validity flag logic.
+- **Operational**: Real and simulated connection/disconnection flows (both Sync and Async).
+- **Stress & Concurrency**: Queue saturation handling, redundant command spamming, and multi-task API access.
+- **Error Handling**: Automated rollbacks on timeouts and credential invalidation on specific failure reasons.
 
-1. Navigate to `test/`.
-2. Build using `idf.py build`.
-3. Flash and monitor.
+To build the test application:
+1. Navigate to the `test` directory of the component.
+2. Run `idf.py build`.
 
-The tests include a "warmup" phase to stabilize memory drivers and perform strict leak detection checks.
+Note: Running the tests requires a target ESP32 board.
 
 ## License
 

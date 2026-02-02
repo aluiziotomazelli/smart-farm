@@ -4,6 +4,7 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "unity.h"
+#include "sdkconfig.h"
 
 #include "secrets.h"
 #include "test_memory_helper.h"
@@ -15,7 +16,7 @@ extern "C" void test_warmup(void)
 {
     printf("\n=== WiFiManager Warmup ===\n");
     printf("Pre-allocating WiFi, NVS and Netif internal buffers...\n");
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.init();
     wm.start(5000);
     wm.stop(5000);
@@ -37,35 +38,36 @@ static void print_memory(const char *label)
 }
 
 // ========================================================================
-// 0. LOG CONTROLS
+// GROUP 1: LOG CONTROLS
 // ========================================================================
+
 /**
- * 0.2 Turn logs on
+ * 1.1 Turn logs on
  */
-TEST_CASE("LOG on", "[wifi][internal][log]")
+TEST_CASE("1.1 LOG on", "[wifi][log]")
 {
     esp_log_level_set("*", ESP_LOG_DEBUG);
 }
 
 /**
- * 0.1 Turn logs off
+ * 1.2 Turn logs off
  */
-TEST_CASE("LOG off", "[wifi][internal][log]")
+TEST_CASE("1.2 LOG off", "[wifi][log]")
 {
     esp_log_level_set("*", ESP_LOG_ERROR);
 }
 
 // ========================================================================
-// GROUP 1: NVS AND CREDENTIALS
+// GROUP 2: NVS AND CREDENTIALS
 // ========================================================================
 
 /**
- * 1. Initialize WiFi Manager once and deinitialize
+ * 2.1 Initialize WiFi Manager once and deinitialize
  */
-TEST_CASE("test_wifi_init_once", "[wifi][init]")
+TEST_CASE("2.1 test_wifi_init_once", "[wifi][init]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
 
     printf("Testing WiFi Manager initialization...\n");
@@ -77,12 +79,12 @@ TEST_CASE("test_wifi_init_once", "[wifi][init]")
 }
 
 /**
- * 2. Test setting and getting WiFi credentials
+ * 2.2 Test setting and getting WiFi credentials
  */
-TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
+TEST_CASE("2.2 test_wifi_credentials", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
@@ -90,12 +92,12 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
     std::string test_pass = "TestPassword123";
 
     printf("Setting credentials: SSID=%s\n", test_ssid.c_str());
-    esp_err_t ret = wm.setCredentials(test_ssid, test_pass);
+    esp_err_t ret = wm.set_credentials(test_ssid, test_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 
     printf("Getting credentials from Driver...\n");
     std::string read_ssid, read_pass;
-    ret = wm.getCredentials(read_ssid, read_pass);
+    ret = wm.get_credentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
     TEST_ASSERT_EQUAL_STRING(test_ssid.c_str(), read_ssid.c_str());
     TEST_ASSERT_EQUAL_STRING(test_pass.c_str(), read_pass.c_str());
@@ -104,12 +106,12 @@ TEST_CASE("test_wifi_credentials", "[wifi][nvs]")
 }
 
 /**
- * 3. Test Credentials Deep (Max Lengths)
+ * 2.3 Test Credentials Deep (Max Lengths)
  */
-TEST_CASE("test_credentials_deep", "[wifi][nvs]")
+TEST_CASE("2.3 test_credentials_deep", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
@@ -118,11 +120,11 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     std::string max_pass(64, 'P');
 
     printf("Testing 32-char SSID and 64-char Password...\n");
-    esp_err_t err = wm.setCredentials(max_ssid, max_pass);
+    esp_err_t err = wm.set_credentials(max_ssid, max_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     std::string read_ssid, read_pass;
-    err = wm.getCredentials(read_ssid, read_pass);
+    err = wm.get_credentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL(ESP_OK, err);
     TEST_ASSERT_EQUAL(32, read_ssid.length());
     TEST_ASSERT_EQUAL(64, read_pass.length());
@@ -132,17 +134,17 @@ TEST_CASE("test_credentials_deep", "[wifi][nvs]")
     // Persistence across deinit/init
     wm.deinit();
     wm.init();
-    TEST_ASSERT_TRUE(wm.isCredentialsValid());
-    wm.getCredentials(read_ssid, read_pass);
+    TEST_ASSERT_TRUE(wm.is_credentials_valid());
+    wm.get_credentials(read_ssid, read_pass);
     TEST_ASSERT_EQUAL_STRING(max_ssid.c_str(), read_ssid.c_str());
 
     wm.deinit();
 }
 
 /**
- * 4. Test NVS memory leak
+ * 2.4 Test NVS memory leak
  */
-TEST_CASE("test_nvs_leak", "[memory][nvs]")
+TEST_CASE("2.4 test_nvs_leak", "[memory][nvs]")
 {
     printf("\n=== Testing NVS Memory Leak ===\n");
     print_memory("Before NVS init");
@@ -160,74 +162,78 @@ TEST_CASE("test_nvs_leak", "[memory][nvs]")
 }
 
 /**
- * 5. Test Validity Flag Persistence
+ * 2.5 Test Validity Flag Persistence
  */
-TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
+TEST_CASE("2.5 test_wifi_valid_flag_persistence", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     nvs_flash_erase(); // Ensure clean state
     wm.init();
 
-    wm.setCredentials("ValidSSID", "ValidPass");
-    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    wm.set_credentials("ValidSSID", "ValidPass");
+    TEST_ASSERT_TRUE(wm.is_credentials_valid());
 
     wm.deinit();
     wm.init();
     // after reinit should be true
-    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    TEST_ASSERT_TRUE(wm.is_credentials_valid());
 
-    wm.clearCredentials();
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    wm.clear_credentials();
+    TEST_ASSERT_FALSE(wm.is_credentials_valid());
 
     wm.deinit();
     wm.init();
-    // After re-init, with invlad credintias, if Kconfig has a default SSID, it will be applied and
+    // After re-init, with invalid credentials, if Kconfig has a default SSID, it will be applied and
     // flag set to true
+#ifdef CONFIG_WIFI_SSID
     if (strlen(CONFIG_WIFI_SSID) > 0) {
-        TEST_ASSERT_TRUE(wm.isCredentialsValid());
+        TEST_ASSERT_TRUE(wm.is_credentials_valid());
     }
     else {
-        TEST_ASSERT_FALSE(wm.isCredentialsValid());
+        TEST_ASSERT_FALSE(wm.is_credentials_valid());
     }
+#else
+    TEST_ASSERT_FALSE(wm.is_credentials_valid());
+#endif
 
     wm.deinit();
 }
 
 /**
- * 6. Test Factory Reset
+ * 2.6 Test Factory Reset
  */
-TEST_CASE("test_wifi_factory_reset", "[wifi][nvs]")
+TEST_CASE("2.6 test_wifi_factory_reset", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
-    wm.setCredentials("FactorySSID", "FactoryPass");
-    TEST_ASSERT_TRUE(wm.isCredentialsValid());
+    wm.set_credentials("FactorySSID", "FactoryPass");
+    TEST_ASSERT_TRUE(wm.is_credentials_valid());
 
-    printf("Calling factoryReset()...\n");
-    esp_err_t err = wm.factoryReset();
+    printf("Calling factory_reset()...\n");
+    esp_err_t err = wm.factory_reset();
     TEST_ASSERT_EQUAL(ESP_OK, err);
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
-    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.getState());
+    TEST_ASSERT_FALSE(wm.is_credentials_valid());
+    TEST_ASSERT_EQUAL(WiFiManager::State::INITIALIZED, wm.get_state());
 
     std::string ssid, pass;
-    wm.getCredentials(ssid, pass);
+    wm.get_credentials(ssid, pass);
     TEST_ASSERT_EQUAL(0, ssid.length());
 
     wm.deinit();
 }
 
 /**
- * 7. Test NVS Auto-repair
+ * 2.7 Test NVS Auto-repair
  */
-TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
+TEST_CASE("2.7 test_nvs_auto_repair", "[wifi][nvs]")
 {
     set_memory_leak_threshold(-2000);
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     nvs_flash_deinit();
 
@@ -239,32 +245,32 @@ TEST_CASE("test_nvs_auto_repair", "[wifi][nvs]")
     err = wm.init();
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
-    err = wm.setCredentials("RepairSSID", "RepairPass");
+    err = wm.set_credentials("RepairSSID", "RepairPass");
     TEST_ASSERT_EQUAL(ESP_OK, err);
 
     wm.deinit();
 }
 
 // ========================================================================
-// GROUP 2: LIFECYCLE (INIT/START/STOP)
+// GROUP 3: LIFECYCLE (INIT/START/STOP)
 // ========================================================================
 
 /**
- * 8. Test Singleton Pattern
+ * 3.1 Test Singleton Pattern
  */
-TEST_CASE("test_singleton_pattern", "[wifi][singleton]")
+TEST_CASE("3.1 test_singleton_pattern", "[wifi][singleton]")
 {
-    WiFiManager &instance1 = WiFiManager::instance();
-    WiFiManager &instance2 = WiFiManager::instance();
+    WiFiManager &instance1 = WiFiManager::get_instance();
+    WiFiManager &instance2 = WiFiManager::get_instance();
     TEST_ASSERT_EQUAL_PTR(&instance1, &instance2);
 }
 
 /**
- * 9. Test Multiple Init Calls
+ * 3.2 Test Multiple Init Calls
  */
-TEST_CASE("test_multiple_init_calls", "[wifi][init]")
+TEST_CASE("3.2 test_multiple_init_calls", "[wifi][init]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     TEST_ASSERT_EQUAL(ESP_OK, wm.init());
     TEST_ASSERT_EQUAL(ESP_OK, wm.init());
@@ -272,42 +278,42 @@ TEST_CASE("test_multiple_init_calls", "[wifi][init]")
 }
 
 /**
- * 10. Test State Transitions
+ * 3.3 Test State Transitions
  */
-TEST_CASE("test_state_transitions", "[wifi][state]")
+TEST_CASE("3.3 test_state_transitions", "[wifi][state]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
-    WiFiManager::State state = wm.getState();
+    WiFiManager::State state = wm.get_state();
     TEST_ASSERT(state == WiFiManager::State::INITIALIZED);
     wm.deinit();
 }
 
 /**
- * 11. Test WiFi Start/Stop
+ * 3.4 Test WiFi Start/Stop
  */
-TEST_CASE("test_wifi_start_stop", "[wifi][state]")
+TEST_CASE("3.4 test_wifi_start_stop", "[wifi][state]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
     TEST_ASSERT_EQUAL(ESP_OK, wm.start(5000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.get_state());
 
     TEST_ASSERT_EQUAL(ESP_OK, wm.stop(5000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.get_state());
 
     wm.deinit();
 }
 
 /**
- * 12. Test Rapid start/stop cycles
+ * 3.5 Test Rapid start/stop cycles
  */
-TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
+TEST_CASE("3.5 test_wifi_rapid_start_stop", "[wifi][stress]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
@@ -319,17 +325,17 @@ TEST_CASE("test_wifi_rapid_start_stop", "[wifi][stress]")
 }
 
 /**
- * 13. Test WiFi Queue Spam Robustness
+ * 3.6 Test WiFi Queue Spam Robustness
  */
-TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
+TEST_CASE("3.6 test_wifi_spam_robustness", "[wifi][stress]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
     printf("Sending 100 redundant connect commands...\n");
-    wm.setCredentials("StressSSID", "password");
+    wm.set_credentials("StressSSID", "password");
     for (int i = 0; i < 100; i++) {
         wm.connect();
     }
@@ -339,11 +345,11 @@ TEST_CASE("test_wifi_spam_robustness", "[wifi][stress]")
 }
 
 /**
- * 14. Test WiFi API Abuse (Invalid States)
+ * 3.7 Test WiFi API Abuse (Invalid States)
  */
-TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
+TEST_CASE("3.7 test_wifi_api_abuse", "[wifi][error]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
 
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_STATE, wm.start(1000));
@@ -356,11 +362,14 @@ TEST_CASE("test_wifi_api_abuse", "[wifi][error]")
     wm.deinit();
 }
 
-TEST_CASE("test_start_stop_state_validation", "[wifi][state][startstop]")
+/**
+ * 3.8 Test Start/Stop State Validation
+ */
+TEST_CASE("3.8 test_start_stop_state_validation", "[wifi][state][startstop]")
 {
     printf("\n=== Test: START/STOP State Validation ===\n");
 
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
 
     // Test 1: START from UNINITIALIZED (should fail)
@@ -371,7 +380,7 @@ TEST_CASE("test_start_stop_state_validation", "[wifi][state][startstop]")
     printf("2. Init -> START...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.init());
     TEST_ASSERT_EQUAL(ESP_OK, wm.start(3000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.get_state());
 
     // Test 3: Redundant START (should succeed immediately)
     printf("3. Redundant START...\n");
@@ -380,7 +389,7 @@ TEST_CASE("test_start_stop_state_validation", "[wifi][state][startstop]")
     // Test 4: STOP from STARTED (should work)
     printf("4. STOP from STARTED...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.stop(3000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.get_state());
 
     // Test 5: Redundant STOP (should succeed immediately)
     printf("5. Redundant STOP...\n");
@@ -398,221 +407,266 @@ TEST_CASE("test_start_stop_state_validation", "[wifi][state][startstop]")
     }
 
     // System should remain stable
-    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.get_state());
 
     // Cleanup
     TEST_ASSERT_EQUAL(ESP_OK, wm.deinit());
 }
 
 // ========================================================================
-// GROUP 3: CONNECTION (REAL AP)
+// GROUP 4: CONNECTION (REAL AP)
 // ========================================================================
 
 /**
- * 15. Test Real WiFi Connection (Async)
+ * 4.1 Test Real WiFi Connection (Async)
  */
-TEST_CASE("test_wifi_connect_real_async", "[wifi][connect][real]")
+TEST_CASE("4.1 test_wifi_connect_real_async", "[wifi][connect][real]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
     printf("Connecting to %s (Async)...\n", TEST_WIFI_SSID);
-    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    wm.set_credentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
     TEST_ASSERT_EQUAL(ESP_OK, wm.connect());
 
     int retry = 0;
-    while (wm.getState() != WiFiManager::State::CONNECTED_GOT_IP && retry < 150) {
+    while (wm.get_state() != WiFiManager::State::CONNECTED_GOT_IP && retry < 150) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
-    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.get_state());
     wm.deinit();
 }
 
 /**
- * 16. Test Real WiFi Connection (Sync)
+ * 4.2 Test Real WiFi Connection (Sync)
  */
-TEST_CASE("test_wifi_connect_real_sync", "[wifi][connect][real]")
+TEST_CASE("4.2 test_wifi_connect_real_sync", "[wifi][connect][real]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
     printf("Connecting to %s (Sync)...\n", TEST_WIFI_SSID);
-    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    wm.set_credentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
     TEST_ASSERT_EQUAL(ESP_OK, wm.connect(10000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.get_state());
     wm.deinit();
 }
 
 /**
- * 17. Test WiFi Reconnection (Manual)
+ * 4.3 Test WiFi Reconnection (Manual)
  */
-TEST_CASE("test_wifi_reconnect_manual", "[wifi][connect][real]")
+TEST_CASE("4.3 test_wifi_reconnect_manual", "[wifi][connect][real]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
-    wm.setCredentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+    wm.set_credentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
     TEST_ASSERT_EQUAL(ESP_OK, wm.connect(15000));
 
     printf("Disconnecting via wm.disconnect()...\n");
     wm.disconnect(5000);
-    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.get_state());
 
     printf("Reconnecting manually...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.connect(15000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.get_state());
 
     wm.deinit();
 }
 
 /**
- * 18. Test WiFi Start/Stop (Async)
+ * 4.4 Test WiFi Start/Stop (Async)
  */
-TEST_CASE("test_wifi_start_stop_async", "[wifi][state]")
+TEST_CASE("4.4 test_wifi_start_stop_async", "[wifi][state]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
     printf("Calling start() async...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.start());
     int retry = 0;
-    while (wm.getState() != WiFiManager::State::STARTED && retry < 50) {
+    while (wm.get_state() != WiFiManager::State::STARTED && retry < 50) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
-    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.get_state());
 
     printf("Calling stop() async...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.stop());
     retry = 0;
-    while (wm.getState() != WiFiManager::State::STOPPED && retry < 50) {
+    while (wm.get_state() != WiFiManager::State::STOPPED && retry < 50) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.get_state());
     wm.deinit();
 }
 
 /**
- * 19. Test WiFi Start/Stop (Sync)
+ * 4.5 Test WiFi Start/Stop (Sync)
  */
-TEST_CASE("test_wifi_start_stop_sync", "[wifi][state]")
+TEST_CASE("4.5 test_wifi_start_stop_sync", "[wifi][state]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
     printf("Calling start(5000) sync...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.start(5000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.get_state());
 
     printf("Calling stop(5000) sync...\n");
     TEST_ASSERT_EQUAL(ESP_OK, wm.stop(5000));
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.get_state());
     wm.deinit();
 }
 
 /**
- * 20. Test WiFi with Wrong Password (Sync)
+ * 4.6 Test WiFi with Wrong Password (Sync)
  */
-TEST_CASE("test_wifi_connect_wrong_password", "[wifi][connect][real]")
+TEST_CASE("4.6 test_wifi_connect_wrong_password", "[wifi][connect][real]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
     printf("Connecting with WRONG password (Sync)...\n");
-    wm.setCredentials(TEST_WIFI_SSID, "wrong_password_123");
+    wm.set_credentials(TEST_WIFI_SSID, "wrong_password_123");
     esp_err_t err = wm.connect(15000);
 
     TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
-    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.get_state());
+    TEST_ASSERT_FALSE(wm.is_credentials_valid());
     wm.deinit();
 }
 
 /**
- * 21. Test WiFi with Wrong Password (Async)
+ * 4.7 Test WiFi with Wrong Password (Async)
  */
-TEST_CASE("test_wifi_connect_wrong_password_async", "[wifi][connect][real]")
+TEST_CASE("4.7 test_wifi_connect_wrong_password_async", "[wifi][connect][real]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
     printf("Connecting with WRONG password (Async)...\n");
-    wm.setCredentials(TEST_WIFI_SSID, "wrong_password_123");
+    wm.set_credentials(TEST_WIFI_SSID, "wrong_password_123");
     wm.connect();
 
     int retry = 0;
-    while (wm.getState() != WiFiManager::State::ERROR_CREDENTIALS && retry < 150) {
+    while (wm.get_state() != WiFiManager::State::ERROR_CREDENTIALS && retry < 150) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
 
-    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.getState());
-    TEST_ASSERT_FALSE(wm.isCredentialsValid());
+    TEST_ASSERT_EQUAL(WiFiManager::State::ERROR_CREDENTIALS, wm.get_state());
+    TEST_ASSERT_FALSE(wm.is_credentials_valid());
     wm.deinit();
 }
 
 /**
- * 22. Test Connection rollback on timeout
+ * 4.8 Test Connection rollback on timeout
  */
-TEST_CASE("test_wifi_connect_rollback", "[wifi][connect]")
+TEST_CASE("4.8 test_wifi_connect_rollback", "[wifi][connect]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
     wm.start();
 
-    WiFiManager::State s = wm.getState();
-    printf("Final state: %d\n", (int)s);
-    wm.setCredentials("NonExistentSSID_Rollback", "password");
+    WiFiManager::State s = wm.get_state();
+    printf("Initial state: %d\n", (int)s);
+    wm.set_credentials("NonExistentSSID_Rollback", "password");
     esp_err_t err = wm.connect(1000);
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
-    s = wm.getState();
-    printf("Final state: %d\n", (int)s);
+    s = wm.get_state();
+    printf("State after timeout: %d\n", (int)s);
 
     int retry = 0;
-    while (wm.getState() == WiFiManager::State::CONNECTING && retry < 20) {
+    while (wm.get_state() == WiFiManager::State::CONNECTING && retry < 20) {
         vTaskDelay(pdMS_TO_TICKS(100));
         retry++;
     }
-    s = wm.getState();
+    s = wm.get_state();
     printf("Final state: %d\n", (int)s);
-    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.getState());
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.get_state());
     wm.deinit();
 }
 
 /**
- * 23. Test Start rollback on timeout
+ * 4.9 Test Start rollback on timeout
  */
-TEST_CASE("test_wifi_start_rollback", "[wifi][state]")
+TEST_CASE("4.9 test_wifi_start_rollback", "[wifi][state]")
 {
-    WiFiManager &wm = WiFiManager::instance();
+    WiFiManager &wm = WiFiManager::get_instance();
     wm.deinit();
     wm.init();
 
-    WiFiManager::State inicial_state = wm.getState();
-    printf("Final state: %d\n", (int)inicial_state);
+    WiFiManager::State inicial_state = wm.get_state();
+    printf("Initial state: %d\n", (int)inicial_state);
     esp_err_t err = wm.start(1);
     TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, err);
 
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    WiFiManager::State final_state = wm.getState();
+    WiFiManager::State final_state = wm.get_state();
     printf("Final state: %d\n", (int)final_state);
     TEST_ASSERT(final_state == WiFiManager::State::STOPPED ||
                 final_state == WiFiManager::State::INITIALIZED);
+    wm.deinit();
+}
+
+/**
+ * 4.10 Test Real Connect and Disconnect (Sync and Async)
+ */
+TEST_CASE("4.10 test_wifi_connect_disconnect_real", "[wifi][connect][real]")
+{
+    WiFiManager &wm = WiFiManager::get_instance();
+    wm.deinit();
+    wm.init();
+    wm.start(5000);
+
+    wm.set_credentials(TEST_WIFI_SSID, TEST_WIFI_PASS);
+
+    // 1. Sync Connect
+    printf("1. Synchronous Connect...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect(15000));
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.get_state());
+
+    // 2. Sync Disconnect
+    printf("2. Synchronous Disconnect...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.disconnect(5000));
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.get_state());
+
+    // 3. Async Connect
+    printf("3. Asynchronous Connect...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.connect());
+    int retry = 0;
+    while (wm.get_state() != WiFiManager::State::CONNECTED_GOT_IP && retry < 150) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retry++;
+    }
+    TEST_ASSERT_EQUAL(WiFiManager::State::CONNECTED_GOT_IP, wm.get_state());
+
+    // 4. Async Disconnect
+    printf("4. Asynchronous Disconnect...\n");
+    TEST_ASSERT_EQUAL(ESP_OK, wm.disconnect());
+    retry = 0;
+    while (wm.get_state() != WiFiManager::State::DISCONNECTED && retry < 50) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        retry++;
+    }
+    TEST_ASSERT_EQUAL(WiFiManager::State::DISCONNECTED, wm.get_state());
+
     wm.deinit();
 }
