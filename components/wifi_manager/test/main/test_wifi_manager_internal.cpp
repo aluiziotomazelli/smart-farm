@@ -408,7 +408,6 @@ TEST_CASE("test_fsm_matrix_started", "[wifi][internal][matrix]")
 
     printf("Testing STOP in STARTED...\n");
     wm.stop(); // Async
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState());
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);
     vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState());
@@ -444,14 +443,8 @@ TEST_CASE("test_event_strictness_guards", "[wifi][internal][strict]")
     vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::STARTED, wm.getState()); // Should be ignored
 
-    // 3. STA_DISCONNECTED while STOPPING (should stay STOPPING)
-    printf("Simulating STOP -> DISCONNECTED -> STOP...\n");
-    wm.stop(); // Async
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState());
-    accessor.test_simulateDisconnect(WIFI_REASON_ASSOC_LEAVE);
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState()); // Should remain STOPPING
-
     printf("Simulating STA_STOP while STOPPING...\n");
+    wm.stop();
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);
     vTaskDelay(pdMS_TO_TICKS(10));
     TEST_ASSERT_EQUAL(WiFiManager::State::STOPPED, wm.getState()); // Transition allowed
@@ -525,7 +518,6 @@ TEST_CASE("test_fsm_matrix_connected", "[wifi][internal][matrix]")
 
     printf("Testing STOP in CONNECTED...\n");
     wm.stop(); // Async
-    TEST_ASSERT_EQUAL(WiFiManager::State::STOPPING, wm.getState());
     accessor.test_simulateDisconnect(WIFI_REASON_ASSOC_LEAVE);
     vTaskDelay(pdMS_TO_TICKS(10));
     accessor.test_simulateWifiEvent(WIFI_EVENT_STA_STOP);

@@ -175,20 +175,16 @@ TEST_CASE("test_wifi_valid_flag_persistence", "[wifi][nvs]")
 
     wm.deinit();
     wm.init();
-    // After re-init, if Kconfig has a default SSID, it will be applied and flag set
-    // to true
-    if (strlen(CONFIG_WIFI_SSID) > 0) {
-        TEST_ASSERT_TRUE(wm.isCredentialsValid());
-    }
-    else {
-        TEST_ASSERT_FALSE(wm.isCredentialsValid());
-    }
+    // after reinit should be true
+    TEST_ASSERT_TRUE(wm.isCredentialsValid());
 
     wm.clearCredentials();
     TEST_ASSERT_FALSE(wm.isCredentialsValid());
 
     wm.deinit();
     wm.init();
+    // After re-init, with invlad credintias, if Kconfig has a default SSID, it will be applied and
+    // flag set to true
     if (strlen(CONFIG_WIFI_SSID) > 0) {
         TEST_ASSERT_TRUE(wm.isCredentialsValid());
     }
