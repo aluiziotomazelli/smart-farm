@@ -39,6 +39,13 @@ static void print_memory(const char *label)
 // ========================================================================
 // 0. LOG CONTROLS
 // ========================================================================
+/**
+ * 0.2 Turn logs on
+ */
+TEST_CASE("LOG on", "[wifi][internal][log]")
+{
+    esp_log_level_set("*", ESP_LOG_DEBUG);
+}
 
 /**
  * 0.1 Turn logs off
@@ -46,14 +53,6 @@ static void print_memory(const char *label)
 TEST_CASE("LOG off", "[wifi][internal][log]")
 {
     esp_log_level_set("*", ESP_LOG_ERROR);
-}
-
-/**
- * 0.2 Turn logs on
- */
-TEST_CASE("LOG on", "[wifi][internal][log]")
-{
-    esp_log_level_set("*", ESP_LOG_INFO);
 }
 
 // ========================================================================

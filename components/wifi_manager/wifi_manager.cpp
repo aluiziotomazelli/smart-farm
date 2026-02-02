@@ -795,13 +795,13 @@ void WiFiManager::wifiTask(void *pvParameters)
                 case State::WAITING_RECONNECT:
                 case State::ERROR_CREDENTIALS:
                     // Already started or in process - signal success for sync APIs
-                    ESP_LOGD(TAG, "WiFi already operational (state: %d).", (int)s);
+                    ESP_LOGI(TAG, "WiFi already operational (state: %d).", (int)s);
                     xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
                     break;
 
                     // Invalid: in process of stopping
                 case State::STOPPING:
-                    ESP_LOGW(TAG, "Cannot start while stopping (state: %d).", (int)s);
+                    ESP_LOGE(TAG, "Cannot start while stopping (state: %d).", (int)s);
                     xEventGroupSetBits(self->wifi_event_group_, INVALID_STATE_BIT);
                     break;
 
@@ -837,15 +837,15 @@ void WiFiManager::wifiTask(void *pvParameters)
                     xEventGroupSetBits(self->wifi_event_group_, INVALID_STATE_BIT);
                     break;
 
+                    // Already stopped, setting bits for sync APIs
                 case State::STOPPED:
-                    ESP_LOGD(TAG, "WiFi driver already stopped.");
+                    ESP_LOGI(TAG, "WiFi driver already stopped.");
                     xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
                     break;
 
-                    // Redundant: already in process of stopping
+                    // Invalid: already in process of stopping
                 case State::STOPPING:
-                    ESP_LOGD(TAG, "Already stopping WiFi driver.");
-                    xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
+                    ESP_LOGW(TAG, "Already stopping WiFi driver.");
                     break;
 
                     // Valid states for stop operation
@@ -881,7 +881,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                 switch (s) {
                     // Already successfully connected - signal success for sync APIs
                 case State::CONNECTED_GOT_IP:
-                    ESP_LOGD(TAG, "Already connected with IP.");
+                    ESP_LOGI(TAG, "Already connected with IP.");
                     xEventGroupSetBits(self->wifi_event_group_, CONNECTED_BIT);
                     break;
 
@@ -959,14 +959,13 @@ void WiFiManager::wifiTask(void *pvParameters)
 
                     // Invalid state: already disconnected
                 case State::DISCONNECTED:
-                    ESP_LOGD(TAG, "Already disconnected.");
+                    ESP_LOGI(TAG, "Already disconnected.");
                     xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
                     break;
 
-                    // Redundant: already disconnecting
+                    // Invalid state: already disconnecting
                 case State::DISCONNECTING:
-                    ESP_LOGD(TAG, "Already disconnecting.");
-                    xEventGroupSetBits(self->wifi_event_group_, DISCONNECTED_BIT);
+                    ESP_LOGW(TAG, "Already disconnecting.");
                     break;
 
                     // Valid states
@@ -1009,7 +1008,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                 // accordingly
                 switch (cmd.event_id) {
                 case WIFI_EVENT_STA_START:
-                    ESP_LOGD(TAG, "Task Event: STA_START");
+                    ESP_LOGI(TAG, "Task Event: STA_START");
                     if (self->current_state_ == State::STARTING) {
                         self->current_state_ = State::STARTED;
                         xEventGroupSetBits(self->wifi_event_group_, STARTED_BIT);
@@ -1019,7 +1018,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                     }
                     break;
                 case WIFI_EVENT_STA_STOP:
-                    ESP_LOGD(TAG, "Task Event: STA_STOP");
+                    ESP_LOGI(TAG, "Task Event: STA_STOP");
                     if (self->current_state_ == State::STOPPING) {
                         self->current_state_ = State::STOPPED;
                         xEventGroupSetBits(self->wifi_event_group_, STOPPED_BIT);
@@ -1029,7 +1028,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                     }
                     break;
                 case WIFI_EVENT_STA_CONNECTED:
-                    ESP_LOGD(TAG, "Task Event: STA_CONNECTED");
+                    ESP_LOGI(TAG, "Task Event: STA_CONNECTED");
                     if (self->current_state_ == State::CONNECTING) {
                         self->current_state_ = State::CONNECTED_NO_IP;
                     }
@@ -1040,7 +1039,7 @@ void WiFiManager::wifiTask(void *pvParameters)
                     break;
                 case WIFI_EVENT_STA_DISCONNECTED:
                 {
-                    ESP_LOGD(TAG, "Task Event: STA_DISCONNECTED (reason: %d)", cmd.reason);
+                    ESP_LOGI(TAG, "Task Event: STA_DISCONNECTED (reason: %d)", cmd.reason);
 
                     State s = self->current_state_;
 
@@ -1133,7 +1132,7 @@ void WiFiManager::wifiTask(void *pvParameters)
 
             case CommandId::HANDLE_EVENT_IP:
                 if (cmd.event_id == IP_EVENT_STA_GOT_IP) {
-                    ESP_LOGD(TAG, "Task Event: GOT_IP");
+                    ESP_LOGI(TAG, "Task Event: GOT_IP");
                     if (self->current_state_ == State::CONNECTING ||
                         self->current_state_ == State::CONNECTED_NO_IP) {
                         self->current_state_       = State::CONNECTED_GOT_IP;
