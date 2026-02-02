@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = '../../../../build/unit-test-app.elf'
+elf = '../../../../build/unit-test-app.elf'
