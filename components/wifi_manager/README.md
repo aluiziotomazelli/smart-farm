@@ -17,6 +17,8 @@ The `WiFiManager` simplifies WiFi operations on the ESP32 by wrapping the low-le
 
 ## Quick Start
 
+**Credentials:** SSID and PASSWORD can also be set at compile time using Kconfig via `idf.py menuconfig`, under the WIFI SSID Configuration menu.
+
 ```cpp
 #include "wifi_manager.hpp"
 
@@ -38,6 +40,7 @@ void app_main() {
     }
 }
 ```
+ 
 
 ## Documentation
 

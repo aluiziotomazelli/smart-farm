@@ -86,8 +86,8 @@ public:
     {
         wifi_event_sta_disconnected_t disconn = {};
         disconn.reason                        = reason;
-        WiFiManager::wifi_event_handler(&wifi_manager, WIFI_EVENT,
-                                        WIFI_EVENT_STA_DISCONNECTED, &disconn);
+        WiFiManager::wifi_event_handler(&wifi_manager, WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+                                        &disconn);
     }
 
     /**

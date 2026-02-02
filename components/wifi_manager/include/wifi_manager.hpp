@@ -43,20 +43,20 @@ public:
      */
     enum class State
     {
-        UNINITIALIZED,     ///< Initial state before init() is called.
-        INITIALIZING,      ///< In the process of setting up resources.
-        INITIALIZED,       ///< Resources allocated, task running, driver not started.
-        STARTING,          ///< In the process of starting the WiFi driver.
-        STARTED,           ///< WiFi driver started in STA mode.
-        CONNECTING,        ///< Attempting to connect to an AP.
-        CONNECTED_NO_IP,   ///< Connected to AP, waiting for DHCP/Static IP.
-        CONNECTED_GOT_IP,  ///< Successfully connected and has an IP address.
-        DISCONNECTING,     ///< In the process of disconnecting from the AP.
-        DISCONNECTED,      ///< Not connected to any AP.
-        WAITING_RECONNECT, ///< Waiting for backoff timer to retry connection.
-        ERROR_CREDENTIALS, ///< Last connection failed due to invalid credentials.
-        STOPPING,          ///< In the process of stopping the WiFi driver.
-        STOPPED,           ///< WiFi driver stopped.
+        UNINITIALIZED     = 0,  ///< Initial state before init() is called.
+        INITIALIZING      = 1,  ///< In the process of setting up resources.
+        INITIALIZED       = 2,  ///< Resources allocated, task running, driver not started.
+        STARTING          = 3,  ///< In the process of starting the WiFi driver.
+        STARTED           = 4,  ///< WiFi driver started in STA mode.
+        CONNECTING        = 5,  ///< Attempting to connect to an AP.
+        CONNECTED_NO_IP   = 6,  ///< Connected to AP, waiting for DHCP/Static IP.
+        CONNECTED_GOT_IP  = 7,  ///< Successfully connected and has an IP address.
+        DISCONNECTING     = 8,  ///< In the process of disconnecting from the AP.
+        DISCONNECTED      = 9,  ///< Not connected to any AP.
+        WAITING_RECONNECT = 10, ///< Waiting for backoff timer to retry connection.
+        ERROR_CREDENTIALS = 11, ///< Last connection failed due to invalid credentials.
+        STOPPING          = 12, ///< In the process of stopping the WiFi driver.
+        STOPPED           = 13, ///< WiFi driver stopped.
     };
 
     /**
@@ -255,20 +255,19 @@ private:
 
 private:
     // FreeRTOS Event Group bits for synchronization between the API and the task
-    static constexpr EventBits_t STARTED_BIT      = BIT0; ///< WiFi driver started
-    static constexpr EventBits_t STOPPED_BIT      = BIT1; ///< WiFi driver stopped
-    static constexpr EventBits_t CONNECTED_BIT    = BIT2; ///< Got IP address
-    static constexpr EventBits_t DISCONNECTED_BIT = BIT3; ///< Disconnected from AP
-    static constexpr EventBits_t CONNECT_FAILED_BIT =
-        BIT4; ///< Connection attempt failed
-    static constexpr EventBits_t START_FAILED_BIT  = BIT5; ///< Driver start failed
-    static constexpr EventBits_t STOP_FAILED_BIT   = BIT6; ///< Driver stop failed
-    static constexpr EventBits_t INVALID_STATE_BIT = BIT7; ///< Invalid state
+    static constexpr EventBits_t STARTED_BIT        = BIT0; ///< WiFi driver started
+    static constexpr EventBits_t STOPPED_BIT        = BIT1; ///< WiFi driver stopped
+    static constexpr EventBits_t CONNECTED_BIT      = BIT2; ///< Got IP address
+    static constexpr EventBits_t DISCONNECTED_BIT   = BIT3; ///< Disconnected from AP
+    static constexpr EventBits_t CONNECT_FAILED_BIT = BIT4; ///< Connection attempt failed
+    static constexpr EventBits_t START_FAILED_BIT   = BIT5; ///< Driver start failed
+    static constexpr EventBits_t STOP_FAILED_BIT    = BIT6; ///< Driver stop failed
+    static constexpr EventBits_t INVALID_STATE_BIT  = BIT7; ///< Invalid state
 
     // Mask for all synchronization bits
     static constexpr EventBits_t ALL_SYNC_BITS =
-        STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT |
-        CONNECT_FAILED_BIT | START_FAILED_BIT | STOP_FAILED_BIT | INVALID_STATE_BIT;
+        STARTED_BIT | STOPPED_BIT | CONNECTED_BIT | DISCONNECTED_BIT | CONNECT_FAILED_BIT |
+        START_FAILED_BIT | STOP_FAILED_BIT | INVALID_STATE_BIT;
 
     // Main FreeRTOS task loop that executes driver operations
     static void wifi_task(void *pvParameters);
@@ -281,16 +280,10 @@ private:
     esp_netif_t *sta_netif;
 
     // Static callback for WiFi system events (bridged to task)
-    static void wifi_event_handler(void *arg,
-                                   esp_event_base_t base,
-                                   int32_t id,
-                                   void *data);
+    static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data);
 
     // Static callback for IP system events (bridged to task)
-    static void ip_event_handler(void *arg,
-                                 esp_event_base_t base,
-                                 int32_t id,
-                                 void *data);
+    static void ip_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data);
 
     // Private helper to post commands to the internal queue
     esp_err_t send_command(const Command &cmd, bool is_async);

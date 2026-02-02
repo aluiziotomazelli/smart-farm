@@ -1,11 +1,11 @@
 // components/wifi_manager/test/main/test_wifi_manager_internal.cpp
+#include <stdio.h>
+
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "unity.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-#include <stdio.h>
 
 #include "test_memory_helper.h"
 #include "test_wifi_manager_accessor.hpp"

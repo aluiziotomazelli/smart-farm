@@ -1,16 +1,18 @@
 // test_wifi_manager.cpp
+#include <cstring>
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
-#include "unity.h"
 #include "sdkconfig.h"
+#include "unity.h"
 
 #include "secrets.h"
 #include "test_memory_helper.h"
-#include <cstring>
-
 #include "wifi_manager.hpp"
+
+#ifdef UNIT_TEST
 
 extern "C" void test_warmup(void)
 {
@@ -185,8 +187,8 @@ TEST_CASE("2.5 test_wifi_valid_flag_persistence", "[wifi][nvs]")
 
     wm.deinit();
     wm.init();
-    // After re-init, with invalid credentials, if Kconfig has a default SSID, it will be applied and
-    // flag set to true
+    // After re-init, with invalid credentials, if Kconfig has a default SSID, it will be applied
+    // and flag set to true
 #ifdef CONFIG_WIFI_SSID
     if (strlen(CONFIG_WIFI_SSID) > 0) {
         TEST_ASSERT_TRUE(wm.is_credentials_valid());
@@ -670,3 +672,5 @@ TEST_CASE("4.10 test_wifi_connect_disconnect_real", "[wifi][connect][real]")
 
     wm.deinit();
 }
+
+#endif // UNIT_TEST
