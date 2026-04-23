@@ -1,9 +1,13 @@
-# Build directories - IGNORA EM QUALQUER NÍVEL
+# Build directories
 **/build/
+**/build_*/
 **/.cmake/
 **/sdkconfig
 **/sdkconfig.old
 **/compile_commands.json
+
+# Build artifacts
+dist/
 
 # IDE files
 **/.vscode/
@@ -22,12 +26,29 @@ Thumbs.db
 **/flash_project_args
 **/config/sdkconfig.json
 
-# App específico (se quiser)
-app_*/build/
-app_*/sdkconfig
+# App
 *.bak
 .clangd
 **/.cache/
 *.log
 **/secrets.h
 **/secrets.hpp
+
+#tests
+**/__pycache__/
+*.pyc
+**/coverage/**
+
+#agents
+**/.gemini/
+**/.qwen/
+*qwen*
+*QWEN*
+GEMINI.md
+AGENTS.md
+
+#TODO folder
+**/todo/
+
+# External dependencies source
+external/etl/etl-src/

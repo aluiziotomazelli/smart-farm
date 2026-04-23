@@ -19,5 +19,6 @@
   ],
   "idf.adapterTargetName": "esp32s3",
   "idf.port": "/dev/ttyACM0",
-  "idf.flashType": "JTAG"
+  "idf.flashType": "JTAG",
+  "idf.currentSetup": "/home/german/dev/esp/esp-idf"
 }

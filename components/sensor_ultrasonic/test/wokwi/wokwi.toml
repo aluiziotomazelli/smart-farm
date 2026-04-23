@@ -1,4 +1,5 @@
 [wokwi]
 version = 1
-firmware = '../../../../build/unit-test-app.elf'
-elf = '../../../../build/unit-test-app.elf'
+
+firmware = '../build/test_sensor_ultrasonic.bin'
+elf = '../build/test_sensor_ultrasonic.elf'

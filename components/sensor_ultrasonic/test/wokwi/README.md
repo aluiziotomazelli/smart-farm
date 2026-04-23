@@ -9,9 +9,9 @@ Este diretório contém os arquivos necessários para simular o componente `sens
 ## Pinagem Utilizada
 | Sensor HC-SR04 | ESP32 DevKit V1 |
 | :--- | :--- |
-| VCC | 5V |
-| TRIG | D5 (GPIO 5) |
-| ECHO | D18 (GPIO 18) |
+| VCC | 3.3V |
+| TRIG | D4 (GPIO 4) |
+| ECHO | D5 (GPIO 5) |
 | GND | GND |
 
 ## Como rodar
