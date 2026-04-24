@@ -1,56 +1,61 @@
-
 ---
 Language: Cpp
+BasedOnStyle: LLVM
 
 # ============================================================================
-# ESTILO BASE
-# ============================================================================
-# BasedOnStyle: LLVM
-
-# ============================================================================
-# INDENTAÇÃO
+# INDENTATION AND SPACING
 # ============================================================================
 IndentWidth: 4
-IndentCaseLabels: false
-IndentWrappedFunctionNames: false
-AccessModifierOffset: -4
-ConstructorInitializerIndentWidth: 4
-ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
 NamespaceIndentation: None
+AccessModifierOffset: -4
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
 
 # ============================================================================
-# ALINHAMENTO
+# FUNCTION AND ARGUMENT LAYOUT
 # ============================================================================
-AlignAfterOpenBracket: Align
-AlignConsecutiveAssignments: true
+ColumnLimit: 120
+# Forces a break after '(' if arguments don't fit on a single line
+AlignAfterOpenBracket: AlwaysBreak
+# Prevents multiple parameters from being packed on the same line after a break
+BinPackParameters: false
+BinPackArguments: false
+# Allows empty functions (like virtual destructors) to stay on one line
+AllowShortFunctionsOnASingleLine: Inline
+
+# ============================================================================
+# POINTERS AND REFERENCES
+# ============================================================================
+# Keeps the pointer to the right: void *payload
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+# ============================================================================
+# ALIGNMENT SETTINGS
+# ============================================================================
+AlignConsecutiveAssignments: false
 AlignConsecutiveDeclarations: false
 AlignEscapedNewlines: Left
 AlignOperands: true
 AlignTrailingComments: true
 
 # ============================================================================
-# QUEBRAS DE LINHA
+# LINE BREAKS AND CONTROL
 # ============================================================================
-ColumnLimit: 100
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: true
-AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
-AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: false
-BreakBeforeBinaryOperators: None
 BreakBeforeTernaryOperators: true
-BreakConstructorInitializersBeforeComma: false
 BreakConstructorInitializers: BeforeComma
-BreakAfterJavaFieldAnnotations: false
 BreakStringLiterals: true
 
 # ============================================================================
-# CHAVES (BRACES)
+# BRACE WRAPPING
 # ============================================================================
 BreakBeforeBraces: Custom
 BraceWrapping:
@@ -60,7 +65,6 @@ BraceWrapping:
   AfterEnum: true
   AfterFunction: true
   AfterNamespace: false
-  AfterObjCDeclaration: false
   AfterStruct: true
   AfterUnion: true
   BeforeCatch: false
@@ -71,31 +75,9 @@ BraceWrapping:
   SplitEmptyNamespace: true
 
 # ============================================================================
-# ESPAÇAMENTO
+# INCLUDE SORTING
 # ============================================================================
-SpaceAfterCStyleCast: false
-SpaceAfterTemplateKeyword: true
-SpaceBeforeAssignmentOperators: true
-SpaceBeforeParens: ControlStatements
-SpaceInEmptyParentheses: false
-SpacesBeforeTrailingComments: 1
-SpacesInAngles: false
-SpacesInContainerLiterals: true
-SpacesInCStyleCastParentheses: false
-SpacesInParentheses: false
-SpacesInSquareBrackets: false
-
-# ============================================================================
-# PONTEIROS E REFERÊNCIAS
-# ============================================================================
-PointerAlignment: Right
-DerivePointerAlignment: false
-
-# ============================================================================
-# INCLUDES
-# ============================================================================
-SortIncludes: true
-SortUsingDeclarations: true
+SortIncludes: false
 IncludeCategories:
   - Regex: '^<openthread/.*/'
     Priority: 4
@@ -107,66 +89,15 @@ IncludeCategories:
     Priority: 5
   - Regex: '^"'
     Priority: 1
-IncludeIsMainRegex: '(Test)?$'
 
 # ============================================================================
-# EMPACOTAMENTO
+# MISCELLANEOUS
 # ============================================================================
-BinPackArguments: true
-BinPackParameters: false
-Cpp11BracedListStyle: true
-ConstructorInitializerAllOnOneLineOrOnePerLine: false
+Standard: Cpp11
+ReflowComments: true
 
 # ============================================================================
-# LINHAS VAZIAS
+# EMPTY LINES
 # ============================================================================
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
-
-# ============================================================================
-# COMENTÁRIOS
-# ============================================================================
-ReflowComments: true
-CommentPragmas: '^ IWYU pragma:'
-
-# ============================================================================
-# PENALIDADES (para decisões de formatação)
-# ============================================================================
-PenaltyBreakAssignment: 2
-PenaltyBreakBeforeFirstCallParameter: 19
-PenaltyBreakComment: 300
-PenaltyBreakFirstLessLess: 120
-PenaltyBreakString: 1000
-PenaltyExcessCharacter: 1000000
-PenaltyReturnTypeOnItsOwnLine: 1000
-
-# ============================================================================
-# CONFIGURAÇÕES GERAIS
-# ============================================================================
-Standard: Cpp11
-TabWidth: 4
-UseTab: Never
-DisableFormat: false
-FixNamespaceComments: true
-CompactNamespaces: false
-ExperimentalAutoDetectBinPacking: false
-
-# ============================================================================
-# MACROS
-# ============================================================================
-ForEachMacros:
-  - foreach
-  - Q_FOREACH
-  - BOOST_FOREACH
-MacroBlockBegin: ''
-MacroBlockEnd: ''
-
-# ============================================================================
-# OUTRAS CONFIGURAÇÕES
-# ============================================================================
-ObjCBlockIndentWidth: 2
-ObjCSpaceAfterProperty: false
-ObjCSpaceBeforeProtocolList: true
-JavaScriptQuotes: Leave
-JavaScriptWrapImports: true
-...

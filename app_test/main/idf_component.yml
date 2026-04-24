@@ -1,0 +1,4 @@
+dependencies:
+  wifi_manager:
+    git: https://github.com/aluiziotomazelli/wifi_manager.git
+    version: v1.1.0

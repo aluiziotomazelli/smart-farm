@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Define o nome do projeto
+# Define the project name
 set(PROJECT_NAME "test")
 
-# Adiciona caminhos para componentes compartilhados
+# Add paths for shared components
 list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/main
     ${CMAKE_CURRENT_LIST_DIR}/../components/common
@@ -13,8 +13,8 @@ list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/../components/sensor_floatswitch
 )
 
-# Inclui o framework ESP-IDF
+# Include the ESP-IDF framework
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-# Define o projeto
+# Define the project
 project(${PROJECT_NAME})
