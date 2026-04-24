@@ -3,7 +3,7 @@ idf_component_register(
         "main.cpp"
                     
     INCLUDE_DIRS 
-        "include"
+        
         
     REQUIRES
         # espnow

@@ -1,5 +1,0 @@
-[wokwi]
-version = 1
-
-firmware = '../build/test_sensor_ultrasonic.bin'
-elf = '../build/test_sensor_ultrasonic.elf'

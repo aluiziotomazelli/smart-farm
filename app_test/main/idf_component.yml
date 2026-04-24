@@ -8,3 +8,6 @@ dependencies:
   power_control:
     git: https://github.com/aluiziotomazelli/power_control.git
     version: v1.0.1
+  ultrasonic_sensor:
+    git: https://github.com/aluiziotomazelli/ultrasonic_sensor.git
+    version: v1.0.1
