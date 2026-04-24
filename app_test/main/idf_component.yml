@@ -11,3 +11,6 @@ dependencies:
   ultrasonic_sensor:
     git: https://github.com/aluiziotomazelli/ultrasonic_sensor.git
     version: v1.0.1
+  espnow_manager:
+    git: https://github.com/aluiziotomazelli/espnow_manager.git
+    version: v1.0.1
