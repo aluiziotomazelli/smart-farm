@@ -7,11 +7,6 @@ idf_component_register(
         "."    
         "include"
     REQUIRES
-        sensor_ultrasonic
-        sensor_floatswitch
-        core
-        power_control
-        # espnow_comm
-        # ota_manager
-        # common_types
+        nvs_core
+        common
 )

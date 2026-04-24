@@ -1,10 +1,11 @@
 #pragma once
+#include "interfaces/i_nvs_core.hpp"
 #include "core_types.hpp"
 #include "esp_err.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
-class NvsCore
+class NvsCore : public INvsCore
 {
 protected:
     // Dados comuns (acessível pelo filho)
@@ -47,16 +48,16 @@ private:
 
 public:
     NvsCore(const char *ns);
-    virtual ~NvsCore() = default;
+    virtual ~NvsCore() override = default;
 
     // Inicializa partição
-    esp_err_t init_partition();
+    esp_err_t init_partition() override;
 
     // Fluxo mestre: Carrega Core + App
-    esp_err_t load();
+    esp_err_t load() override;
 
     // Fluxo mestre: Salva Core + App
-    esp_err_t commit();
+    esp_err_t commit() override;
 
     // Acesso aos dados comuns
     CoreStorage &getCoreData()
@@ -65,10 +66,10 @@ public:
     }
 
     // Factory reset completo (apaga apenas o namespace)
-    void factory_reset();
+    void factory_reset() override;
 
     // Apaga tudo no namespace
-    esp_err_t erase_namespace();
+    esp_err_t erase_namespace() override;
 
 public:
     template <typename T> esp_err_t loadStructPublic(const char *key, T &data)
