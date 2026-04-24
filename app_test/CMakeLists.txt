@@ -13,6 +13,8 @@ list(APPEND EXTRA_COMPONENT_DIRS
     # ${CMAKE_CURRENT_LIST_DIR}/../components/sensor_floatswitch
 )
 
+set(COMPONENTS main)
+
 # Include the ESP-IDF framework
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
