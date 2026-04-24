@@ -1,4 +1,5 @@
 {
+    "clangd.path": "/home/german/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
     "clangd.arguments": [
         "--background-index",
         "--query-driver=/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-g++,/home/german/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
