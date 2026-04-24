@@ -5,3 +5,6 @@ dependencies:
   floatswitch:
     git: https://github.com/aluiziotomazelli/floatswitch.git
     version: v1.0.1
+  power_control:
+    git: https://github.com/aluiziotomazelli/power_control.git
+    version: v1.0.1
