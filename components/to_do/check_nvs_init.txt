@@ -1,4 +1,0 @@
-Pesquisar se é possivel (1) checar se o NVS foi iniciado, se nao, (2) ver se é possivel iniciar varias vezes
-
-
-ver componentes que usam nvs e: (1) checar se foi iniciado, se nao iniciar, ou: (2) iniciar se for seguro ser iniciado varias vezes
