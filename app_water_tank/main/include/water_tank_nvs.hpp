@@ -1,29 +1,31 @@
 #pragma once
 
-#include "nvs_core.hpp"         // Sua classe base refatorada
-#include "water_tank_stats.hpp" // Onde está a struct WaterTankStats
+#include "nvs_core.hpp"
+#include "water_tank_stats.hpp"
 
+/**
+ * @class WaterTankNvs
+ * @brief Persistent storage handler for the Water Tank application.
+ *
+ * Inherits from NvsCore to provide structured storage for WaterTankStats.
+ */
 class WaterTankNvs : public NvsCore
 {
 public:
     WaterTankNvs();
-    WaterTankStats stats; // Memória em RAM para os dados do tanque
-
-    // Métodos específicos de negócio (opcional, mas recomendado para encapsulamento)
-    void updateStatus(uint16_t  permille,
-                      float     distance_cm,
-                      UsQuality quality,
-                      UsFailure failure);
+    
+    /**
+     * @brief The current statistics/state loaded from or to be saved to NVS.
+     */
+    WaterTankStats stats;
 
 protected:
-    // --- Implementação dos Hooks Virtuais do NvsCore ---
-
-    // Carrega a struct WaterTankStats
+    /** @copydoc NvsCore::loadAppData() */
     esp_err_t loadAppData() override;
 
-    // Salva a struct WaterTankStats
+    /** @copydoc NvsCore::saveAppData() */
     esp_err_t saveAppData() override;
 
-    // Define valores iniciais se o NVS estiver vazio ou corrompido
+    /** @copydoc NvsCore::setAppDefaults() */
     void setAppDefaults() override;
 };

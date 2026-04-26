@@ -33,11 +33,17 @@ void WaterTankApp::run()
     uint8_t quality = 0;
     uint8_t failure = 0;
     sensor_.read_raw_distance_cm(distance_cm, quality, failure);
-    ESP_LOGI(TAG, "Reading: %.1f cm (Q:%d, F:%d)", distance_cm, quality, failure);
+    ESP_LOGI(TAG, "Reading raw: %.1f cm (Q:%d, F:%d)", distance_cm, quality, failure);
 
     // 3. Process logic (Brain)
     logic_.process_reading(distance_cm, quality, failure, stats_);
     logic_.update_operation_mode(stats_);
+
+    ESP_LOGI(TAG, "Result: %d, Distance: %.1f cm, Level: %d permille, Mode: %s", 
+             static_cast<int>(stats_.last_result), 
+             stats_.last_distance_cm, 
+             stats_.level_permille,
+             stats_.backup_mode_active ? "BACKUP" : "NORMAL");
 
     // 4. Save updated state
     storage_.save(stats_);
@@ -52,24 +58,56 @@ void WaterTankApp::run()
 
 void WaterTankApp::send_report()
 {
-    WaterLevelReport report;
-    // Note: header is usually handled by the codec or initialized here
-    report.header.source_node_id = static_cast<NodeId>(FarmNodeId::WATER_TANK);
-    report.header.msg_type = MessageType::DATA;
+    WaterLevelReport report = {};
     
+    // Initialize header - Note: Some fields might be overwritten by EspNowManager
+    report.header.sender_node_id = static_cast<uint8_t>(FarmNodeId::WATER_TANK);
+    report.header.msg_type       = MessageType::DATA;
+    report.header.payload_type   = static_cast<uint8_t>(FarmPayloadType::WATER_LEVEL_REPORT);
+
     report.level_permille = stats_.level_permille;
-    report.distance_cm = stats_.last_distance_cm;
-    report.battery_mv = 0; // TODO: Add battery monitor
-    report.quality = static_cast<uint8_t>(stats_.quality);
-    report.failure = static_cast<uint8_t>(stats_.failure);
+    report.distance_cm    = stats_.last_distance_cm;
+    report.battery_mv     = 0; // TODO: Add battery monitor
+    
+    // Map UsResult to protocol's Quality and Failure
+    // Based on Irrigation project protocol definitions (OK=0, WEAK=1, INVALID=2)
+    if (stats_.last_result == ultrasonic::UsResult::OK) {
+        report.quality = 0; // UsQuality::OK
+        report.failure = 0; // UsFailure::NONE
+    } else if (stats_.last_result == ultrasonic::UsResult::WEAK_SIGNAL) {
+        report.quality = 1; // UsQuality::WEAK
+        report.failure = 0; // UsFailure::NONE
+    } else {
+        report.quality = 2; // UsQuality::INVALID
+        switch (stats_.last_result) {
+            case ultrasonic::UsResult::TIMEOUT: 
+                report.failure = 1; // UsFailure::TIMEOUT
+                break;
+            case ultrasonic::UsResult::ECHO_STUCK:
+            case ultrasonic::UsResult::HW_FAULT: 
+                report.failure = 2; // UsFailure::HW_ERROR
+                break;
+            case ultrasonic::UsResult::OUT_OF_RANGE: 
+                report.failure = 3; // UsFailure::INVALID_PULSE
+                break;
+            case ultrasonic::UsResult::HIGH_VARIANCE:
+            case ultrasonic::UsResult::INSUFFICIENT_SAMPLES: 
+                report.failure = 4; // UsFailure::HIGH_VARIANCE
+                break;
+            default: 
+                report.failure = 0; 
+                break;
+        }
+    }
+
     report.float_switch_is_full = float_switch_.is_active();
-    report.backup_mode_active = stats_.backup_mode_active;
+    report.backup_mode_active    = stats_.backup_mode_active;
 
     ESP_LOGI(TAG, "Sending report: %d permille", report.level_permille);
     
     esp_err_t err = comm_.send_data(
-        BROADCAST_NODE_ID, // Or HUB_NODE_ID if known
-        static_cast<PayloadType>(FarmPayloadType::WATER_LEVEL_REPORT),
+        0xFF, // BROADCAST_NODE_ID
+        static_cast<uint8_t>(FarmPayloadType::WATER_LEVEL_REPORT),
         &report,
         sizeof(report),
         true // require_ack
@@ -90,17 +128,7 @@ void WaterTankApp::enter_deep_sleep(uint64_t sleep_time_us)
         esp_sleep_enable_timer_wakeup(sleep_time_us);
     }
 
-    // Configure float switch wakeup if necessary
-    if (float_switch_.should_enable_wakeup()) {
-        // Note: In a real implementation, we would need the GPIO number here.
-        // For this refactoring, we assume the adapter or logic handled the 
-        // high-level decision, but the OS call still needs the pin.
-        // In Stage 4, we might need a HAL for sleep too if we want 100% decoupling.
-        // For now, we'll use direct ESP-IDF calls as allowed for the orchestrator.
-        
-        // TODO: Map this correctly to the physical GPIO
-        // esp_deep_sleep_enable_gpio_wakeup(...);
-    }
-
+    // GPIO Wakeup logic is handled by the platform-specific code or power_control if needed
+    
     esp_deep_sleep_start();
 }

@@ -1,4 +1,7 @@
 #include "water_tank_logic.hpp"
+#include "esp_log.h"
+
+static const char *TAG = "WaterTankLogic";
 
 WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, const IFloatSwitch &float_switch)
     : geometry_(geometry), float_switch_(float_switch)
@@ -7,27 +10,49 @@ WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, const IFloatSwitch 
 
 void WaterTankLogic::process_reading(float distance_cm, uint8_t quality, uint8_t failure, WaterTankStats &stats)
 {
-    stats.quality          = static_cast<UsQuality>(quality);
-    stats.failure          = static_cast<UsFailure>(failure);
-    stats.measure_count++;
-
-    // Update counters
-    switch (stats.quality) {
-    case UsQuality::OK:
-        stats.ok_count++;
-        break;
-    case UsQuality::WEAK:
-        stats.weak_count++;
-        break;
-    case UsQuality::INVALID:
-        stats.invalid_count++;
-        if (stats.failure == UsFailure::TIMEOUT) {
-            stats.timeout_count++;
-        }
-        break;
+    // Reconstruct UsResult from the interface values. 
+    // The adapter maps result to failure if quality is 0 (INVALID).
+    ultrasonic::UsResult result;
+    if (quality == 1) {
+        result = ultrasonic::UsResult::OK;
+    } else if (quality == 2) {
+        result = ultrasonic::UsResult::WEAK_SIGNAL;
+    } else {
+        result = static_cast<ultrasonic::UsResult>(failure);
     }
 
-    if (stats.quality != UsQuality::INVALID) {
+    stats.last_result = result;
+    stats.measure_count++;
+
+    // Update specific counters
+    switch (result) {
+        case ultrasonic::UsResult::OK:
+            stats.ok_count++;
+            break;
+        case ultrasonic::UsResult::WEAK_SIGNAL:
+            stats.weak_count++;
+            break;
+        case ultrasonic::UsResult::TIMEOUT:
+            stats.timeout_count++;
+            break;
+        case ultrasonic::UsResult::OUT_OF_RANGE:
+            stats.out_of_range_count++;
+            break;
+        case ultrasonic::UsResult::HIGH_VARIANCE:
+            stats.high_variance_count++;
+            break;
+        case ultrasonic::UsResult::INSUFFICIENT_SAMPLES:
+            stats.insufficient_samples_count++;
+            break;
+        case ultrasonic::UsResult::ECHO_STUCK:
+            stats.echo_stuck_count++;
+            break;
+        case ultrasonic::UsResult::HW_FAULT:
+            stats.hw_fault_count++;
+            break;
+    }
+
+    if (ultrasonic::is_success(result)) {
         update_fill_state(distance_cm, stats);
         stats.last_distance_cm = distance_cm;
         stats.level_permille   = geometry_.calculate_permille(distance_cm);
@@ -36,12 +61,12 @@ void WaterTankLogic::process_reading(float distance_cm, uint8_t quality, uint8_t
 
 void WaterTankLogic::update_operation_mode(WaterTankStats &stats) const
 {
-    if (stats.quality == UsQuality::INVALID) {
+    if (!ultrasonic::is_success(stats.last_result)) {
         if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
             stats.consecutive_failures++;
         }
     }
-    else if (stats.quality == UsQuality::OK) {
+    else if (stats.last_result == ultrasonic::UsResult::OK) {
         if (stats.consecutive_failures > 0) {
             stats.consecutive_failures--;
         }
@@ -67,9 +92,7 @@ uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats &stats) co
     }
 
     uint64_t timer_us = 0;
-    switch (stats.quality) {
-    case UsQuality::OK:
-    case UsQuality::WEAK:
+    if (ultrasonic::is_success(stats.last_result)) {
         switch (stats.fill_state) {
         case FillState::FILLING:
             timer_us = TIMER_FILLING_US;
@@ -85,15 +108,11 @@ uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats &stats) co
             break;
         }
 
-        if (stats.quality == UsQuality::WEAK) {
+        if (stats.last_result == ultrasonic::UsResult::WEAK_SIGNAL) {
             timer_us *= WEAK_SLEEP_FACTOR;
         }
-        break;
-
-    case UsQuality::INVALID:
-    default:
+    } else {
         timer_us = TIMER_UNKNOWN_US * INVALID_SLEEP_FACTOR;
-        break;
     }
 
     return timer_us;
@@ -109,11 +128,6 @@ void WaterTankLogic::update_fill_state(float distance_cm, WaterTankStats &stats)
     float delta = distance_cm - stats.last_distance_cm;
     float abs_delta = (delta < 0) ? -delta : delta;
 
-    // Convert cm delta to permille delta approximately for threshold check
-    uint16_t permille_delta = geometry_.calculate_permille(stats.last_distance_cm) - 
-                              geometry_.calculate_permille(distance_cm);
-    
-    // Using a simpler logic for now: if it changed more than LEVEL_DELTA_MIN
     if (abs_delta < 0.5f) { // Less than 5mm change is noise/stable
         stats.fill_state = FillState::STABLE;
     } else if (delta < 0) {
