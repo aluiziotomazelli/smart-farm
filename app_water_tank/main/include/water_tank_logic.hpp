@@ -27,12 +27,10 @@ public:
     /**
      * @brief Processes a new sensor reading and updates the provided statistics.
      *
-     * @param distance_cm Raw distance reading from sensor.
-     * @param quality Quality indicator of the reading.
-     * @param failure Failure code if any.
+     * @param reading Struct containing distance and result status.
      * @param stats The stats struct to be updated.
      */
-    void process_reading(float distance_cm, uint8_t quality, uint8_t failure, WaterTankStats &stats);
+    void process_reading(const ultrasonic::Reading &reading, WaterTankStats &stats);
 
     /**
      * @brief Calculates the recommended deep sleep duration.

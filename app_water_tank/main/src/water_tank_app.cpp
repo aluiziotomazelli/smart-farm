@@ -29,14 +29,11 @@ void WaterTankApp::run()
     }
 
     // 2. Perform sensor reading
-    float distance_cm = 0;
-    uint8_t quality = 0;
-    uint8_t failure = 0;
-    sensor_.read_raw_distance_cm(distance_cm, quality, failure);
-    ESP_LOGI(TAG, "Reading raw: %.1f cm (Q:%d, F:%d)", distance_cm, quality, failure);
+    ultrasonic::Reading reading = sensor_.read_level();
+    ESP_LOGI(TAG, "Reading raw: %.1f cm (Status: %d)", reading.cm, static_cast<int>(reading.result));
 
     // 3. Process logic (Brain)
-    logic_.process_reading(distance_cm, quality, failure, stats_);
+    logic_.process_reading(reading, stats_);
     logic_.update_operation_mode(stats_);
 
     ESP_LOGI(TAG, "Result: %d, Distance: %.1f cm, Level: %d permille, Mode: %s", 
@@ -127,8 +124,6 @@ void WaterTankApp::enter_deep_sleep(uint64_t sleep_time_us)
     if (sleep_time_us > 0) {
         esp_sleep_enable_timer_wakeup(sleep_time_us);
     }
-
-    // GPIO Wakeup logic is handled by the platform-specific code or power_control if needed
     
     esp_deep_sleep_start();
 }

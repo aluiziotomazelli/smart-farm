@@ -1,6 +1,6 @@
 #pragma once
 #include "interfaces/i_level_sensor.hpp"
-#include "us_sensor.hpp" // Use the header from managed components
+#include "us_sensor.hpp"
 
 /**
  * @class UltrasonicLevelSensorAdapter
@@ -9,24 +9,21 @@
 class UltrasonicLevelSensorAdapter : public ILevelSensor
 {
 public:
-    UltrasonicLevelSensorAdapter(ultrasonic::UsSensor &sensor) : sensor_(sensor) {}
-
-    bool read_raw_distance_cm(float &out_cm, uint8_t &out_quality, uint8_t &out_failure) override
+    /**
+     * @brief Construct a new Ultrasonic Level Sensor Adapter object.
+     * @param sensor Reference to the concrete ultrasonic sensor.
+     * @param ping_count Number of pings to perform per measurement (default 5).
+     */
+    UltrasonicLevelSensorAdapter(ultrasonic::UsSensor& sensor, uint8_t ping_count = 5)
+        : sensor_(sensor)
+        , ping_count_(ping_count)
     {
-        ultrasonic::UsResult result = sensor_.read_distance_cm(out_cm);
-        
-        // Map UsResult to numeric quality/failure for the interface
-        if (ultrasonic::is_success(result)) {
-            out_quality = (result == ultrasonic::UsResult::OK) ? 1 : 2; // 1=OK, 2=WEAK
-            out_failure = 0; // NONE
-            return true;
-        } else {
-            out_quality = 0; // INVALID
-            out_failure = static_cast<uint8_t>(result);
-            return false;
-        }
     }
 
+    /** @copydoc ILevelSensor::read_level() */
+    ultrasonic::Reading read_level() override { return sensor_.read_distance(ping_count_); }
+
 private:
-    ultrasonic::UsSensor &sensor_;
+    ultrasonic::UsSensor& sensor_;
+    uint8_t ping_count_;
 };

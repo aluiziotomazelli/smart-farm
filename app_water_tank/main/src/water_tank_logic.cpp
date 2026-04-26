@@ -8,24 +8,13 @@ WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, const IFloatSwitch 
 {
 }
 
-void WaterTankLogic::process_reading(float distance_cm, uint8_t quality, uint8_t failure, WaterTankStats &stats)
+void WaterTankLogic::process_reading(const ultrasonic::Reading &reading, WaterTankStats &stats)
 {
-    // Reconstruct UsResult from the interface values. 
-    // The adapter maps result to failure if quality is 0 (INVALID).
-    ultrasonic::UsResult result;
-    if (quality == 1) {
-        result = ultrasonic::UsResult::OK;
-    } else if (quality == 2) {
-        result = ultrasonic::UsResult::WEAK_SIGNAL;
-    } else {
-        result = static_cast<ultrasonic::UsResult>(failure);
-    }
-
-    stats.last_result = result;
+    stats.last_result = reading.result;
     stats.measure_count++;
 
     // Update specific counters
-    switch (result) {
+    switch (reading.result) {
         case ultrasonic::UsResult::OK:
             stats.ok_count++;
             break;
@@ -52,10 +41,10 @@ void WaterTankLogic::process_reading(float distance_cm, uint8_t quality, uint8_t
             break;
     }
 
-    if (ultrasonic::is_success(result)) {
-        update_fill_state(distance_cm, stats);
-        stats.last_distance_cm = distance_cm;
-        stats.level_permille   = geometry_.calculate_permille(distance_cm);
+    if (ultrasonic::is_success(reading.result)) {
+        update_fill_state(reading.cm, stats);
+        stats.last_distance_cm = reading.cm;
+        stats.level_permille   = geometry_.calculate_permille(reading.cm);
     }
 }
 
