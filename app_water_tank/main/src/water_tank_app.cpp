@@ -57,11 +57,6 @@ void WaterTankApp::send_report()
 {
     WaterLevelReport report = {};
     
-    // Initialize header - Note: Some fields might be overwritten by EspNowManager
-    report.header.sender_node_id = static_cast<uint8_t>(FarmNodeId::WATER_TANK);
-    report.header.msg_type       = MessageType::DATA;
-    report.header.payload_type   = static_cast<uint8_t>(FarmPayloadType::WATER_LEVEL_REPORT);
-
     report.level_permille = stats_.level_permille;
     report.distance_cm    = stats_.last_distance_cm;
     report.battery_mv     = 0; // TODO: Add battery monitor

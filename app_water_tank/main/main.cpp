@@ -6,6 +6,7 @@
 #include "water_tank_logic.hpp"
 #include "espnow_manager.hpp"
 #include "power_control.hpp"
+#include "hal_nvs.hpp" // Adicionado para HalNvs
 
 #include "esp_log.h"
 
@@ -33,8 +34,9 @@ extern "C" void app_main()
     fs.init();
 
     // NVS Storage
-    WaterTankNvs nvs;
-    nvs.init();
+    HalNvs hal; // HAL para NVS
+    WaterTankNvs nvs(hal); // Injeção do HAL
+    nvs.init_partition();
 
     // ESP-NOW Communication
     EspNowManager &comm = EspNowManager::instance();

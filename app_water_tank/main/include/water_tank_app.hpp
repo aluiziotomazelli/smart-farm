@@ -5,7 +5,7 @@
 #include "i_espnow_manager.hpp"
 #include "water_tank_logic.hpp"
 #include "water_tank_stats.hpp"
-#include "floatswitch.hpp" // Adding component include
+#include "i_float_switch.hpp" // Adding component include
 
 /**
  * @class WaterTankApp
@@ -14,20 +14,21 @@
 class WaterTankApp
 {
 public:
-    WaterTankApp(ILevelSensor &sensor, 
-                 floatswitch::IFloatSwitch &float_switch, 
-                 IWaterTankStorage &storage,
-                 IEspNowManager &comm,
-                 WaterTankLogic &logic);
+    WaterTankApp(
+        ILevelSensor& sensor,
+        floatswitch::IFloatSwitch& float_switch,
+        IWaterTankStorage& storage,
+        IEspNowManager& comm,
+        WaterTankLogic& logic);
 
     void run();
 
 private:
-    ILevelSensor &sensor_;
-    floatswitch::IFloatSwitch &float_switch_;
-    IWaterTankStorage &storage_;
-    IEspNowManager &comm_;
-    WaterTankLogic &logic_;
+    ILevelSensor& sensor_;
+    floatswitch::IFloatSwitch& float_switch_;
+    IWaterTankStorage& storage_;
+    IEspNowManager& comm_;
+    WaterTankLogic& logic_;
 
     WaterTankStats stats_;
 
