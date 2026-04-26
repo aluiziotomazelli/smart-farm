@@ -6,7 +6,7 @@
 static const char *TAG = "WaterTankApp";
 
 WaterTankApp::WaterTankApp(ILevelSensor &sensor, 
-                           IFloatSwitch &float_switch, 
+                           floatswitch::IFloatSwitch &float_switch, 
                            IWaterTankStorage &storage,
                            IEspNowManager &comm,
                            WaterTankLogic &logic)
@@ -97,7 +97,7 @@ void WaterTankApp::send_report()
         }
     }
 
-    report.float_switch_is_full = float_switch_.is_active();
+    report.float_switch_is_full = float_switch_.is_tank_full();
     report.backup_mode_active    = stats_.backup_mode_active;
 
     ESP_LOGI(TAG, "Sending report: %d permille", report.level_permille);

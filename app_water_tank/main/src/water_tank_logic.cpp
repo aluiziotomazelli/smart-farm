@@ -3,7 +3,7 @@
 
 static const char *TAG = "WaterTankLogic";
 
-WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, const IFloatSwitch &float_switch)
+WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, floatswitch::IFloatSwitch &float_switch)
     : geometry_(geometry), float_switch_(float_switch)
 {
 }
@@ -72,7 +72,7 @@ void WaterTankLogic::update_operation_mode(WaterTankStats &stats) const
 uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats &stats) const
 {
     if (stats.backup_mode_active) {
-        if (!float_switch_.is_active()) {
+        if (!float_switch_.is_tank_full()) {
             return BACKUP_MODE_SLEEP_US;
         }
         else {

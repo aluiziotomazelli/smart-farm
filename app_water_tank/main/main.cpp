@@ -1,6 +1,6 @@
 #include "water_tank_app.hpp"
 #include "ultrasonic_adapter.hpp"
-#include "float_switch_adapter.hpp"
+#include "floatswitch.hpp"
 #include "water_tank_storage_adapter.hpp"
 #include "tank_geometry.hpp"
 #include "water_tank_logic.hpp"
@@ -29,7 +29,7 @@ extern "C" void app_main()
     sensor.init();
 
     // Float Switch
-    FloatSwitch fs(GPIO_NUM_1, FloatSwitch::ActiveLevel::LOW); // GPIO, ActiveLevel
+    floatswitch::FloatSwitch fs(GPIO_NUM_1, floatswitch::ActiveLevel::LOW); // GPIO, ActiveLevel
     fs.init();
 
     // NVS Storage
@@ -43,15 +43,14 @@ extern "C" void app_main()
 
     // 3. Adapters (Interfaces)
     UltrasonicLevelSensorAdapter sensor_adapter(sensor);
-    FloatSwitchAdapter fs_adapter(fs);
     WaterTankStorageAdapter storage_adapter(nvs);
 
     // 4. Logic & Geometry
     TankGeometry geometry(LEVEL_MIN_CM, LEVEL_MAX_CM);
-    WaterTankLogic logic(geometry, fs_adapter);
+    WaterTankLogic logic(geometry, fs);
 
     // 5. Orchestrator
-    WaterTankApp app(sensor_adapter, fs_adapter, storage_adapter, comm, logic);
+    WaterTankApp app(sensor_adapter, fs, storage_adapter, comm, logic);
 
     // 6. Run Application
     app.run();
