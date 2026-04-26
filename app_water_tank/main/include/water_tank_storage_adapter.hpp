@@ -13,7 +13,7 @@ public:
 
     esp_err_t load(WaterTankStats &stats) override
     {
-        esp_err_t err = nvs_.loadAppData();
+        esp_err_t err = nvs_.load();
         if (err == ESP_OK) {
             stats = nvs_.stats;
         }
@@ -23,12 +23,12 @@ public:
     esp_err_t save(const WaterTankStats &stats) override
     {
         nvs_.stats = stats;
-        return nvs_.saveAppData();
+        return nvs_.commit();
     }
 
     void reset_to_defaults(WaterTankStats &stats) override
     {
-        nvs_.setAppDefaults();
+        nvs_.factory_reset();
         stats = nvs_.stats;
     }
 
