@@ -1,12 +1,17 @@
 idf_component_register(
     SRCS
         "main.cpp"
-        "water_tank_app.cpp"
-        "water_tank_nvs.cpp"
+        "src/water_tank_app.cpp"
+        "src/water_tank_nvs.cpp"
+        "src/water_tank_logic.cpp"
     INCLUDE_DIRS
-        "."    
         "include"
+        "."
     REQUIRES
         nvs_core
         common
+        ultrasonic_sensor
+        floatswitch
+        espnow_manager
+        power_control
 )

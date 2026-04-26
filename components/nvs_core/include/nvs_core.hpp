@@ -1,14 +1,21 @@
 #pragma once
+
 #include "interfaces/i_nvs_core.hpp"
+#include "interfaces/i_hal_nvs.hpp"
 #include "core_types.hpp"
 #include "esp_err.h"
-#include "nvs.h"
-#include "nvs_flash.h"
 
+/**
+ * @class NvsCore
+ * @brief Base class for NVS persistence management.
+ *
+ * This class provides a common interface and helper methods for saving and loading
+ * data to/from NVS, while decoupling from the hardware via IHalNvs.
+ */
 class NvsCore : public INvsCore
 {
 protected:
-    // Dados comuns (acessível pelo filho)
+    IHalNvs    &hal_; ///< Reference to the NVS Hardware Abstraction Layer.
     CoreStorage core_;
 
     // Handle do NVS (mantido aberto durante load/commit para eficiência)
@@ -21,7 +28,7 @@ protected:
     {
         if (!_isOpen)
             return ESP_FAIL;
-        return nvs_set_blob(_handle, key, &data, sizeof(T));
+        return hal_.hal_nvs_set_blob(_handle, key, &data, sizeof(T));
     }
 
     template <typename T> esp_err_t loadStruct(const char *key, T &data)
@@ -30,7 +37,7 @@ protected:
             return ESP_FAIL;
         size_t required_size = sizeof(T);
         // Tenta ler. Se tamanho não bater ou não existir, retorna erro
-        esp_err_t err = nvs_get_blob(_handle, key, &data, &required_size);
+        esp_err_t err = hal_.hal_nvs_get_blob(_handle, key, &data, &required_size);
         if (err == ESP_OK && required_size != sizeof(T))
             return ESP_ERR_NVS_INVALID_LENGTH;
         return err;
@@ -47,7 +54,12 @@ private:
     void      close_nvs();
 
 public:
-    NvsCore(const char *ns);
+    /**
+     * @brief Construct a new NvsCore object.
+     * @param ns The NVS namespace to use.
+     * @param hal Reference to the IHalNvs implementation.
+     */
+    NvsCore(const char *ns, IHalNvs &hal);
     virtual ~NvsCore() override = default;
 
     // Inicializa partição

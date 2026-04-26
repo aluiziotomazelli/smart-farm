@@ -4,10 +4,11 @@
 #include "esp_log.h"
 #include <cstring>
 
-static const char *TAG = "NvsCore";
+static const char* TAG = "NvsCore";
 
-NvsCore::NvsCore(const char *ns)
-    : _namespace(ns)
+NvsCore::NvsCore(const char* ns, IHalNvs& hal)
+    : hal_(hal)
+    , _namespace(ns)
 {
     // Garante que core inicie zerado
     memset(&core_, 0, sizeof(CoreStorage));
@@ -15,11 +16,11 @@ NvsCore::NvsCore(const char *ns)
 
 esp_err_t NvsCore::init_partition()
 {
-    esp_err_t err = nvs_flash_init();
+    esp_err_t err = hal_.hal_nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS partition invalid, erasing");
-        nvs_flash_erase();
-        err = nvs_flash_init();
+        hal_.hal_nvs_flash_erase();
+        err = hal_.hal_nvs_flash_init();
     }
     return err;
 }
@@ -28,7 +29,7 @@ esp_err_t NvsCore::open_nvs(nvs_open_mode_t mode)
 {
     if (_isOpen)
         return ESP_OK; // Já aberto
-    esp_err_t err = nvs_open(_namespace, mode, &_handle);
+    esp_err_t err = hal_.hal_nvs_open(_namespace, mode, &_handle);
     if (err == ESP_OK)
         _isOpen = true;
     return err;
@@ -37,7 +38,7 @@ esp_err_t NvsCore::open_nvs(nvs_open_mode_t mode)
 void NvsCore::close_nvs()
 {
     if (_isOpen) {
-        nvs_close(_handle);
+        hal_.hal_nvs_close(_handle);
         _isOpen = false;
     }
 }
@@ -94,7 +95,7 @@ esp_err_t NvsCore::commit()
 
     // 3. Commit efetivo na flash
     if (err == ESP_OK) {
-        err = nvs_commit(_handle);
+        err = hal_.hal_nvs_commit(_handle);
     }
 
     close_nvs();
@@ -105,7 +106,7 @@ void NvsCore::apply_core_defaults()
 {
     memset(&core_, 0, sizeof(CoreStorage));
     core_.schema_version = CORE_SCHEMA_VERSION;
-    core_.node_type      = NodeType::UNKNOWN; // Será sobrescrito pelo App
+    core_.node_type = static_cast<NodeType>(FarmNodeType::UNKNOWN); // Será sobrescrito pelo App
     // ... resto dos defaults do core ...
 }
 
@@ -123,9 +124,9 @@ esp_err_t NvsCore::erase_namespace()
     if (err != ESP_OK)
         return err;
 
-    err = nvs_erase_all(_handle);
+    err = hal_.hal_nvs_erase_all(_handle);
     if (err == ESP_OK) {
-        err = nvs_commit(_handle);
+        err = hal_.hal_nvs_commit(_handle);
     }
 
     close_nvs();

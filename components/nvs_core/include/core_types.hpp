@@ -1,6 +1,6 @@
 #pragma once
 
-#include "protocol_types.hpp"
+#include "app_protocol_types.hpp"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -41,7 +41,7 @@ struct CoreStorage
     uint32_t schema_version;
 
     // Identity (inline, sem struct separada)
-    uint8_t node_id;
+    NodeId node_id;
     NodeType node_type;
     uint8_t hw_revision;
 

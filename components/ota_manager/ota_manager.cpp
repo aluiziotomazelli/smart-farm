@@ -8,14 +8,14 @@
 
 #include "esp_event.h"
 #include "ota_events.hpp"
-#include "protocol_types.hpp"
+#include "app_protocol_types.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 // Define the event base
 ESP_EVENT_DEFINE_BASE(APP_OTA_EVENT);
 
-static const char *TAG = "OTA";
+static const char* TAG = "OTA";
 
 // Constructor - private
 OtaManager::OtaManager()
@@ -37,7 +37,7 @@ OtaManager::~OtaManager()
 }
 
 // Singleton instance - static
-OtaManager &OtaManager::instance()
+OtaManager& OtaManager::instance()
 {
     static OtaManager instance;
     return instance;
@@ -50,8 +50,8 @@ esp_err_t OtaManager::init()
     ESP_LOGI(TAG, "Initializing OTA Manager");
 
     // Register event handler for OTA commands
-    esp_err_t err = esp_event_handler_instance_register(
-        APP_OTA_EVENT, ESP_EVENT_ANY_ID, &OtaManager::eventHandler, this, nullptr);
+    esp_err_t err =
+        esp_event_handler_instance_register(APP_OTA_EVENT, ESP_EVENT_ANY_ID, &OtaManager::eventHandler, this, nullptr);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register event handler: %s", esp_err_to_name(err));
@@ -64,19 +64,15 @@ esp_err_t OtaManager::init()
 
 void OtaManager::deinit()
 {
-    esp_event_handler_unregister(APP_OTA_EVENT, ESP_EVENT_ANY_ID,
-                                 &OtaManager::eventHandler);
+    esp_event_handler_unregister(APP_OTA_EVENT, ESP_EVENT_ANY_ID, &OtaManager::eventHandler);
     ESP_LOGI(TAG, "OTA Manager deinitialized");
 }
 
 // ============ Event Handler ============
 
-void OtaManager::eventHandler(void *arg,
-                              esp_event_base_t base,
-                              int32_t id,
-                              void *data)
+void OtaManager::eventHandler(void* arg, esp_event_base_t base, int32_t id, void* data)
 {
-    OtaManager *manager = static_cast<OtaManager *>(arg);
+    OtaManager* manager = static_cast<OtaManager*>(arg);
 
     if (base != APP_OTA_EVENT) {
         return;
@@ -90,7 +86,7 @@ void OtaManager::eventHandler(void *arg,
             return;
         }
 
-        std::string hostname(static_cast<const char *>(data));
+        std::string hostname(static_cast<const char*>(data));
         ESP_LOGI(TAG, "OTA_CMD_START received for hostname: %s", hostname.c_str());
 
         // Start OTA with MDNS resolution
@@ -122,8 +118,7 @@ void OtaManager::eventHandler(void *arg,
 
 // ============ OTA Operations ============
 
-esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname,
-                                        bool use_mdns)
+esp_err_t OtaManager::startOtaFromEvent(const std::string& url_or_hostname, bool use_mdns)
 {
     // Check if OTA is already in progress
     if (isOtaInProgress()) {
@@ -132,18 +127,20 @@ esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname,
     }
 
     // Allocate task parameters on heap (will be freed by task)
-    OtaTaskParams *params = new OtaTaskParams(url_or_hostname, use_mdns, this);
+    OtaTaskParams* params = new OtaTaskParams(url_or_hostname, use_mdns, this);
     if (params == nullptr) {
         ESP_LOGE(TAG, "Failed to allocate task parameters");
         return ESP_ERR_NO_MEM;
     }
 
     // Create OTA task
-    BaseType_t result = xTaskCreate(otaTask, "ota_task",
-                                    8192, // Stack size
-                                    params,
-                                    5, // Priority (above idle, below WiFi/ESPNOW)
-                                    nullptr // Don't store handle
+    BaseType_t result = xTaskCreate(
+        otaTask,
+        "ota_task",
+        8192, // Stack size
+        params,
+        5,      // Priority (above idle, below WiFi/ESPNOW)
+        nullptr // Don't store handle
     );
 
     if (result != pdPASS) {
@@ -156,10 +153,10 @@ esp_err_t OtaManager::startOtaFromEvent(const std::string &url_or_hostname,
     return ESP_OK;
 }
 
-void OtaManager::otaTask(void *pvParameters)
+void OtaManager::otaTask(void* pvParameters)
 {
-    OtaTaskParams *params = static_cast<OtaTaskParams *>(pvParameters);
-    OtaManager *manager   = params->manager;
+    OtaTaskParams* params = static_cast<OtaTaskParams*>(pvParameters);
+    OtaManager* manager = params->manager;
 
     // Set OTA in progress
     manager->setOtaInProgress(true);
@@ -181,8 +178,7 @@ void OtaManager::otaTask(void *pvParameters)
         }
 
         // Build full URL: http://IP:port/device_type/device_type.bin
-        url = "http://" + url + ":8070/" + manager->getDeviceType() + "/" +
-              manager->getDeviceType() + ".bin";
+        url = "http://" + url + ":8070/" + manager->getDeviceType() + "/" + manager->getDeviceType() + ".bin";
     }
     else {
         url = params->url;
@@ -215,8 +211,7 @@ void OtaManager::otaTask(void *pvParameters)
 
 // ============ MDNS Resolution ============
 
-esp_err_t OtaManager::resolveServerMdns(const std::string &hostname,
-                                        std::string &url)
+esp_err_t OtaManager::resolveServerMdns(const std::string& hostname, std::string& url)
 {
     ESP_LOGI(TAG, "Resolving %s.local via mDNS...", hostname.c_str());
 
@@ -232,8 +227,7 @@ esp_err_t OtaManager::resolveServerMdns(const std::string &hostname,
 
     esp_err_t err = mdns_query_a(hostname.c_str(), 5000, &addr);
 
-    ESP_LOGI(TAG, "Query result: %s, addr: " IPSTR, esp_err_to_name(err),
-             IP2STR(&addr));
+    ESP_LOGI(TAG, "Query result: %s, addr: " IPSTR, esp_err_to_name(err), IP2STR(&addr));
 
     if (err == ESP_OK && addr.addr != 0) {
         char ip_str[16];
@@ -252,7 +246,7 @@ esp_err_t OtaManager::resolveServerMdns(const std::string &hostname,
 
 // ============ Configuration ============
 
-void OtaManager::setDeviceType(const std::string &device_type)
+void OtaManager::setDeviceType(const std::string& device_type)
 {
     device_type_ = device_type;
     ESP_LOGI(TAG, "Device type set to: %s", device_type_.c_str());
@@ -295,17 +289,17 @@ void OtaManager::setOtaInProgress(bool in_progress)
 
 // ============ Public Wrappers (for direct calls) ============
 
-esp_err_t OtaManager::startOta(const std::string &url)
+esp_err_t OtaManager::startOta(const std::string& url)
 {
     return startOtaFromEvent(url, false);
 }
 
-esp_err_t OtaManager::startOtaWithMdns(const std::string &hostname)
+esp_err_t OtaManager::startOtaWithMdns(const std::string& hostname)
 {
     return startOtaFromEvent(hostname, true);
 }
 
-void OtaManager::cleanupOtaTask(OtaTaskParams *params)
+void OtaManager::cleanupOtaTask(OtaTaskParams* params)
 {
     setOtaInProgress(false);
     if (params != nullptr) {
@@ -315,15 +309,15 @@ void OtaManager::cleanupOtaTask(OtaTaskParams *params)
     vTaskDelete(nullptr); // Delete current task
 }
 
-esp_err_t OtaManager::performOtaDownload(const std::string &url)
+esp_err_t OtaManager::performOtaDownload(const std::string& url)
 {
-    esp_http_client_config_t http_config = {.url        = url.c_str(),
-                                            .cert_pem   = NULL,
-                                            .timeout_ms = 10000,
-                                            .transport_type =
-                                                HTTP_TRANSPORT_OVER_TCP,
-                                            .skip_cert_common_name_check = true,
-                                            .keep_alive_enable           = true};
+    esp_http_client_config_t http_config = {
+        .url = url.c_str(),
+        .cert_pem = NULL,
+        .timeout_ms = 10000,
+        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .skip_cert_common_name_check = true,
+        .keep_alive_enable = true};
 
     esp_https_ota_config_t ota_config = {
         .http_config = &http_config,

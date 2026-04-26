@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS 
+        "main.cpp"
+        "test_nvs_core.cpp"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        nvs_core 
+        googletest
+)

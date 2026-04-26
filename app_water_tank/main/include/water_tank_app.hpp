@@ -1,95 +1,61 @@
 #pragma once
 
-#include "common_types.hpp"
-#include "espnow_comm.hpp"
-#include "water_tank_nvs.hpp"
-#include "water_tank_types.hpp"
+#include "interfaces/i_level_sensor.hpp"
+#include "interfaces/i_float_switch.hpp"
+#include "interfaces/i_water_tank_storage.hpp"
+#include "i_espnow_manager.hpp"
+#include "water_tank_logic.hpp"
+#include "water_tank_stats.hpp"
 
 /**
  * @class WaterTankApp
- * @brief Main application class for the Water Tank monitoring device.
+ * @brief Orchestrator for the Water Tank monitoring application.
  *
- * This class orchestrates the hardware components, data processing,
- * communication, and sleep cycles for the water tank sensor.
+ * This class implements the application flow using Dependency Injection.
+ * It coordinates reading sensors, processing logic, and communicating results.
  */
 class WaterTankApp
 {
 public:
     /**
-     * @brief Construct a new Water Tank App object.
+     * @brief Construct a new Water Tank App.
+     *
+     * @param sensor Level sensor interface.
+     * @param float_switch Float switch interface.
+     * @param storage Storage interface.
+     * @param comm Communication interface.
+     * @param logic Business logic processor.
      */
-    WaterTankApp();
+    WaterTankApp(ILevelSensor &sensor, 
+                 IFloatSwitch &float_switch, 
+                 IWaterTankStorage &storage,
+                 IEspNowManager &comm,
+                 WaterTankLogic &logic);
 
     /**
-     * @brief Initializes all hardware, NVS, and communication components.
-     */
-    void init();
-
-    /**
-     * @brief Contains the main application loop.
+     * @brief Main execution flow of the application.
+     * 
+     * Reads sensors, updates state, transmits data, and prepares for sleep.
      */
     void run();
 
-    /**
-     * @brief Creates a comprehensive report with sensor and float switch data.
-     * @return A WaterLevelReport struct containing the measurement data.
-     */
-    WaterLevelReport createWaterLevelReport();
-
-    /**
-     * @brief Updates the operation mode (normal vs. backup) based on the current state.
-     */
-    void updateOperationMode();
-
-    /**
-     * @brief Sends the water level report to the central hub via ESP-NOW.
-     * @param report The WaterLevelReport to send.
-     */
-    void sendWaterLevelReport(const WaterLevelReport &report);
-
-    /**
-     * @brief Determines the optimal deep sleep duration based on the current tank fill
-     * state.
-     * @return The sleep duration in microseconds.
-     */
-    uint64_t decideSleepTimeUs();
-
-    /**
-     * @brief Configures the ESP32's wakeup sources (Timer and GPIO) for the next sleep
-     * cycle.
-     * @param timer_us The sleep duration in microseconds.
-     */
-    void configureSleepPolicy(uint64_t timer_us);
-
-    /**
-     * @brief Callback function for handling incoming ESP-NOW messages.
-     * @param node_id The ID of the sending node.
-     * @param data Pointer to the received data.
-     * @param len Length of the received data.
-     * @param rssi The Received Signal Strength Indicator.
-     */
-    void onEspNowReceive(uint8_t node_id, const uint8_t *data, int len, int8_t rssi);
-
-    /**
-     * @brief Callback function for handling ESP-NOW send status.
-     * @param node_id The ID of the destination node.
-     * @param status The status of the send operation.
-     */
-    void onEspNowSend(uint8_t node_id, esp_now_send_status_t status);
-
-    /**
-     * @brief Callback function for handling successful acknowledgment of a sent packet.
-     * @param node_id The ID of the node that sent the ACK.
-     */
-    void onAckSuccess(uint8_t node_id);
-
-    /**
-     * @brief Callback function for handling a timeout waiting for acknowledgment.
-     * @param node_id The ID of the node that was expected to send the ACK.
-     */
-    void onAckTimeout(uint8_t node_id);
-
 private:
-    WaterTankNvs storage_; ///< Handles persistence of application data and statistics.
-    EspNowComm comm_;      ///< Manages ESP-NOW communication with the central hub.
+    ILevelSensor &sensor_;
+    IFloatSwitch &float_switch_;
+    IWaterTankStorage &storage_;
+    IEspNowManager &comm_;
+    WaterTankLogic &logic_;
+
+    WaterTankStats stats_;
+
+    /**
+     * @brief Prepares and sends the water level report.
+     */
+    void send_report();
+
+    /**
+     * @brief Configures the deep sleep wakeup sources.
+     * @param sleep_time_us Duration to sleep.
+     */
+    void enter_deep_sleep(uint64_t sleep_time_us);
 };

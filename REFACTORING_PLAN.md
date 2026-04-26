@@ -13,6 +13,13 @@ We will break this down into three distinct layers:
 
 ## Detailed Class Breakdown
 
+### 0. Core Component Abstractions
+Located in `components/nvs_core/`
+
+*   **`IHalNvs`**
+    *   **Responsibility:** 1:1 Wrapper for ESP-IDF NVS functions (`nvs_open`, `nvs_get_blob`, etc.).
+    *   **Why it exists:** Allows `NvsCore` to be tested on the host by mocking the underlying Flash interaction.
+
 ### 1. Hardware Abstraction Interfaces
 Located in `app_water_tank/main/include/interfaces/`
 
@@ -58,6 +65,7 @@ Located in `app_water_tank/main/include/`
 
 ## Implementation Steps
 
+0.  **NVS HAL Abstraction:** Update `NvsCore` to use `IHalNvs` via Dependency Injection.
 1.  **Define Interfaces:** Create `ILevelSensor.hpp`, `IFloatSwitch.hpp`, and `IWaterTankStorage.hpp`.
 2.  **Create Adapters:** Wrap the existing `UltrasonicSensor` and `FloatSwitch` classes in lightweight adapter classes that implement the new interfaces (if they don't already).
 3.  **Implement `TankGeometry`:** Move the `distance_to_level_permille` logic into this new class and update the math for the inverted cone shape.
