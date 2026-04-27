@@ -18,7 +18,7 @@ public:
         ILevelSensor& sensor,
         floatswitch::IFloatSwitch& float_switch,
         IWaterTankStorage& storage,
-        IEspNowManager& comm,
+        espnow::IEspNowManager& comm,
         WaterTankLogic& logic);
 
     void run();
@@ -27,7 +27,7 @@ private:
     ILevelSensor& sensor_;
     floatswitch::IFloatSwitch& float_switch_;
     IWaterTankStorage& storage_;
-    IEspNowManager& comm_;
+    espnow::IEspNowManager& comm_;
     WaterTankLogic& logic_;
 
     WaterTankStats stats_;

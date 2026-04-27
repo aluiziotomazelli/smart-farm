@@ -8,7 +8,7 @@ static const char *TAG = "WaterTankApp";
 WaterTankApp::WaterTankApp(ILevelSensor &sensor, 
                            floatswitch::IFloatSwitch &float_switch, 
                            IWaterTankStorage &storage,
-                           IEspNowManager &comm,
+                           espnow::IEspNowManager &comm,
                            WaterTankLogic &logic)
     : sensor_(sensor), 
       float_switch_(float_switch), 

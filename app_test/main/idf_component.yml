@@ -13,4 +13,4 @@ dependencies:
     version: v1.0.1
   espnow_manager:
     git: https://github.com/aluiziotomazelli/espnow_manager.git
-    version: v1.0.1
+    version: v1.1.0

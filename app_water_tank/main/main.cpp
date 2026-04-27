@@ -29,11 +29,17 @@ extern "C" void app_main()
 
     // 2. Physical Drivers
     // Ultrasonic Sensor
-    ultrasonic::UsConfig us_cfg;
     static floatswitch::GpioHAL gpio_hal_fs;
-    us_cfg.min_distance_cm = 20.0f;
-    us_cfg.max_distance_cm = 200.0f;
-    ultrasonic::UsSensor sensor(US_TRIG_GPIO, US_ECHO_GPIO, us_cfg); // TRIGGER, ECHO
+    ultrasonic::UsConfig us_cfg = {
+        .ping_interval_ms = 70,
+        .ping_duration_us = 20,
+        .timeout_us = 25000,
+        .filter = ultrasonic::Filter::DOMINANT_CLUSTER,
+        .min_distance_cm = 25.0f,
+        .max_distance_cm = 200.0f,
+        .warmup_time_ms = 0};
+
+    ultrasonic::UsSensor sensor(US_TRIG_GPIO, US_ECHO_GPIO, us_cfg);
     sensor.init();
 
     // Float Switch
@@ -54,9 +60,16 @@ extern "C" void app_main()
     nvs.init_partition();
 
     // ESP-NOW Communication
-    EspNowManager& comm = EspNowManager::instance();
-    EspNowConfig comm_cfg = {}; // Default config
-    comm.init(comm_cfg);
+    QueueHandle_t app_queue = xQueueCreate(30, sizeof(espnow::AppMessage));
+
+    espnow::EspNowConfig config;
+    config.node_id = static_cast<espnow::NodeId>(FarmNodeId::WATER_TANK);
+    config.node_type = static_cast<espnow::NodeType>(FarmNodeType::SENSOR);
+    config.app_rx_queue = app_queue;
+    config.wifi_channel = 1;
+
+    espnow::EspNowManager& comm = espnow::EspNowManager::instance();
+    comm.init(config);
 
     // 3. Adapters (Interfaces)
     UltrasonicLevelSensorAdapter sensor_adapter(sensor);

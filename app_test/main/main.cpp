@@ -65,16 +65,16 @@ extern "C" void app_main(void)
     // EspNowManager
     // =====================================
     // Queue to receive messages from EspNowManager
-    QueueHandle_t app_queue = xQueueCreate(30, sizeof(AppMessage));
+    QueueHandle_t app_queue = xQueueCreate(30, sizeof(espnow::AppMessage));
 
     // Configuration for EspNowManager
-    EspNowConfig config;
-    config.node_id = ReservedIds::HUB;
-    config.node_type = ReservedTypes::HUB;
+    espnow::EspNowConfig config;
+    config.node_id = espnow::ReservedIds::HUB;
+    config.node_type = espnow::ReservedTypes::HUB;
     config.app_rx_queue = app_queue;
     config.wifi_channel = 1;
 
     // Initialize EspNowManager
-    EspNowManager& manager = EspNowManager::instance();
+    espnow::EspNowManager& manager = espnow::EspNowManager::instance();
     manager.init(config);
 }
