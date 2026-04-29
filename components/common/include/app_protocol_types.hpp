@@ -14,10 +14,13 @@ constexpr size_t APP_MAX_PAYLOAD_SIZE = 230;
  */
 enum class FarmNodeId : NodeId
 {
-    WATER_TANK = 5,
-    SOLAR_SENSOR = 7,
-    PUMP_CONTROL = 10,
-    WEATHER = 12,
+    UNKNOWN      = 0x00,
+    HUB          = 0x01, // Reserved: Central Hub
+    WATER_TANK   = 0x05,
+    SOLAR_SENSOR = 0x07,
+    PUMP_CONTROL = 0x0A,
+    WEATHER      = 0x0C,
+    BROADCAST    = 0xFF, // Reserved: Broadcast
 };
 
 /**
@@ -25,9 +28,10 @@ enum class FarmNodeId : NodeId
  */
 enum class FarmNodeType : NodeType
 {
-    UNKNOWN = 0,
-    SENSOR = 2,
-    ACTUATOR = 3,
+    UNKNOWN  = 0x00,
+    HUB      = 0x01, // Reserved: Central Hub
+    SENSOR   = 0x02,
+    ACTUATOR = 0x03,
 };
 
 /**

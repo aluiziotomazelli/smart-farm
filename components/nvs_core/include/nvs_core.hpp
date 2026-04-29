@@ -18,12 +18,12 @@ protected:
     IHalNvs    &hal_; ///< Reference to the NVS Hardware Abstraction Layer.
     CoreStorage core_;
 
-    // Handle do NVS (mantido aberto durante load/commit para eficiência)
+    // NVS handle (kept open during load/commit for efficiency)
     nvs_handle_t _handle = 0;
     bool         _isOpen = false;
     const char  *_namespace;
 
-    // Helpers para o filho usar
+    // Helpers for derived classes
     template <typename T> esp_err_t saveStruct(const char *key, const T &data)
     {
         if (!_isOpen)
@@ -36,14 +36,14 @@ protected:
         if (!_isOpen)
             return ESP_FAIL;
         size_t required_size = sizeof(T);
-        // Tenta ler. Se tamanho não bater ou não existir, retorna erro
+        // Attempt to read. Return error if size mismatch or not found.
         esp_err_t err = hal_.hal_nvs_get_blob(_handle, key, &data, &required_size);
         if (err == ESP_OK && required_size != sizeof(T))
             return ESP_ERR_NVS_INVALID_LENGTH;
         return err;
     }
 
-    // Métodos virtuais que o App DEVE implementar
+    // Pure virtual methods to be implemented by the application
     virtual esp_err_t loadAppData()    = 0;
     virtual esp_err_t saveAppData()    = 0;
     virtual void      setAppDefaults() = 0;
@@ -62,31 +62,31 @@ public:
     NvsCore(const char *ns, IHalNvs &hal);
     virtual ~NvsCore() override = default;
 
-    // Inicializa partição
+    // Initialize partition
     esp_err_t init_partition() override;
 
-    // Fluxo mestre: Carrega Core + App
+    // Master flow: Load Core + App
     esp_err_t load() override;
 
-    // Fluxo mestre: Salva Core + App
+    // Master flow: Commit Core + App
     esp_err_t commit() override;
 
-    // Acesso aos dados comuns
+    // Access to common data
     CoreStorage &getCoreData()
     {
         return core_;
     }
 
-    // Factory reset completo (apaga apenas o namespace)
+    // Complete factory reset (erases only the namespace)
     void factory_reset() override;
 
-    // Apaga tudo no namespace
+    // Erases everything in the namespace
     esp_err_t erase_namespace() override;
 
 public:
     template <typename T> esp_err_t loadStructPublic(const char *key, T &data)
     {
-        return loadStruct(key, data); // chama o protected
+        return loadStruct(key, data);
     }
 
     template <typename T> esp_err_t saveStructPublic(const char *key, const T &data)

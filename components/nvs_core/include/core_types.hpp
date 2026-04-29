@@ -5,16 +5,12 @@
 #include <stdint.h>
 
 /* =========================
- *  Versão do schema
+ *  Schema version
  * ========================= */
 static constexpr uint32_t CORE_SCHEMA_VERSION = 1;
 
 /* =========================
- *  Identidade do nó
- * ========================= */
-
-/* =========================
- *  Perfil de energia
+ *  Power profile
  * ========================= */
 enum class PowerProfile : uint8_t
 {
@@ -24,7 +20,7 @@ enum class PowerProfile : uint8_t
 };
 
 /* =========================
- *  Origem do wakeup
+ *  Wakeup source
  * ========================= */
 enum class WakeSource : uint8_t
 {
@@ -34,15 +30,15 @@ enum class WakeSource : uint8_t
     POWER_ON,
 };
 
-// Struct flat - mais simples!
+// Flat struct for simplicity
 struct CoreStorage
 {
     // Schema
     uint32_t schema_version;
 
-    // Identity (inline, sem struct separada)
-    NodeId node_id;
-    NodeType node_type;
+    // Identity (inline, no separate struct)
+    FarmNodeId node_id;
+    FarmNodeType node_type;
     uint8_t hw_revision;
 
     // Firmware

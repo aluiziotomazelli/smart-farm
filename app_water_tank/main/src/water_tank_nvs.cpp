@@ -25,6 +25,6 @@ void WaterTankNvs::setAppDefaults()
     stats.reset();
     
     // Core identity defaults
-    core_.node_id = static_cast<uint8_t>(FarmNodeId::WATER_TANK);
-    core_.node_type = static_cast<uint8_t>(FarmNodeType::SENSOR);
+    core_.node_id = FarmNodeId::WATER_TANK;
+    core_.node_type = FarmNodeType::SENSOR;
 }
