@@ -1,54 +1,29 @@
 #include "water_tank_logic.hpp"
 #include "esp_log.h"
 
-static const char *TAG = "WaterTankLogic";
+static const char* TAG = "WaterTankLogic";
 
-WaterTankLogic::WaterTankLogic(const TankGeometry &geometry, floatswitch::IFloatSwitch &float_switch)
-    : geometry_(geometry), float_switch_(float_switch)
+WaterTankLogic::WaterTankLogic(const TankGeometry& geometry, floatswitch::IFloatSwitch& float_switch)
+    : geometry_(geometry)
+    , float_switch_(float_switch)
 {
 }
 
-void WaterTankLogic::process_reading(const ultrasonic::Reading &reading, WaterTankStats &stats)
+void WaterTankLogic::process_reading(const ultrasonic::Reading& reading, WaterTankStats& stats)
 {
     stats.last_result = reading.result;
     stats.measure_count++;
 
-    // Update specific counters
-    switch (reading.result) {
-        case ultrasonic::UsResult::OK:
-            stats.ok_count++;
-            break;
-        case ultrasonic::UsResult::WEAK_SIGNAL:
-            stats.weak_count++;
-            break;
-        case ultrasonic::UsResult::TIMEOUT:
-            stats.timeout_count++;
-            break;
-        case ultrasonic::UsResult::OUT_OF_RANGE:
-            stats.out_of_range_count++;
-            break;
-        case ultrasonic::UsResult::HIGH_VARIANCE:
-            stats.high_variance_count++;
-            break;
-        case ultrasonic::UsResult::INSUFFICIENT_SAMPLES:
-            stats.insufficient_samples_count++;
-            break;
-        case ultrasonic::UsResult::ECHO_STUCK:
-            stats.echo_stuck_count++;
-            break;
-        case ultrasonic::UsResult::HW_FAULT:
-            stats.hw_fault_count++;
-            break;
-    }
+    update_results_counters(reading.result, stats);
 
     if (ultrasonic::is_success(reading.result)) {
         update_fill_state(reading.cm, stats);
         stats.last_distance_cm = reading.cm;
-        stats.level_permille   = geometry_.calculate_permille(reading.cm);
+        stats.level_permille = geometry_.calculate_permille(reading.cm);
     }
 }
 
-void WaterTankLogic::update_operation_mode(WaterTankStats &stats) const
+void WaterTankLogic::update_operation_mode(WaterTankStats& stats) const
 {
     if (!ultrasonic::is_success(stats.last_result)) {
         if (stats.consecutive_failures < CONSECUTIVE_FAILURES_THRESHOLD) {
@@ -69,7 +44,7 @@ void WaterTankLogic::update_operation_mode(WaterTankStats &stats) const
     }
 }
 
-uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats &stats) const
+uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats& stats) const
 {
     if (stats.backup_mode_active) {
         if (!float_switch_.is_tank_full()) {
@@ -100,14 +75,19 @@ uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats &stats) co
         if (stats.last_result == ultrasonic::UsResult::WEAK_SIGNAL) {
             timer_us *= WEAK_SLEEP_FACTOR;
         }
-    } else {
+    }
+    else {
         timer_us = TIMER_UNKNOWN_US * INVALID_SLEEP_FACTOR;
     }
 
     return timer_us;
 }
 
-void WaterTankLogic::update_fill_state(float distance_cm, WaterTankStats &stats) const
+// =====================================================================
+// PRIVATE METHODS
+// =====================================================================
+
+void WaterTankLogic::update_fill_state(float distance_cm, WaterTankStats& stats) const
 {
     if (stats.last_distance_cm == 0.0f) {
         stats.fill_state = FillState::STABLE;
@@ -119,9 +99,41 @@ void WaterTankLogic::update_fill_state(float distance_cm, WaterTankStats &stats)
 
     if (abs_delta < 0.5f) { // Less than 5mm change is noise/stable
         stats.fill_state = FillState::STABLE;
-    } else if (delta < 0) {
+    }
+    else if (delta < 0) {
         stats.fill_state = FillState::FILLING;
-    } else {
+    }
+    else {
         stats.fill_state = FillState::DRAINING;
+    }
+}
+
+void WaterTankLogic::update_results_counters(ultrasonic::UsResult result, WaterTankStats& stats)
+{
+    switch (result) {
+    case ultrasonic::UsResult::OK:
+        stats.ok_count++;
+        break;
+    case ultrasonic::UsResult::WEAK_SIGNAL:
+        stats.weak_count++;
+        break;
+    case ultrasonic::UsResult::TIMEOUT:
+        stats.timeout_count++;
+        break;
+    case ultrasonic::UsResult::OUT_OF_RANGE:
+        stats.out_of_range_count++;
+        break;
+    case ultrasonic::UsResult::HIGH_VARIANCE:
+        stats.high_variance_count++;
+        break;
+    case ultrasonic::UsResult::INSUFFICIENT_SAMPLES:
+        stats.insufficient_samples_count++;
+        break;
+    case ultrasonic::UsResult::ECHO_STUCK:
+        stats.echo_stuck_count++;
+        break;
+    case ultrasonic::UsResult::HW_FAULT:
+        stats.hw_fault_count++;
+        break;
     }
 }

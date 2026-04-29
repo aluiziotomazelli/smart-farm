@@ -12,17 +12,18 @@
 class WaterTankLogic
 {
 public:
-    WaterTankLogic(const TankGeometry &geometry, floatswitch::IFloatSwitch &float_switch);
+    WaterTankLogic(const TankGeometry& geometry, floatswitch::IFloatSwitch& float_switch);
 
-    void process_reading(const ultrasonic::Reading &reading, WaterTankStats &stats);
+    void process_reading(const ultrasonic::Reading& reading, WaterTankStats& stats);
 
-    uint64_t calculate_sleep_time_us(const WaterTankStats &stats) const;
+    uint64_t calculate_sleep_time_us(const WaterTankStats& stats) const;
 
-    void update_operation_mode(WaterTankStats &stats) const;
+    void update_operation_mode(WaterTankStats& stats) const;
 
 private:
-    const TankGeometry &geometry_;
-    floatswitch::IFloatSwitch &float_switch_;
+    const TankGeometry& geometry_;
+    floatswitch::IFloatSwitch& float_switch_;
 
-    void update_fill_state(float distance_cm, WaterTankStats &stats) const;
+    void update_fill_state(float distance_cm, WaterTankStats& stats) const;
+    void update_results_counters(ultrasonic::UsResult result, WaterTankStats& stats);
 };
