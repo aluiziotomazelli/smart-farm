@@ -17,37 +17,47 @@ public:
     /**
      * @brief Construct a new Tank Geometry object.
      *
-     * @param min_distance_cm Distance when the tank is EMPTY (0 permille).
-     * @param max_distance_cm Distance when the tank is FULL (1000 permille).
+     * @param tank_height_cm The total height of the tank (cm).
+     * @param sensor_offset_cm Distance from sensor to water surface when tank is FULL.
+     *                         This calibrates the sensor mounting position above the tank.
      */
-    TankGeometry(float min_distance_cm, float max_distance_cm)
-        : min_dist_(min_distance_cm), max_dist_(max_distance_cm)
+    TankGeometry(uint8_t tank_height_cm, uint8_t sensor_offset_cm)
+        : height_cm_(tank_height_cm)
+        , offset_cm_(sensor_offset_cm)
     {
     }
 
     /**
-     * @brief Converts a distance reading into volume in permille (0-1000).
+     * @brief Convert sensor distance reading to water level permille (0-1000).
      *
-     * @param distance_cm The raw distance reading from the sensor.
-     * @return uint16_t The volume in permille (‰).
+     * @param distance_cm Raw distance reading from ultrasonic sensor.
+     * @return uint16_t Volume in permille (0 = empty, 1000 = full), clamped to valid range.
      */
-    uint16_t calculate_permille(float distance_cm) const
-    {
-        if (distance_cm >= min_dist_) {
-            return 0;
-        }
-        if (distance_cm <= max_dist_) {
-            return 1000;
-        }
-
-        // Linear interpolation for a cylindrical tank
-        float span  = min_dist_ - max_dist_;
-        float level = (min_dist_ - distance_cm) / span;
-
-        return static_cast<uint16_t>(level * 1000.0f);
-    }
+    uint16_t calculate_permille(float distance_cm) const;
 
 private:
-    const float min_dist_; ///< Distance for empty tank (cm).
-    const float max_dist_; ///< Distance for full tank (cm).
+    /**
+     * @brief Volume lookup table (distance vs permille)
+     * @note This table is used to convert the distance reading into volume in permille (0-1000).
+     */
+    static constexpr uint16_t VOLUME_LUT[6] = {
+        1000, // top of the tank
+        751,  // edge of step 5/4
+        528,  // edge of step 4/3
+        329,  // edge of step 3/2
+        153,  // edge of step 2/1
+        0     // bottom of the tank
+    };
+
+    const uint8_t height_cm_; ///< Height of the tank (cm).
+    const uint8_t offset_cm_; ///< Offset of the sensor from the top of water max level (cm).
+
+    /**
+     * @brief Convert water height to permille using LUT interpolation.
+     *
+     * @param height_cm Water height in cm. Must be in range [1, height_cm_-1].
+     * @note Caller is responsible for range validation.
+     * @return uint16_t Volume in permille (0-1000).
+     */
+    uint16_t height_to_permille(uint8_t height_cm) const;
 };

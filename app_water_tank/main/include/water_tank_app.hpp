@@ -39,6 +39,7 @@ private:
 
     WaterTankStats stats_;
 
-    void send_report();
+    esp_err_t send_report();
+    SensorStatus map_status(ultrasonic::UsResult result);
     void enter_deep_sleep(uint64_t sleep_time_us);
 };
