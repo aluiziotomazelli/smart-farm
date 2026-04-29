@@ -45,6 +45,20 @@ enum class FarmPayloadType : PayloadType
     LOAD_CONTROLLER_STATUS = 0x04,
 };
 
+/**
+ * @brief Measurement status mirrored from sensor components.
+ */
+enum class SensorStatus : uint8_t
+{
+    OK                 = 0x00,
+    WARNING_LOW_SIGNAL = 0x01,
+    ERROR_TIMEOUT      = 0x02,
+    ERROR_OUT_OF_RANGE = 0x03,
+    ERROR_UNSTABLE     = 0x04,
+    ERROR_HARDWARE     = 0x05,
+    UNKNOWN            = 0xFF
+};
+
 #pragma pack(push, 1)
 
 struct WaterLevelReport
@@ -52,8 +66,7 @@ struct WaterLevelReport
     uint16_t level_permille;
     float distance_cm;
     uint16_t battery_mv;
-    uint8_t quality; // From ultrasonic_sensor UsResult or similar
-    uint8_t failure;
+    SensorStatus status; 
     bool float_switch_is_full;
     bool backup_mode_active;
 };
