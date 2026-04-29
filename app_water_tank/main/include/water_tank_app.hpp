@@ -14,6 +14,10 @@
 class WaterTankApp
 {
 public:
+    /** @brief Constructor for production (requires call to init()) */
+    WaterTankApp();
+
+    /** @brief Constructor for testing (dependency injection) */
     WaterTankApp(
         ILevelSensor& sensor,
         floatswitch::IFloatSwitch& float_switch,
@@ -21,14 +25,17 @@ public:
         espnow::IEspNowManager& comm,
         WaterTankLogic& logic);
 
+    /** @brief Initialize the production hardware stack */
+    void init();
+
     void run();
 
 private:
-    ILevelSensor& sensor_;
-    floatswitch::IFloatSwitch& float_switch_;
-    IWaterTankStorage& storage_;
-    espnow::IEspNowManager& comm_;
-    WaterTankLogic& logic_;
+    ILevelSensor* sensor_ = nullptr;
+    floatswitch::IFloatSwitch* float_switch_ = nullptr;
+    IWaterTankStorage* storage_ = nullptr;
+    espnow::IEspNowManager* comm_ = nullptr;
+    WaterTankLogic* logic_ = nullptr;
 
     WaterTankStats stats_;
 
