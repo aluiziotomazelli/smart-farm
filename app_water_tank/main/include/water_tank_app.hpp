@@ -14,9 +14,6 @@
 class WaterTankApp
 {
 public:
-    /** @brief Constructor for production (requires call to init()) */
-    WaterTankApp();
-
     /** @brief Constructor for testing (dependency injection) */
     WaterTankApp(
         ILevelSensor& sensor,
@@ -24,9 +21,6 @@ public:
         IWaterTankStorage& storage,
         espnow::IEspNowManager& comm,
         WaterTankLogic& logic);
-
-    /** @brief Initialize the production hardware stack */
-    void init();
 
     void run();
 

@@ -3,66 +3,7 @@
 #include "esp_sleep.h"
 #include "app_protocol_types.hpp"
 
-// Production hardware includes
-#include "protocol_types.hpp"
-#include "ultrasonic_adapter.hpp"
-#include "float_switch.hpp"
-#include "water_tank_storage_adapter.hpp"
-#include "tank_geometry.hpp"
-#include "water_tank_logic.hpp"
-#include "espnow_manager.hpp"
-#include "power_control.hpp"
-#include "hal_nvs.hpp"
-#include "water_tank_nvs.hpp"
-
 static const char* TAG = "WaterTankApp";
-
-// Production Configuration
-static constexpr gpio_num_t POWER_GPIO = GPIO_NUM_4;
-static constexpr gpio_num_t US_TRIG_GPIO = GPIO_NUM_21;
-static constexpr gpio_num_t US_ECHO_GPIO = GPIO_NUM_19;
-static constexpr gpio_num_t FLOAT_SWITCH_GPIO = GPIO_NUM_18;
-
-// Static allocation for production stack
-struct ProductionStack
-{
-    power_control::GpioHAL gpio_hal_pc;
-    power_control::PowerControl power{gpio_hal_pc, POWER_GPIO, true, false};
-
-    floatswitch::GpioHAL gpio_hal_fs;
-    ultrasonic::UsSensor sensor_hw{
-        US_TRIG_GPIO,
-        US_ECHO_GPIO,
-        {.ping_interval_ms = 70,
-         .ping_duration_us = 20,
-         .timeout_us = 25000,
-         .filter = ultrasonic::Filter::DOMINANT_CLUSTER,
-         .min_distance_cm = SENSOR_MIN_DISTANCE_CM,
-         .max_distance_cm = SENSOR_MAX_DISTANCE_CM,
-         .warmup_time_ms = 0}};
-
-    floatswitch::TimerHAL timer_hal;
-    floatswitch::FloatSwitch fs{
-        {FLOAT_SWITCH_GPIO,
-         true,
-         50000,
-         floatswitch::ActiveLevel::LOW,
-         floatswitch::WakeupCondition::WHEN_TANK_IS_EMPTY},
-        gpio_hal_fs,
-        timer_hal};
-
-    HalNvs hal_nvs;
-    WaterTankNvs nvs{hal_nvs};
-
-    UltrasonicLevelSensorAdapter sensor_adapter{sensor_hw};
-    WaterTankStorageAdapter storage_adapter{nvs};
-    TankGeometry geometry{SENSOR_OFFSET_CM};
-    WaterTankLogic logic{geometry, fs};
-};
-
-static ProductionStack s_prod_stack;
-
-WaterTankApp::WaterTankApp() {}
 
 WaterTankApp::WaterTankApp(
     ILevelSensor& sensor,
@@ -76,34 +17,6 @@ WaterTankApp::WaterTankApp(
     , comm_(&comm)
     , logic_(&logic)
 {
-}
-
-void WaterTankApp::init()
-{
-    ESP_LOGI(TAG, "Initializing hardware stack...");
-
-    s_prod_stack.power.init();
-    s_prod_stack.power.turn_on();
-
-    s_prod_stack.sensor_hw.init();
-    s_prod_stack.fs.init();
-    s_prod_stack.nvs.init_partition();
-
-    espnow::EspNowConfig config;
-    config.node_id = static_cast<espnow::NodeId>(FarmNodeId::WATER_TANK);
-    config.node_type = static_cast<espnow::NodeType>(FarmNodeType::SENSOR);
-    config.app_rx_queue = xQueueCreate(30, sizeof(espnow::AppMessage));
-    config.wifi_channel = 1;
-
-    espnow::EspNowManager& comm = espnow::EspNowManager::instance();
-    comm.init(config);
-
-    // Link pointers
-    sensor_ = &s_prod_stack.sensor_adapter;
-    float_switch_ = &s_prod_stack.fs;
-    storage_ = &s_prod_stack.storage_adapter;
-    comm_ = &comm;
-    logic_ = &s_prod_stack.logic;
 }
 
 void WaterTankApp::run()
