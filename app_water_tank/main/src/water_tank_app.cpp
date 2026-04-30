@@ -56,7 +56,7 @@ struct ProductionStack
 
     UltrasonicLevelSensorAdapter sensor_adapter{sensor_hw};
     WaterTankStorageAdapter storage_adapter{nvs};
-    TankGeometry geometry{TANK_HEIGHT_CM, SENSOR_OFFSET_CM};
+    TankGeometry geometry{SENSOR_OFFSET_CM};
     WaterTankLogic logic{geometry, fs};
 };
 

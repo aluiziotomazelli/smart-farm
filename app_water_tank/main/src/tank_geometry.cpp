@@ -1,44 +1,53 @@
 // app_water_tank/main/src/tank_geometry.cpp
 
 #include "tank_geometry.hpp"
-#include "esp_log.h"
-#include <cstdint>
 
 static const char* TAG = "TankGeometry";
 
 uint16_t TankGeometry::calculate_permille(float distance_cm) const
 {
-    // Convert distance sensor to water height
-    uint16_t dist_cm_round = static_cast<uint16_t>(distance_cm + 0.5f);
+    // Convert sensor distance to depth below the full-water line.
+    // Depth 0  → tank full (at drain/offset level)
+    // Depth max → tank empty (at bottom)
+    float depth = distance_cm - static_cast<float>(offset_cm_);
 
-    if (dist_cm_round <= offset_cm_) {
-        return 1000; // water level is above the offset
-    }
+    float permille_f = depth_to_permille(depth);
 
-    uint16_t water_height = dist_cm_round - offset_cm_;
-
-    if (water_height >= height_cm_) {
-        return 0; // empty tank
-    }
-
-    // Lookup table interpolation
-    return height_to_permille(static_cast<uint8_t>(water_height));
+    // Single rounding at the very end for protocol compatibility (uint16_t)
+    return static_cast<uint16_t>(permille_f + 0.5f);
 }
 
 // =====================================================================
 // Private methods
 // =====================================================================
 
-uint16_t TankGeometry::height_to_permille(uint8_t height_cm) const
+float TankGeometry::depth_to_permille(float depth_cm) const
 {
-    static constexpr uint8_t SEGMENT_HEIGHT = 30;
+    // Clamp: at or above the full-water line
+    if (depth_cm <= static_cast<float>(VOLUME_LUT[0].depth_cm)) {
+        return static_cast<float>(VOLUME_LUT[0].permille);
+    }
 
-    // Determine which segment the height belongs to
-    uint8_t segment = height_cm / SEGMENT_HEIGHT; // 0-4
-    uint8_t offset = height_cm % SEGMENT_HEIGHT;  // 0-29
+    // Clamp: at or below the tank bottom
+    if (depth_cm >= static_cast<float>(VOLUME_LUT[LUT_SIZE - 1].depth_cm)) {
+        return static_cast<float>(VOLUME_LUT[LUT_SIZE - 1].permille);
+    }
 
-    uint16_t p0 = VOLUME_LUT[segment];
-    uint16_t p1 = VOLUME_LUT[segment + 1];
+    // Linear scan to find the surrounding LUT entries.
+    // The LUT is small (6 entries), so a simple loop is sufficient.
+    for (uint8_t i = 0; i < LUT_SIZE - 1; i++) {
+        float h0 = static_cast<float>(VOLUME_LUT[i].depth_cm);
+        float h1 = static_cast<float>(VOLUME_LUT[i + 1].depth_cm);
 
-    return p0 - ((p0 - p1) * offset) / SEGMENT_HEIGHT;
+        if (depth_cm <= h1) {
+            float p0 = static_cast<float>(VOLUME_LUT[i].permille);
+            float p1 = static_cast<float>(VOLUME_LUT[i + 1].permille);
+
+            // Continuous linear interpolation — works for any segment width
+            return p0 + (p1 - p0) * (depth_cm - h0) / (h1 - h0);
+        }
+    }
+
+    // Unreachable: both clamps above cover all remaining cases
+    return 0.0f;
 }

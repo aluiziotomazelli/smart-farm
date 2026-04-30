@@ -17,9 +17,10 @@ void WaterTankLogic::process_reading(const ultrasonic::Reading& reading, WaterTa
     update_results_counters(reading.result, stats);
 
     if (ultrasonic::is_success(reading.result)) {
-        update_fill_state(reading.cm, stats);
         stats.last_distance_cm = reading.cm;
         stats.level_permille = geometry_.calculate_permille(reading.cm);
+        update_fill_state(stats.level_permille, stats);
+        stats.last_level_permille = stats.level_permille; // Store for next iteration
     }
 }
 
@@ -87,20 +88,20 @@ uint64_t WaterTankLogic::calculate_sleep_time_us(const WaterTankStats& stats) co
 // PRIVATE METHODS
 // =====================================================================
 
-void WaterTankLogic::update_fill_state(float distance_cm, WaterTankStats& stats) const
+void WaterTankLogic::update_fill_state(uint16_t current_permille, WaterTankStats& stats) const
 {
-    if (stats.last_distance_cm == 0.0f) {
+    if (stats.last_level_permille == 0) {
         stats.fill_state = FillState::STABLE;
         return;
     }
 
-    float delta = distance_cm - stats.last_distance_cm;
-    float abs_delta = (delta < 0) ? -delta : delta;
+    int32_t delta = static_cast<int32_t>(current_permille) - static_cast<int32_t>(stats.last_level_permille);
+    uint32_t abs_delta = (delta < 0) ? -delta : delta;
 
-    if (abs_delta < 0.5f) { // Less than 5mm change is noise/stable
+    if (abs_delta < LEVEL_DELTA_MIN) {
         stats.fill_state = FillState::STABLE;
     }
-    else if (delta < 0) {
+    else if (delta > 0) {
         stats.fill_state = FillState::FILLING;
     }
     else {

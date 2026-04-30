@@ -24,6 +24,6 @@ private:
     const TankGeometry& geometry_;
     floatswitch::IFloatSwitch& float_switch_;
 
-    void update_fill_state(float distance_cm, WaterTankStats& stats) const;
+    void update_fill_state(uint16_t current_permille, WaterTankStats& stats) const;
     void update_results_counters(ultrasonic::UsResult result, WaterTankStats& stats);
 };

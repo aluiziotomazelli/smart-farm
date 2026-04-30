@@ -15,7 +15,10 @@ struct WaterTankStats
 {
     // --- Current State ---
     uint16_t level_permille = 0;
+    uint16_t last_level_permille = 0;
     FillState fill_state = FillState::UNKNOWN;
+    // TODO: Evaluate if last_distance_cm is still useful in production.
+    // It is no longer used for fill state logic (replaced by last_level_permille).
     float last_distance_cm = 0.0f;
     ultrasonic::UsResult last_result = ultrasonic::UsResult::HW_FAULT;
     uint32_t sample_uptime_s = 0;
