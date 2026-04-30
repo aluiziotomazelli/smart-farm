@@ -1,7 +1,7 @@
 #include "water_tank_app.hpp"
 #include "esp_log.h"
 #include "esp_sleep.h"
-#include "app_protocol_types.hpp"
+#include "farm_protocol_types.hpp"
 
 static const char* TAG = "WaterTankApp";
 
@@ -10,11 +10,17 @@ WaterTankApp::WaterTankApp(
     floatswitch::IFloatSwitch& float_switch,
     IWaterTankStorage& storage,
     espnow::IEspNowManager& comm,
+    wifi_manager::IWiFiManager& wifi,
+    power_control::IPowerControl& power,
+    ISleepHAL& sleep,
     WaterTankLogic& logic)
     : sensor_(&sensor)
     , float_switch_(&float_switch)
     , storage_(&storage)
     , comm_(&comm)
+    , wifi_(&wifi)
+    , power_(&power)
+    , sleep_(&sleep)
     , logic_(&logic)
 {
 }
@@ -32,6 +38,9 @@ void WaterTankApp::run()
     // 2. Perform sensor reading
     ultrasonic::Reading reading = sensor_->read_level();
     ESP_LOGI(TAG, "Reading raw: %.1f cm (Status: %d)", reading.cm, static_cast<int>(reading.result));
+
+    // Turn off sensor power as soon as we have the reading
+    power_->turn_off();
 
     // 3. Process logic (Brain)
     logic_->process_reading(reading, stats_);
@@ -114,11 +123,11 @@ void WaterTankApp::enter_deep_sleep(uint64_t sleep_time_us)
 {
     ESP_LOGI(TAG, "Entering deep sleep for %llu us", sleep_time_us);
 
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    sleep_->disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 
     if (sleep_time_us > 0) {
-        esp_sleep_enable_timer_wakeup(sleep_time_us);
+        sleep_->enable_timer_wakeup(sleep_time_us);
     }
 
-    esp_deep_sleep_start();
+    sleep_->deep_sleep_start();
 }

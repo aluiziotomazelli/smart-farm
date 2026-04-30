@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app_protocol_types.hpp"
+#include "farm_protocol_types.hpp"
 #include <stdbool.h>
 #include <stdint.h>
 

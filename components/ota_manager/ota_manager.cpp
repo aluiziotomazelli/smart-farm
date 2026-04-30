@@ -8,7 +8,7 @@
 
 #include "esp_event.h"
 #include "ota_events.hpp"
-#include "app_protocol_types.hpp"
+#include "farm_protocol_types.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
