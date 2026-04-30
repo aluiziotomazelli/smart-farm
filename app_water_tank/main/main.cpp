@@ -1,3 +1,4 @@
+#include "us_types.hpp"
 #include "water_tank_app.hpp"
 #include "esp_log.h"
 #include "protocol_types.hpp"
@@ -29,23 +30,27 @@ static power_control::PowerControl power{gpio_hal_pc, POWER_GPIO, true, false};
 // FloatSwitch
 static floatswitch::GpioHAL gpio_hal_fs;
 static floatswitch::TimerHAL timer_hal;
-static floatswitch::FloatSwitch float_switch{
-    {FLOAT_SWITCH_GPIO, true, 50000, floatswitch::ActiveLevel::LOW, floatswitch::WakeupCondition::WHEN_TANK_IS_EMPTY},
-    gpio_hal_fs,
-    timer_hal};
+
+floatswitch::Config float_switch_config = {
+    .gpio = FLOAT_SWITCH_GPIO,
+    .normally_open = true,
+    .debounce_time_us = 50000,
+    .active_level = floatswitch::ActiveLevel::LOW,
+    .wakeup_on = floatswitch::WakeupCondition::WHEN_TANK_IS_EMPTY};
+
+static floatswitch::FloatSwitch float_switch{float_switch_config, gpio_hal_fs, timer_hal};
 
 // Ultrasonic Sensor
-static ultrasonic::UsSensor sensor_us{
-    US_TRIG_GPIO,
-    US_ECHO_GPIO,
-    {.ping_interval_ms = 70,
-     .ping_duration_us = 20,
-     .timeout_us = 25000,
-     .filter = ultrasonic::Filter::DOMINANT_CLUSTER,
-     .min_distance_cm = SENSOR_MIN_DISTANCE_CM,
-     .max_distance_cm = SENSOR_MAX_DISTANCE_CM,
-     .warmup_time_ms = 600}};
+ultrasonic::UsConfig us_config{
+    .ping_interval_ms = 70,
+    .ping_duration_us = 20,
+    .timeout_us = 25000,
+    .filter = ultrasonic::Filter::DOMINANT_CLUSTER,
+    .min_distance_cm = SENSOR_MIN_DISTANCE_CM,
+    .max_distance_cm = SENSOR_MAX_DISTANCE_CM,
+    .warmup_time_ms = 600};
 
+static ultrasonic::UsSensor sensor_us{US_TRIG_GPIO, US_ECHO_GPIO, us_config};
 static UltrasonicLevelSensorAdapter sensor_adapter{sensor_us};
 
 // SleepHAL
