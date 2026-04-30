@@ -74,30 +74,7 @@ static esp_err_t setup_hardware()
 {
     esp_err_t err;
 
-    if ((err = power.init()) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize PowerControl: %s", esp_err_to_name(err));
-        return err;
-    }
-    power.turn_on();
-
-    if ((err = sensor_us.init()) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize UsSensor: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    if ((err = float_switch.init()) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize FloatSwitch: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    if ((err = nvs.init_partition()) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize NVS partition: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    // =====================================
     // WifiManager
-    // =====================================
     wifi_manager::WiFiManager& wifi = wifi_manager::WiFiManager::get_instance();
     if ((err = wifi.init()) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFiManager: %s", esp_err_to_name(err));
@@ -108,9 +85,19 @@ static esp_err_t setup_hardware()
         return err;
     }
 
-    // =====================================
+    // FloatSwitch
+    if ((err = float_switch.init()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize FloatSwitch: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // NVS
+    if ((err = nvs.init_partition()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS partition: %s", esp_err_to_name(err));
+        return err;
+    }
+
     // EspNowManager
-    // =====================================
     espnow::EspNowConfig config;
     config.node_id = static_cast<espnow::NodeId>(FarmNodeId::WATER_TANK);
     config.node_type = static_cast<espnow::NodeType>(FarmNodeType::SENSOR);
@@ -120,6 +107,19 @@ static esp_err_t setup_hardware()
     espnow::EspNowManager& espnow = espnow::EspNowManager::instance();
     if ((err = espnow.init(config)) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize EspNowManager: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // PowerControl
+    if ((err = power.init()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize PowerControl: %s", esp_err_to_name(err));
+        return err;
+    }
+    power.turn_on();
+
+    // UsSensor
+    if ((err = sensor_us.init()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize UsSensor: %s", esp_err_to_name(err));
         return err;
     }
 
