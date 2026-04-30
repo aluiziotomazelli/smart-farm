@@ -11,10 +11,10 @@ class UltrasonicLevelSensorAdapter : public ILevelSensor
 public:
     /**
      * @brief Construct a new Ultrasonic Level Sensor Adapter object.
-     * @param sensor Reference to the concrete ultrasonic sensor.
+     * @param sensor Reference to the ultrasonic sensor interface.
      * @param ping_count Number of pings to perform per measurement (default 5).
      */
-    UltrasonicLevelSensorAdapter(ultrasonic::UsSensor& sensor, uint8_t ping_count = 5)
+    UltrasonicLevelSensorAdapter(ultrasonic::IUsSensor& sensor, uint8_t ping_count = 5)
         : sensor_(sensor)
         , ping_count_(ping_count)
     {
@@ -24,6 +24,6 @@ public:
     ultrasonic::Reading read_level() override { return sensor_.read_distance(ping_count_); }
 
 private:
-    ultrasonic::UsSensor& sensor_;
+    ultrasonic::IUsSensor& sensor_;
     uint8_t ping_count_;
 };
