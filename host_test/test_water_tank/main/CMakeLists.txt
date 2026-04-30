@@ -1,9 +1,9 @@
 idf_component_register(
     SRCS 
         "main.cpp"
-        "test_water_tank.cpp"
         "test_water_tank_geometry.cpp"
         "test_water_tank_logic.cpp"
+        "test_water_tank_app.cpp"
         "../../../app_water_tank/main/src/tank_geometry.cpp"
         "../../../app_water_tank/main/src/water_tank_logic.cpp"
         "../../../app_water_tank/main/src/water_tank_app.cpp"
@@ -13,6 +13,9 @@ idf_component_register(
         "../../common"
         "../../../app_water_tank/main/include"
         "../../../app_water_tank/main"
+        "../../../app_water_tank/managed_components/wifi_manager/include"
+        "../../../app_water_tank/managed_components/espnow_manager/include"
+        "../../../app_water_tank/managed_components/power_control/include"
     REQUIRES 
         gtest
         common

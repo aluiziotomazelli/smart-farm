@@ -9,6 +9,9 @@
 #include "water_tank_nvs.hpp"
 #include "ultrasonic_adapter.hpp"
 #include "tank_geometry.hpp"
+#include "hal_sleep.hpp"
+
+#include "wifi_manager.hpp"
 
 static const char* TAG = "main";
 
@@ -32,7 +35,7 @@ static ultrasonic::UsSensor sensor_hw{
      .filter = ultrasonic::Filter::DOMINANT_CLUSTER,
      .min_distance_cm = SENSOR_MIN_DISTANCE_CM,
      .max_distance_cm = SENSOR_MAX_DISTANCE_CM,
-     .warmup_time_ms = 0}};
+     .warmup_time_ms = 600}};
 
 static floatswitch::TimerHAL timer_hal;
 static floatswitch::FloatSwitch fs{
@@ -40,6 +43,7 @@ static floatswitch::FloatSwitch fs{
     gpio_hal_fs,
     timer_hal};
 
+static SleepHAL sleep_hw;
 static HalNvs hal_nvs;
 static WaterTankNvs nvs{hal_nvs};
 
@@ -59,6 +63,10 @@ extern "C" void app_main()
     sensor_hw.init();
     fs.init();
     nvs.init_partition();
+    
+    wifi_manager::WiFiManager& wifi = wifi_manager::WiFiManager::get_instance();
+    wifi.init();
+    wifi.start();
 
     espnow::EspNowConfig config;
     config.node_id = static_cast<espnow::NodeId>(FarmNodeId::WATER_TANK);
@@ -70,7 +78,7 @@ extern "C" void app_main()
     comm.init(config);
 
     // Instantiate app with dependencies
-    WaterTankApp app(sensor_adapter, fs, storage_adapter, comm, logic);
+    WaterTankApp app(sensor_adapter, fs, storage_adapter, comm, wifi, power, sleep_hw, logic);
 
     // Run the main application flow
     app.run();
