@@ -34,14 +34,14 @@ public:
     void run();
 
 private:
-    ILevelSensor* sensor_ = nullptr;
-    floatswitch::IFloatSwitch* float_switch_ = nullptr;
-    IWaterTankStorage* storage_ = nullptr;
-    espnow::IEspNowManager* comm_ = nullptr;
-    wifi_manager::IWiFiManager* wifi_ = nullptr;
-    power_control::IPowerControl* power_ = nullptr;
-    ISleepHAL* sleep_ = nullptr;
-    WaterTankLogic* logic_ = nullptr;
+    ILevelSensor& sensor_;
+    floatswitch::IFloatSwitch& float_switch_;
+    IWaterTankStorage& storage_;
+    espnow::IEspNowManager& comm_;
+    wifi_manager::IWiFiManager& wifi_;
+    power_control::IPowerControl& power_;
+    ISleepHAL& sleep_;
+    WaterTankLogic& logic_;
 
     WaterTankStats stats_;
 
