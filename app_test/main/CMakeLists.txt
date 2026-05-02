@@ -3,6 +3,7 @@ idf_component_register(
         "main.cpp"
                     
     INCLUDE_DIRS 
+        "include"
         "."
     REQUIRES
         nvs_core
@@ -13,4 +14,5 @@ idf_component_register(
         power_control
         wifi_manager
         gpio_validator
+        ota_manager
 )
