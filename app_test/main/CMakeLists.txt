@@ -3,15 +3,11 @@ idf_component_register(
         "main.cpp"
                     
     INCLUDE_DIRS 
-        
-        
+        "include"
+        "."
     REQUIRES
-        # espnow
-        # common
-        # power_control
-        # gpio_validator
-        # sensor_floatswitch
-        
-    PRIV_REQUIRES
-    
+        common
+        gpio_validator
+        power_control
+        espnow_manager
 )
