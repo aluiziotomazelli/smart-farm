@@ -15,4 +15,5 @@ idf_component_register(
         floatswitch
         espnow_manager
         power_control
+        wifi_manager
 )
