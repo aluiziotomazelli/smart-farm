@@ -6,8 +6,12 @@ idf_component_register(
         "include"
         "."
     REQUIRES
+        nvs_core
         common
-        gpio_validator
-        power_control
+        ultrasonic_sensor
+        floatswitch
         espnow_manager
+        power_control
+        wifi_manager
+        gpio_validator
 )
