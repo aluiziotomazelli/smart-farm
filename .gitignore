@@ -43,8 +43,7 @@ Thumbs.db
 **/.gemini/
 **/.qwen/
 .agents/
-*qwen*
-*QWEN*
+.codex/
 GEMINI.md
 AGENTS.md
 
