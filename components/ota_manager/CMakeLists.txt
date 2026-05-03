@@ -1,14 +1,15 @@
 idf_component_register(
     SRCS
-       "ota_manager.cpp"
+        "src/ota_manager.cpp"
+        "src/manifest_parser.cpp"
+        "src/http_client.cpp"
+        "src/ota_session.cpp"
+        "src/rollback_manager.cpp"
     INCLUDE_DIRS
         "include"
-        "."
     REQUIRES
         esp_https_ota
-        esp_netif
-        esp_wifi
-        nvs_flash
-        mdns
-        common
+    PRIV_REQUIRES
+        app_update
+        json
 )

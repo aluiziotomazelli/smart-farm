@@ -1,75 +1,53 @@
 #pragma once
 
-#include "esp_err.h"
-#include "esp_event.h"
-#include <cstdint>
-#include <string>
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
+#include "interfaces/i_ota_manager.hpp"
+#include "interfaces/i_manifest_parser.hpp"
+#include "interfaces/i_http_client.hpp"
+#include "interfaces/i_ota_session.hpp"
+#include "interfaces/i_system.hpp"
+#include "interfaces/i_task_scheduler.hpp"
+#include "interfaces/i_rollback_manager.hpp"
 
-class OtaManager
+struct OtaDependencies
+{
+    IHttpClient& http_client;
+    IManifestParser& manifest_parser;
+    IOtaSession& ota_session;
+    ISystem& system;
+    ITaskScheduler& task_scheduler;
+    IRollbackManager& rollback_manager;
+};
+
+class OtaManager : public IOtaManager
 {
 public:
-    // Singleton with reference (safer, cleaner syntax)
-    static OtaManager &instance();
+    OtaManager(const OtaDependencies& deps, const OtaConfig& config);
+    ~OtaManager() override;
 
-    // Prevent copying
-    OtaManager(const OtaManager &)            = delete;
-    OtaManager &operator=(const OtaManager &) = delete;
-
-    // Initialize OTA manager and register event handler
-    esp_err_t init();
-
-    // OTA operations
-    esp_err_t startOta(const std::string &url);
-    esp_err_t startOtaWithMdns(const std::string &hostname);
-
-    // Status queries (thread-safe)
-    bool isOtaInProgress() const;
-
-    // Configuration
-    void setDeviceType(const std::string &device_type);
-    std::string getDeviceType() const;
-
-    // Cleanup (optional, for completeness)
-    void deinit();
+    bool init(const OtaConfig& config) override;
+    void deinit() override;
+    bool start_ota() override;
+    void cancel_ota() override;
+    OtaStatus get_status() const override;
+    bool check_pending_verify() const override;
+    bool confirm_app_valid() override;
+    void rollback_and_reboot() override;
 
 private:
-    OtaManager();
-    ~OtaManager();
+    OtaDependencies deps_;
+    OtaConfig config_;
+    OtaStatus status_;
+    TaskHandle_t ota_task_handle_ = nullptr;
 
-    // Task parameters structure (passed to task, dynamically allocated)
-    struct OtaTaskParams
-    {
-        std::string url;
-        bool use_mdns;
-        OtaManager *manager;
+    bool cancel_requested_ = false;
+    SemaphoreHandle_t state_mutex_ = nullptr;
+    SemaphoreHandle_t shutdown_done_ = nullptr;
 
-        OtaTaskParams(const std::string &u, bool mdns, OtaManager *m)
-            : url(u)
-            , use_mdns(mdns)
-            , manager(m)
-        {
-        }
-    };
+    static void ota_task_func(void* pvParameters);
+    void ota_task();
 
-    // Internal helpers
-    esp_err_t startOtaFromEvent(const std::string &url_or_hostname, bool use_mdns);
-    esp_err_t resolveServerMdns(const std::string &hostname, std::string &url);
-    void cleanupOtaTask(OtaTaskParams *params);
-    esp_err_t performOtaDownload(const std::string &url);
-
-    // Task function (created on demand)
-    static void otaTask(void *pvParameters);
-
-    // Event handler (static)
-    static void eventHandler(void *arg, esp_event_base_t base, int32_t id, void *data);
-
-    // State management (thread-safe)
-    void setOtaInProgress(bool in_progress);
-
-    // Internal state
-    std::string device_type_;
-    SemaphoreHandle_t state_mutex_;
-    bool ota_in_progress_;
+    bool should_cancel() const;
+    void set_status(OtaStatus status);
+    void set_cancel_requested(bool value);
+    void signal_shutdown_done();
 };
