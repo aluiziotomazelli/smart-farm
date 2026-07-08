@@ -16,11 +16,12 @@
 
 static const char* TAG = "main";
 
-// Production Configuration
-static constexpr gpio_num_t POWER_GPIO = GPIO_NUM_4;
-static constexpr gpio_num_t US_TRIG_GPIO = GPIO_NUM_21;
-static constexpr gpio_num_t US_ECHO_GPIO = GPIO_NUM_19;
-static constexpr gpio_num_t FLOAT_SWITCH_GPIO = GPIO_NUM_18;
+// Production Configuration for XIAO-ESP32-C3 Mini Board
+static constexpr gpio_num_t POWER_GPIO = GPIO_NUM_10;        // D10
+static constexpr gpio_num_t US_TRIG_GPIO = GPIO_NUM_4;       // D2
+static constexpr gpio_num_t US_ECHO_GPIO = GPIO_NUM_5;       // D3
+static constexpr gpio_num_t FLOAT_SWITCH_GPIO = GPIO_NUM_7;  // D5
+static constexpr gpio_num_t BATTERY_LEVEL_GPIO = GPIO_NUM_3; // D1
 
 // Static allocation for production hardware components
 // PowerControl
