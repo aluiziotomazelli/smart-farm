@@ -13,3 +13,6 @@
 [submodule "components/espnow_manager"]
 	path = components/espnow_manager
 	url = https://github.com/aluiziotomazelli/espnow_manager.git
+[submodule "components/ota_manager"]
+	path = components/ota_manager
+	url = https://github.com/aluiziotomazelli/ota_manager

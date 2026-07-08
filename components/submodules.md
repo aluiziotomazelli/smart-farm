@@ -9,6 +9,8 @@ This file tracks the versions of components currently linked as Git submodules i
 | `power_control` | [power_control](https://github.com/aluiziotomazelli/power_control.git) | `v1.0.1` |
 | `ultrasonic_sensor` | [ultrasonic_sensor](https://github.com/aluiziotomazelli/ultrasonic_sensor.git) | `v1.0.1` |
 | `espnow_manager` | [espnow_manager](https://github.com/aluiziotomazelli/espnow_manager.git) | `v1.1.2` |
+| `ota_manager` | [ota_manager](https://github.com/aluiziotomazelli/ota_manager.git) | `v1.0.0` |
+
 
 ## Maintenance Note
 To update a component version, follow the read-only policy:
