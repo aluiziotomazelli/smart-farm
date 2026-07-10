@@ -1,9 +1,0 @@
-idf_component_register(
-    SRCS
-        "nvs_core.cpp"
-    INCLUDE_DIRS
-        "include"
-    REQUIRES
-        nvs_flash
-        common
-)
