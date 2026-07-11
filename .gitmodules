@@ -1,0 +1,3 @@
+[submodule "smart-farm-water-tank"]
+	path = smart-farm-water-tank
+	url = https://github.com/aluiziotomazelli/smart-farm-water-tank.git
