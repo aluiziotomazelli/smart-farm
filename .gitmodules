@@ -5,3 +5,7 @@
 	path = smart-farm-hub/components/idf_hals
 	url = https://github.com/aluiziotomazelli/idf_hals.git
 	branch = main
+[submodule "smart-farm-hub"]
+	path = smart-farm-hub
+	url = https://github.com/aluiziotomazelli/smart-farm-hub.git
+	branch = main
