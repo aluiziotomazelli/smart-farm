@@ -3,7 +3,7 @@
 #include "espnow_manager.hpp"
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
-#include "hal_nvs_core.hpp"
+#include "hal_nvs.hpp"
 #include "wifi_manager.hpp"
 #include "ota_manager.hpp"
 #include "farm_protocol_types.hpp"
@@ -14,8 +14,8 @@ static const char *TAG = "main";
 static constexpr gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
 
 // NVS
-static HalNvs  hal_nvs;
-static HubNvs  nvs{hal_nvs};
+static idf_hals::NvsHAL hal_nvs;
+static HubNvs          nvs{hal_nvs};
 
 // OtaManager (hub self-update via WiFi)
 static HttpClient      http_client;
@@ -88,6 +88,16 @@ static esp_err_t setup_hardware()
         ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(err));
         return err;
     }
+
+    // Connect to WiFi synchronously
+    ESP_LOGI(TAG, "Connecting to WiFi synchronously...");
+    if ((err = wifi.connect(15000)) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to connect to WiFi: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Set ChannelPolicy to FIXED now that WiFi is connected to AP
+    espnow.set_channel_policy(espnow::ChannelPolicy::FIXED);
 
     // BOOT button (active-low, input pull-up)
     gpio_config_t btn_cfg = {};

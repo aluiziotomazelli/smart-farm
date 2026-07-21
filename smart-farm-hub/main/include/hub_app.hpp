@@ -2,6 +2,7 @@
 #pragma once
 
 #include "i_espnow_manager.hpp"
+#include "farm_protocol_types.hpp"
 #include "hub_nvs.hpp"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -25,10 +26,10 @@ private:
 
     void handle_message(const espnow::AppMessage &msg);
     void handle_boot_button();
-    void dispatch_pending_command(FarmNodeId node_id);
+    void dispatch_pending_command(farm::NodeId node_id);
 
     // Pending command helpers
-    bool set_pending_command(FarmNodeId node_id, espnow::CommandType cmd);
-    bool has_pending_command(FarmNodeId node_id, espnow::CommandType &out_cmd);
-    void clear_pending_command(FarmNodeId node_id);
+    bool set_pending_command(farm::NodeId node_id, espnow::CommandType cmd);
+    bool has_pending_command(farm::NodeId node_id, espnow::CommandType &out_cmd);
+    void clear_pending_command(farm::NodeId node_id);
 };

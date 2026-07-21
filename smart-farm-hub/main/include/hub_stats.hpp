@@ -12,7 +12,7 @@ static constexpr uint8_t MAX_HUB_NODES = 8;
  */
 struct PendingNodeCommand {
     bool                  active      = false;
-    FarmNodeId            node_id     = FarmNodeId::UNKNOWN;
+    farm::NodeId          node_id     = farm::NodeId::UNKNOWN;
     espnow::CommandType   command     = espnow::CommandType::START_OTA;
 };
 

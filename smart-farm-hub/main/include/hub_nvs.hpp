@@ -1,12 +1,12 @@
 // main/include/hub_nvs.hpp
 #pragma once
 #include "nvs_core.hpp"
-#include "interfaces/i_hal_nvs.hpp"
+#include "hal_nvs.hpp"
 #include "hub_stats.hpp"
 
 class HubNvs : public NvsCore {
 public:
-    explicit HubNvs(IHalNvs &hal);
+    explicit HubNvs(idf_hals::INvsHAL &hal);
 
     HubStats stats;
 

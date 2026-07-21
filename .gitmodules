@@ -1,3 +1,7 @@
 [submodule "smart-farm-water-tank"]
 	path = smart-farm-water-tank
 	url = https://github.com/aluiziotomazelli/smart-farm-water-tank.git
+[submodule "smart-farm-hub/components/idf_hals"]
+	path = smart-farm-hub/components/idf_hals
+	url = https://github.com/aluiziotomazelli/idf_hals.git
+	branch = main

@@ -12,4 +12,5 @@ idf_component_register(
         espnow_manager
         wifi_manager
         ota_manager
+        idf_hals
 )

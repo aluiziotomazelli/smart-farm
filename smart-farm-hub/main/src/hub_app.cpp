@@ -33,15 +33,15 @@ void HubApp::run()
 
 void HubApp::handle_message(const espnow::AppMessage& msg)
 {
-    auto node_id = static_cast<FarmNodeId>(msg.sender_id);
-    auto payload_type = static_cast<FarmPayloadType>(msg.payload_type);
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+    auto payload_type = static_cast<farm::PayloadType>(msg.payload_type);
 
     nvs_.stats.messages_received++;
 
     switch (payload_type) {
-    case FarmPayloadType::WATER_LEVEL_REPORT:
+    case farm::PayloadType::WATER_LEVEL_REPORT:
     {
-        const auto* report = reinterpret_cast<const WaterLevelReport*>(msg.payload);
+        const auto* report = reinterpret_cast<const farm::WaterLevelReport*>(msg.payload);
 
         nvs_.stats.last_wt_level_permille = report->level_permille;
         nvs_.stats.last_wt_distance_cm = report->distance_cm;
@@ -86,7 +86,7 @@ void HubApp::handle_boot_button()
         return;
 
     // Arm OTA for the water-tank node
-    if (set_pending_command(FarmNodeId::WATER_TANK, espnow::CommandType::START_OTA)) {
+    if (set_pending_command(farm::NodeId::WATER_TANK, espnow::CommandType::START_OTA)) {
         ESP_LOGW(
             TAG,
             "OTA command armed for WATER_TANK. "
@@ -102,7 +102,7 @@ void HubApp::handle_boot_button()
     }
 }
 
-void HubApp::dispatch_pending_command(FarmNodeId node_id)
+void HubApp::dispatch_pending_command(farm::NodeId node_id)
 {
     espnow::CommandType cmd;
     if (!has_pending_command(node_id, cmd))
@@ -122,7 +122,7 @@ void HubApp::dispatch_pending_command(FarmNodeId node_id)
     }
 }
 
-bool HubApp::set_pending_command(FarmNodeId node_id, espnow::CommandType cmd)
+bool HubApp::set_pending_command(farm::NodeId node_id, espnow::CommandType cmd)
 {
     // Check if already set
     for (auto& entry : nvs_.stats.pending_cmds) {
@@ -141,7 +141,7 @@ bool HubApp::set_pending_command(FarmNodeId node_id, espnow::CommandType cmd)
     return false;
 }
 
-bool HubApp::has_pending_command(FarmNodeId node_id, espnow::CommandType& out_cmd)
+bool HubApp::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd)
 {
     for (const auto& entry : nvs_.stats.pending_cmds) {
         if (entry.active && entry.node_id == node_id) {
@@ -152,7 +152,7 @@ bool HubApp::has_pending_command(FarmNodeId node_id, espnow::CommandType& out_cm
     return false;
 }
 
-void HubApp::clear_pending_command(FarmNodeId node_id)
+void HubApp::clear_pending_command(farm::NodeId node_id)
 {
     for (auto& entry : nvs_.stats.pending_cmds) {
         if (entry.active && entry.node_id == node_id) {

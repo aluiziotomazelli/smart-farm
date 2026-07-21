@@ -6,7 +6,7 @@
 static const char *TAG      = "HubNvs";
 static const char *KEY_STATS = "hub_stats";
 
-HubNvs::HubNvs(IHalNvs &hal) : NvsCore("hub_ns", hal) {}
+HubNvs::HubNvs(idf_hals::INvsHAL &hal) : NvsCore("hub_ns", hal) {}
 
 esp_err_t HubNvs::loadAppData()
 {
